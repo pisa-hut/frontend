@@ -10,6 +10,8 @@ import {
   ThunderboltOutlined,
   CloudUploadOutlined,
   MenuOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -57,11 +59,12 @@ export default function AppLayout() {
     <Layout style={{ minHeight: "100vh" }}>
       {/* Desktop sidebar */}
       <Layout.Sider
-        breakpoint="md"
-        collapsedWidth={60}
+        collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        style={{ display: "var(--sider-display, block)" }}
+        collapsedWidth={0}
+        trigger={null}
+        width={200}
         className="desktop-sider"
       >
         <div
@@ -73,10 +76,10 @@ export default function AppLayout() {
             justifyContent: "center",
             color: "#fff",
             fontWeight: 700,
-            fontSize: collapsed ? 16 : 20,
+            fontSize: 20,
           }}
         >
-          {collapsed ? "P" : "PISA"}
+          PISA
         </div>
         {siderMenu}
       </Layout.Sider>
@@ -108,15 +111,24 @@ export default function AppLayout() {
       </Drawer>
 
       <Layout>
-        {/* Mobile header with hamburger */}
-        <div className="mobile-header">
+        <div className="top-header">
+          {/* Desktop: fold/unfold toggle */}
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            className="desktop-toggle"
+            style={{ fontSize: 18, padding: "12px 16px" }}
+          />
+          {/* Mobile: hamburger */}
           <Button
             type="text"
             icon={<MenuOutlined />}
             onClick={() => setDrawerOpen(true)}
+            className="mobile-toggle"
             style={{ fontSize: 18, padding: "12px 16px" }}
           />
-          <span style={{ fontWeight: 700, fontSize: 18 }}>PISA</span>
+          {collapsed && <span className="desktop-toggle" style={{ fontWeight: 700, fontSize: 18 }}>PISA</span>}
         </div>
         <Content style={{ padding: "16px", overflow: "auto" }}>
           <Outlet />
@@ -124,26 +136,20 @@ export default function AppLayout() {
       </Layout>
 
       <style>{`
-        .mobile-header {
-          display: none;
+        .top-header {
+          display: flex;
           align-items: center;
-          gap: 8px;
           background: #fff;
           border-bottom: 1px solid #f0f0f0;
         }
+        .mobile-toggle { display: none; }
         @media (max-width: 767px) {
-          .desktop-sider {
-            display: none !important;
-          }
-          .mobile-header {
-            display: flex;
-          }
+          .desktop-sider { display: none !important; }
+          .desktop-toggle { display: none !important; }
+          .mobile-toggle { display: inline-flex !important; }
         }
         @media (min-width: 768px) {
-          .mobile-drawer .ant-drawer-mask,
-          .mobile-drawer .ant-drawer-content-wrapper {
-            display: none;
-          }
+          .mobile-toggle { display: none !important; }
         }
       `}</style>
     </Layout>
