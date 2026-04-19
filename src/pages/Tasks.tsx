@@ -138,6 +138,7 @@ export default function Tasks() {
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -224,6 +225,39 @@ export default function Tasks() {
     } catch (e) {
       message.error(String(e));
     }
+  };
+
+  const handleBulkRun = async () => {
+    const ids = selectedRowKeys as number[];
+    let ok = 0;
+    for (const id of ids) {
+      try { await api.updateTask(id, { task_status: "pending" }); ok++; } catch {}
+    }
+    message.success(`Queued ${ok}/${ids.length} tasks`);
+    setSelectedRowKeys([]);
+    load();
+  };
+
+  const handleBulkStop = async () => {
+    const ids = selectedRowKeys as number[];
+    let ok = 0;
+    for (const id of ids) {
+      try { await api.updateTask(id, { task_status: "created" }); ok++; } catch {}
+    }
+    message.success(`Stopped ${ok}/${ids.length} tasks`);
+    setSelectedRowKeys([]);
+    load();
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = selectedRowKeys as number[];
+    let ok = 0;
+    for (const id of ids) {
+      try { await api.deleteTask(id); ok++; } catch {}
+    }
+    message.success(`Deleted ${ok}/${ids.length} tasks`);
+    setSelectedRowKeys([]);
+    load();
   };
 
   const handleCreate = async (values: {
@@ -442,6 +476,21 @@ export default function Tasks() {
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
         <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto-refresh</Checkbox>
       </Space>
+      {selectedRowKeys.length > 0 && (
+        <Space style={{ marginBottom: 8 }}>
+          <Typography.Text>{selectedRowKeys.length} selected</Typography.Text>
+          <Popconfirm title={`Run ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkRun}>
+            <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run Selected</Button>
+          </Popconfirm>
+          <Popconfirm title={`Stop ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkStop}>
+            <Button size="small" icon={<StopOutlined />}>Stop Selected</Button>
+          </Popconfirm>
+          <Popconfirm title={`Delete ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkDelete}>
+            <Button size="small" danger icon={<DeleteOutlined />}>Delete Selected</Button>
+          </Popconfirm>
+          <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
+        </Space>
+      )}
       <ResizableTable
         dataSource={tasks}
         columns={columns}
@@ -453,6 +502,10 @@ export default function Tasks() {
           showSizeChanger: true,
           showTotal: (total) => `${total} tasks`,
           onChange: (page, size) => { setCurrentPage(page); setPageSize(size); },
+        }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
         }}
         expandable={{
           expandedRowRender: (record: TaskResponse) => (
