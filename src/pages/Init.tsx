@@ -8,7 +8,7 @@ const SEED_AVS: CreateAvRequest[] = [
   {
     name: "autoware",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/autoware.sif",
+      apptainer: "/opt/pisa/sif/autoware.sif",
       docker: "tonychi/autoware-wrapper:latest",
     },
     config_path: "config/av/autoware.yaml",
@@ -19,7 +19,7 @@ const SEED_AVS: CreateAvRequest[] = [
   {
     name: "carla-agent",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/carla-agent.sif",
+      apptainer: "/opt/pisa/sif/carla-agent.sif",
       docker: "tonychi/carla-agent-wrapper:latest",
     },
     config_path: "config/av/carla-agent.yaml",
@@ -33,7 +33,7 @@ const SEED_SIMULATORS: CreateSimulatorRequest[] = [
   {
     name: "esmini",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/esmini.sif",
+      apptainer: "/opt/pisa/sif/esmini.sif",
       docker: "tonychi/esmini-wrapper:latest",
     },
     config_path: "config/sim/esmini.yaml",
@@ -44,7 +44,7 @@ const SEED_SIMULATORS: CreateSimulatorRequest[] = [
   {
     name: "carla",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/carla.sif",
+      apptainer: "/opt/pisa/sif/carla.sif",
       docker: "tonychi/carla-wrapper:latest",
     },
     config_path: "config/sim/carla.yaml",
