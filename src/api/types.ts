@@ -60,6 +60,7 @@ export interface TaskResponse {
   task_status: TaskStatus;
   created_at: string;
   retry_count: number;
+  task_run?: { started_at: string | null }[];
 }
 
 export interface TaskRunResponse {

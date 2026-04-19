@@ -329,6 +329,20 @@ export default function Tasks() {
       render: (v: string) => new Date(v).toLocaleString(),
       sorter: (a: TaskResponse, b: TaskResponse) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    },
+    {
+      title: "Last Run",
+      key: "last_run",
+      width: 170,
+      render: (_: unknown, record: TaskResponse) => {
+        const lastRun = record.task_run?.[0]?.started_at;
+        return lastRun ? new Date(lastRun).toLocaleString() : "-";
+      },
+      sorter: (a: TaskResponse, b: TaskResponse) => {
+        const aTime = a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0;
+        const bTime = b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0;
+        return aTime - bTime;
+      },
       defaultSortOrder: "descend" as const,
     },
     {
