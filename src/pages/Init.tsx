@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Button, Typography, Space, Alert, List, Tag, Divider } from "antd";
+import { Card, Button, Typography, Space, Alert, List, Tag, Row, Col } from "antd";
 import { ThunderboltOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, MapResponse, SamplerResponse } from "../api/types";
@@ -132,16 +132,25 @@ export default function Init() {
         Existing entries (matched by name) will be skipped.
       </Typography.Paragraph>
 
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Card title="Seed Data Preview" size="small">
-          <Typography.Text strong>AVs:</Typography.Text> {SEED_AVS.map((a) => a.name).join(", ")}
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text strong>Simulators:</Typography.Text> {SEED_SIMULATORS.map((s) => s.name).join(", ")}
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text strong>Maps:</Typography.Text> {SEED_MAPS.map((m) => m.name).join(", ")}
-          <Divider style={{ margin: "8px 0" }} />
-          <Typography.Text strong>Samplers:</Typography.Text> {SEED_SAMPLERS.map((s) => s.name).join(", ")}
-        </Card>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Row gutter={[12, 12]}>
+          {[
+            { label: "AVs", items: SEED_AVS, color: "blue" },
+            { label: "Simulators", items: SEED_SIMULATORS, color: "cyan" },
+            { label: "Maps", items: SEED_MAPS, color: "green" },
+            { label: "Samplers", items: SEED_SAMPLERS, color: "purple" },
+          ].map(({ label, items, color }) => (
+            <Col xs={12} sm={6} key={label}>
+              <Card size="small" title={label}>
+                <Space wrap>
+                  {items.map((item) => (
+                    <Tag color={color} key={item.name}>{item.name}</Tag>
+                  ))}
+                </Space>
+              </Card>
+            </Col>
+          ))}
+        </Row>
 
         <Button
           type="primary"
