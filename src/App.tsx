@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, theme } from "antd";
+import { ThemeProvider, useTheme } from "./components/ThemeContext";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import Tasks from "./pages/Tasks";
@@ -10,9 +11,14 @@ import Executors from "./pages/Executors";
 import Init from "./pages/Init";
 import Upload from "./pages/Upload";
 
-export default function App() {
+function AppInner() {
+  const { mode } = useTheme();
   return (
-    <ConfigProvider>
+    <ConfigProvider
+      theme={{
+        algorithm: mode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
+      }}
+    >
       <BrowserRouter>
         <Routes>
           <Route element={<AppLayout />}>
@@ -28,5 +34,13 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ConfigProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
   );
 }

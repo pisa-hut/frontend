@@ -12,7 +12,10 @@ import {
   MenuOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from "@ant-design/icons";
+import { useTheme } from "./ThemeContext";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
 const { Content } = Layout;
@@ -33,6 +36,7 @@ export default function AppLayout() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const { mode, toggle: toggleTheme } = useTheme();
 
   const selectedKey =
     menuItems
@@ -56,7 +60,7 @@ export default function AppLayout() {
   );
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout style={{ minHeight: "100vh", background: mode === "dark" ? "#141414" : "#f0f2f5" }}>
       {/* Desktop sidebar */}
       <Layout.Sider
         collapsible
@@ -128,8 +132,15 @@ export default function AppLayout() {
             className="mobile-toggle"
             style={{ fontSize: 18, padding: "12px 16px" }}
           />
+          <div style={{ flex: 1 }} />
+          <Button
+            type="text"
+            icon={mode === "dark" ? <SunOutlined /> : <MoonOutlined />}
+            onClick={toggleTheme}
+            style={{ fontSize: 18, padding: "12px 16px" }}
+          />
         </div>
-        <Content style={{ padding: "16px", overflow: "auto" }}>
+        <Content style={{ padding: "16px", overflow: "auto", background: mode === "dark" ? "#141414" : "#f5f5f5" }}>
           <Outlet />
         </Content>
       </Layout>
@@ -138,8 +149,8 @@ export default function AppLayout() {
         .top-header {
           display: flex;
           align-items: center;
-          background: #fff;
-          border-bottom: 1px solid #f0f0f0;
+          background: ${mode === "dark" ? "#1f1f1f" : "#fff"};
+          border-bottom: 1px solid ${mode === "dark" ? "#303030" : "#f0f0f0"};
         }
         .mobile-toggle { display: none; }
         @media (max-width: 767px) {
