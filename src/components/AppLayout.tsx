@@ -62,7 +62,7 @@ export default function AppLayout() {
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        collapsedWidth={0}
+        collapsedWidth={60}
         trigger={null}
         width={200}
         className="desktop-sider"
@@ -76,10 +76,10 @@ export default function AppLayout() {
             justifyContent: "center",
             color: "#fff",
             fontWeight: 700,
-            fontSize: 20,
+            fontSize: collapsed ? 14 : 20,
           }}
         >
-          PISA
+          {collapsed ? "P" : "PISA"}
         </div>
         {siderMenu}
       </Layout.Sider>
@@ -128,7 +128,6 @@ export default function AppLayout() {
             className="mobile-toggle"
             style={{ fontSize: 18, padding: "12px 16px" }}
           />
-          {collapsed && <span className="desktop-toggle" style={{ fontWeight: 700, fontSize: 18 }}>PISA</span>}
         </div>
         <Content style={{ padding: "16px", overflow: "auto" }}>
           <Outlet />
