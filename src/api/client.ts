@@ -129,7 +129,7 @@ export const api = {
 
   // Task Runs
   listTaskRuns: (taskId: number) =>
-    pgList<TaskRunResponse>(`task_run?task_id=eq.${taskId}&order=attempt.desc`),
+    pgList<TaskRunResponse>(`task_run?task_id=eq.${taskId}&order=attempt.desc&limit=5`),
 
   // Executors
   listExecutors: () => pgList<ExecutorResponse>("executor"),
