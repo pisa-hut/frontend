@@ -110,6 +110,7 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
+  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -386,6 +387,8 @@ export default function Tasks() {
           expandedRowRender: (record: TaskResponse) => (
             <TaskRunsPanel taskId={record.id} />
           ),
+          expandedRowKeys: expandedRows,
+          onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
         }}
       />
 
