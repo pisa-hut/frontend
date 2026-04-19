@@ -7,6 +7,7 @@ import Scenarios from "./pages/Scenarios";
 import Plans from "./pages/Plans";
 import Resources from "./pages/Resources";
 import Executors from "./pages/Executors";
+import Init from "./pages/Init";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="/plans" element={<Plans />} />
             <Route path="/resources" element={<Resources />} />
             <Route path="/executors" element={<Executors />} />
+            <Route path="/init" element={<Init />} />
           </Route>
         </Routes>
       </BrowserRouter>
