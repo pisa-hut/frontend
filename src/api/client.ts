@@ -1,71 +1,132 @@
 import type {
   AvResponse,
-  CreateAvRequest,
   SimulatorResponse,
-  CreateSimulatorRequest,
   SamplerResponse,
-  CreateSamplerRequest,
   MapResponse,
-  CreateMapRequest,
   ScenarioResponse,
-  CreateScenarioRequest,
   PlanResponse,
-  CreatePlanRequest,
   TaskResponse,
-  CreateTaskRequest,
   ExecutorResponse,
 } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/manager";
+const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
+const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+// PostgREST helpers
+
+async function pgList<T>(table: string): Promise<T[]> {
+  const res = await fetch(`${POSTGREST_URL}/${table}`, {
+    headers: { Accept: "application/json" },
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status}: ${text}`);
-  }
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function pgCreate<T>(table: string, data: Partial<T>): Promise<T> {
+  const res = await fetch(`${POSTGREST_URL}/${table}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  const rows = await res.json();
+  return rows[0];
+}
+
+async function pgUpdate<T>(table: string, id: number, data: Partial<T>): Promise<T> {
+  const res = await fetch(`${POSTGREST_URL}/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  const rows = await res.json();
+  return rows[0];
+}
+
+async function pgDelete(table: string, id: number): Promise<void> {
+  const res = await fetch(`${POSTGREST_URL}/${table}?id=eq.${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+// Manager API helpers (business logic only)
+
+async function managerPost<T>(path: string, data?: unknown): Promise<T> {
+  const res = await fetch(`${MANAGER_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
 }
 
 export const api = {
+  // --- CRUD via PostgREST ---
+
   // AVs
-  listAvs: () => request<AvResponse[]>("/av"),
-  createAv: (data: CreateAvRequest) =>
-    request<AvResponse>("/av", { method: "POST", body: JSON.stringify(data) }),
+  listAvs: () => pgList<AvResponse>("av"),
+  createAv: (data: Partial<AvResponse>) => pgCreate<AvResponse>("av", data),
+  updateAv: (id: number, data: Partial<AvResponse>) => pgUpdate<AvResponse>("av", id, data),
+  deleteAv: (id: number) => pgDelete("av", id),
 
   // Simulators
-  listSimulators: () => request<SimulatorResponse[]>("/simulator"),
-  createSimulator: (data: CreateSimulatorRequest) =>
-    request<SimulatorResponse>("/simulator", { method: "POST", body: JSON.stringify(data) }),
+  listSimulators: () => pgList<SimulatorResponse>("simulator"),
+  createSimulator: (data: Partial<SimulatorResponse>) => pgCreate<SimulatorResponse>("simulator", data),
+  updateSimulator: (id: number, data: Partial<SimulatorResponse>) => pgUpdate<SimulatorResponse>("simulator", id, data),
+  deleteSimulator: (id: number) => pgDelete("simulator", id),
 
   // Samplers
-  listSamplers: () => request<SamplerResponse[]>("/sampler"),
-  createSampler: (data: CreateSamplerRequest) =>
-    request<SamplerResponse>("/sampler", { method: "POST", body: JSON.stringify(data) }),
+  listSamplers: () => pgList<SamplerResponse>("sampler"),
+  createSampler: (data: Partial<SamplerResponse>) => pgCreate<SamplerResponse>("sampler", data),
+  updateSampler: (id: number, data: Partial<SamplerResponse>) => pgUpdate<SamplerResponse>("sampler", id, data),
+  deleteSampler: (id: number) => pgDelete("sampler", id),
 
   // Maps
-  listMaps: () => request<MapResponse[]>("/map"),
-  createMap: (data: CreateMapRequest) =>
-    request<MapResponse>("/map", { method: "POST", body: JSON.stringify(data) }),
+  listMaps: () => pgList<MapResponse>("map"),
+  createMap: (data: Partial<MapResponse>) => pgCreate<MapResponse>("map", data),
+  updateMap: (id: number, data: Partial<MapResponse>) => pgUpdate<MapResponse>("map", id, data),
+  deleteMap: (id: number) => pgDelete("map", id),
 
   // Scenarios
-  listScenarios: () => request<ScenarioResponse[]>("/scenario"),
-  createScenario: (data: CreateScenarioRequest) =>
-    request<ScenarioResponse>("/scenario", { method: "POST", body: JSON.stringify(data) }),
+  listScenarios: () => pgList<ScenarioResponse>("scenario"),
+  createScenario: (data: Partial<ScenarioResponse>) => pgCreate<ScenarioResponse>("scenario", data),
+  updateScenario: (id: number, data: Partial<ScenarioResponse>) => pgUpdate<ScenarioResponse>("scenario", id, data),
+  deleteScenario: (id: number) => pgDelete("scenario", id),
 
   // Plans
-  listPlans: () => request<PlanResponse[]>("/plan"),
-  createPlan: (data: CreatePlanRequest) =>
-    request<PlanResponse>("/plan", { method: "POST", body: JSON.stringify(data) }),
+  listPlans: () => pgList<PlanResponse>("plan"),
+  createPlan: (data: Partial<PlanResponse>) => pgCreate<PlanResponse>("plan", data),
+  updatePlan: (id: number, data: Partial<PlanResponse>) => pgUpdate<PlanResponse>("plan", id, data),
+  deletePlan: (id: number) => pgDelete("plan", id),
 
   // Tasks
-  listTasks: () => request<TaskResponse[]>("/task"),
-  createTask: (data: CreateTaskRequest) =>
-    request<TaskResponse>("/task", { method: "POST", body: JSON.stringify(data) }),
+  listTasks: () => pgList<TaskResponse>("task"),
+  createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
+  updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
+  deleteTask: (id: number) => pgDelete("task", id),
 
   // Executors
-  listExecutors: () => request<ExecutorResponse[]>("/executor"),
+  listExecutors: () => pgList<ExecutorResponse>("executor"),
+
+  // --- Business logic via Manager API ---
+
+  taskClaim: (data: { executor_id: number; [k: string]: unknown }) =>
+    managerPost("/task/claim", data),
+  taskFailed: (data: { task_id: number; reason?: string }) =>
+    managerPost("/task/failed", data),
+  taskInvalid: (data: { task_id: number; reason?: string }) =>
+    managerPost("/task/invalid", data),
+  taskSucceeded: (data: { task_id: number }) =>
+    managerPost("/task/succeeded", data),
 };

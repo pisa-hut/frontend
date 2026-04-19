@@ -18,9 +18,9 @@ export default function Executors() {
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60 },
     { title: "Hostname", dataIndex: "hostname", key: "hostname", width: 200, ellipsis: true },
-    { title: "SLURM Job ID", dataIndex: "job_id", key: "job_id", width: 120 },
-    { title: "Array ID", dataIndex: "array_id", key: "array_id", width: 100 },
-    { title: "Node List", dataIndex: "node_list", key: "node_list", width: 200, ellipsis: true },
+    { title: "SLURM Job ID", dataIndex: "slurm_job_id", key: "slurm_job_id", width: 120 },
+    { title: "Array ID", dataIndex: "slurm_array_id", key: "slurm_array_id", width: 100 },
+    { title: "Node List", dataIndex: "slurm_node_list", key: "slurm_node_list", width: 200, ellipsis: true },
   ];
 
   return (
