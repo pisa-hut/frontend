@@ -53,7 +53,10 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
+    const load = () => api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
   }, [taskId]);
 
   if (loading) return <Typography.Text type="secondary">Loading runs...</Typography.Text>;
