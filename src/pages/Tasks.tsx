@@ -134,6 +134,8 @@ export default function Tasks() {
     errors: number;
   } | null>(null);
 
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
   const load = () => {
     setLoading(true);
     api.listTasks().then(setTasks).finally(() => setLoading(false));
@@ -141,9 +143,10 @@ export default function Tasks() {
 
   useEffect(() => {
     load();
+    if (!autoRefresh) return;
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [autoRefresh]);
 
   const fetchResources = () =>
     Promise.all([
@@ -414,9 +417,8 @@ export default function Tasks() {
         <Button type="primary" icon={<ThunderboltOutlined />} onClick={openBulkModal}>
           Bulk Create
         </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
-        </Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto-refresh</Checkbox>
       </Space>
       <ResizableTable
         dataSource={tasks}
