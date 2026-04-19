@@ -115,7 +115,6 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
 export default function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -425,7 +424,7 @@ export default function Tasks() {
         columns={columns}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 20, current: currentPage, onChange: (page) => setCurrentPage(page) }}
+        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} tasks` }}
         expandable={{
           expandedRowRender: (record: TaskResponse) => (
             <TaskRunsPanel taskId={record.id} />
