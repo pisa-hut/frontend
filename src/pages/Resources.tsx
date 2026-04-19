@@ -13,6 +13,7 @@ import {
 } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import ResizableTable from "../components/ResizableTable";
+import { getColumnSearchProps } from "../components/ColumnSearch";
 import { api } from "../api/client";
 import type {
   AvResponse,
@@ -65,7 +66,7 @@ function AvsTab() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
-    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true, ...getColumnSearchProps<{ name: string }>("name") },
     { title: "Image Path", dataIndex: "image_path", key: "image_path", width: 200, ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
     { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 180, ellipsis: true },
     { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
@@ -134,7 +135,7 @@ function SimulatorsTab() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
-    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true, ...getColumnSearchProps<{ name: string }>("name") },
     { title: "Image Path", dataIndex: "image_path", key: "image_path", width: 200, ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
     { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 180, ellipsis: true },
     { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
@@ -198,7 +199,7 @@ function SamplersTab() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
-    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true, ...getColumnSearchProps<{ name: string }>("name") },
     { title: "Module Path", dataIndex: "module_path", key: "module_path", width: 300, ellipsis: true },
     { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 200, render: (v: string | null) => v ?? "-" },
     { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: SamplerResponse) => (
@@ -254,7 +255,7 @@ function MapsTab() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
-    { title: "Name", dataIndex: "name", key: "name", width: 150, ellipsis: true },
+    { title: "Name", dataIndex: "name", key: "name", width: 150, ellipsis: true, ...getColumnSearchProps<{ name: string }>("name") },
     { title: "XODR Path", dataIndex: "xodr_path", key: "xodr_path", width: 200, ellipsis: true, render: (v: string | null) => v ?? "-" },
     { title: "OSM Path", dataIndex: "osm_path", key: "osm_path", width: 200, ellipsis: true, render: (v: string | null) => v ?? "-" },
     { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: MapResponse) => (

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Modal, Form, Input, Select, message, Typography, Space, Popconfirm } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import ResizableTable from "../components/ResizableTable";
+import { getColumnSearchProps } from "../components/ColumnSearch";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
 
@@ -86,10 +87,14 @@ export default function Scenarios() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60 },
-    { title: "Title", dataIndex: "title", key: "title", width: 250, ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 120 },
-    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true },
+    { title: "ID", dataIndex: "id", key: "id", width: 60, ...getColumnSearchProps<ScenarioResponse>("id") },
+    { title: "Title", dataIndex: "title", key: "title", width: 250, ellipsis: true, render: (v: string | null) => v ?? "-",
+      ...getColumnSearchProps<ScenarioResponse>("title") },
+    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 120,
+      filters: [{ text: "open_scenario1", value: "open_scenario1" }, { text: "open_scenario2", value: "open_scenario2" }, { text: "carla_lb_route", value: "carla_lb_route" }],
+      onFilter: (value: unknown, record: ScenarioResponse) => record.scenario_format === value },
+    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
+      ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
     {
       title: "Goal Config",
       dataIndex: "goal_config",

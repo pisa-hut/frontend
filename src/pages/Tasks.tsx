@@ -20,6 +20,7 @@ import {
 import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Popconfirm } from "antd";
 import ResizableTable from "../components/ResizableTable";
+import { getColumnSearchProps } from "../components/ColumnSearch";
 import { api } from "../api/client";
 import type {
   TaskResponse,
@@ -306,11 +307,16 @@ export default function Tasks() {
   const samplerName = (id: number) => samplers.find((s) => s.id === id)?.name ?? `#${id}`;
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true, render: (id: number) => planName(id) },
-    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true, render: (id: number) => avName(id) },
-    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true, render: (id: number) => simName(id) },
-    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true, render: (id: number) => samplerName(id) },
+    { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id,
+      ...getColumnSearchProps<TaskResponse>("id") },
+    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true, render: (id: number) => planName(id),
+      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planName(r.plan_id)) },
+    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true, render: (id: number) => avName(id),
+      ...getColumnSearchProps<TaskResponse>("av_id", (r) => avName(r.av_id)) },
+    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true, render: (id: number) => simName(id),
+      ...getColumnSearchProps<TaskResponse>("simulator_id", (r) => simName(r.simulator_id)) },
+    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true, render: (id: number) => samplerName(id),
+      ...getColumnSearchProps<TaskResponse>("sampler_id", (r) => samplerName(r.sampler_id)) },
     {
       title: "Status",
       dataIndex: "task_status",

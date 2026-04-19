@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Modal, Form, Select, Input, message, Typography, Space, Popconfirm } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import ResizableTable from "../components/ResizableTable";
+import { getColumnSearchProps } from "../components/ColumnSearch";
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
 
@@ -53,10 +54,10 @@ export default function Plans() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60 },
-    { title: "Name", dataIndex: "name", key: "name", width: 300, ellipsis: true },
-    { title: "Map ID", dataIndex: "map_id", key: "map_id", width: 80 },
-    { title: "Scenario ID", dataIndex: "scenario_id", key: "scenario_id", width: 100 },
+    { title: "ID", dataIndex: "id", key: "id", width: 60, ...getColumnSearchProps<PlanResponse>("id") },
+    { title: "Name", dataIndex: "name", key: "name", width: 300, ellipsis: true, ...getColumnSearchProps<PlanResponse>("name") },
+    { title: "Map ID", dataIndex: "map_id", key: "map_id", width: 80, ...getColumnSearchProps<PlanResponse>("map_id") },
+    { title: "Scenario ID", dataIndex: "scenario_id", key: "scenario_id", width: 100, ...getColumnSearchProps<PlanResponse>("scenario_id") },
     { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: PlanResponse) => (
       <Space>
         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
