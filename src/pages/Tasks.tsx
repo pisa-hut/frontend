@@ -515,12 +515,31 @@ export default function Tasks() {
         </Space>
         );
       })()}
+      {pinnedIds.size > 0 && (
+        <ResizableTable
+          dataSource={tasks.filter((t) => pinnedIds.has(t.id))}
+          columns={columns}
+          rowKey="id"
+          pagination={false}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
+          expandable={{
+            expandedRowRender: (record: TaskResponse) => (
+              <TaskRunsPanel taskId={record.id} autoRefresh={autoRefresh} />
+            ),
+            expandedRowKeys: expandedRows,
+            expandIcon: () => null,
+            columnWidth: 0,
+            expandRowByClick: true,
+            onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+          }}
+          style={{ marginBottom: 8 }}
+        />
+      )}
       <ResizableTable
-        dataSource={[...tasks].sort((a, b) => {
-          const ap = pinnedIds.has(a.id) ? 0 : 1;
-          const bp = pinnedIds.has(b.id) ? 0 : 1;
-          return ap - bp;
-        })}
+        dataSource={tasks.filter((t) => !pinnedIds.has(t.id))}
         columns={columns}
         rowKey="id"
         loading={loading}
