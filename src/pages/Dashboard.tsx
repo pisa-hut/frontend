@@ -28,7 +28,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listTasks().then(setTasks).finally(() => setLoading(false));
+    const load = () => api.listTasks().then(setTasks).finally(() => setLoading(false));
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) return <Spin size="large" />;

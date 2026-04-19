@@ -133,7 +133,11 @@ export default function Tasks() {
     api.listTasks().then(setTasks).finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchResources = () =>
     Promise.all([
