@@ -12,26 +12,8 @@ export interface AvResponse {
   ros_runtime: boolean;
 }
 
-export interface CreateAvRequest {
-  name: string;
-  image_path: Record<string, unknown>;
-  config_path: string;
-  nv_runtime: boolean;
-  carla_runtime?: boolean;
-  ros_runtime?: boolean;
-}
-
 export interface SimulatorResponse {
   id: number;
-  name: string;
-  image_path: Record<string, unknown>;
-  config_path: string;
-  nv_runtime: boolean;
-  carla_runtime: boolean;
-  ros_runtime: boolean;
-}
-
-export interface CreateSimulatorRequest {
   name: string;
   image_path: Record<string, unknown>;
   config_path: string;
@@ -47,12 +29,6 @@ export interface SamplerResponse {
   module_path: string;
 }
 
-export interface CreateSamplerRequest {
-  name: string;
-  config_path?: string | null;
-  module_path: string;
-}
-
 export interface MapResponse {
   id: number;
   name: string;
@@ -60,35 +36,16 @@ export interface MapResponse {
   osm_path: string | null;
 }
 
-export interface CreateMapRequest {
-  name: string;
-  xodr_path?: string | null;
-  osm_path?: string | null;
-}
-
 export interface ScenarioResponse {
   id: number;
-  format: ScenarioFormat;
+  scenario_format: ScenarioFormat;
   title: string | null;
-  scenario_path: string;
-  goal_config: unknown;
-}
-
-export interface CreateScenarioRequest {
-  format: ScenarioFormat;
-  title?: string | null;
   scenario_path: string;
   goal_config: unknown;
 }
 
 export interface PlanResponse {
   id: number;
-  name: string;
-  map_id: number;
-  scenario_id: number;
-}
-
-export interface CreatePlanRequest {
   name: string;
   map_id: number;
   scenario_id: number;
@@ -105,17 +62,10 @@ export interface TaskResponse {
   retry_count: number;
 }
 
-export interface CreateTaskRequest {
-  plan_id: number;
-  av_id: number;
-  sampler_id: number;
-  simulator_id: number;
-}
-
 export interface ExecutorResponse {
   id: number;
-  job_id: number;
-  array_id: number;
-  node_list: string;
+  slurm_job_id: number;
+  slurm_array_id: number;
+  slurm_node_list: string;
   hostname: string;
 }

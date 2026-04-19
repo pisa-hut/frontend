@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Card, Button, Typography, Space, Alert, List, Tag, Divider } from "antd";
 import { ThunderboltOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
-import type { CreateAvRequest, CreateSimulatorRequest, CreateMapRequest, CreateSamplerRequest } from "../api/types";
+import type { AvResponse, SimulatorResponse, MapResponse, SamplerResponse } from "../api/types";
 
-const SEED_AVS: CreateAvRequest[] = [
+const SEED_AVS: Omit<AvResponse, "id">[] = [
   {
     name: "autoware",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/autoware.sif",
+      apptainer: "/opt/pisa/sif/autoware.sif",
       docker: "tonychi/autoware-wrapper:latest",
     },
     config_path: "config/av/autoware.yaml",
@@ -19,7 +19,7 @@ const SEED_AVS: CreateAvRequest[] = [
   {
     name: "carla-agent",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/carla-agent.sif",
+      apptainer: "/opt/pisa/sif/carla-agent.sif",
       docker: "tonychi/carla-agent-wrapper:latest",
     },
     config_path: "config/av/carla-agent.yaml",
@@ -29,11 +29,11 @@ const SEED_AVS: CreateAvRequest[] = [
   },
 ];
 
-const SEED_SIMULATORS: CreateSimulatorRequest[] = [
+const SEED_SIMULATORS: Omit<SimulatorResponse, "id">[] = [
   {
     name: "esmini",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/esmini.sif",
+      apptainer: "/opt/pisa/sif/esmini.sif",
       docker: "tonychi/esmini-wrapper:latest",
     },
     config_path: "config/sim/esmini.yaml",
@@ -44,7 +44,7 @@ const SEED_SIMULATORS: CreateSimulatorRequest[] = [
   {
     name: "carla",
     image_path: {
-      apptainer: "/opt/sbsvf/sif/carla.sif",
+      apptainer: "/opt/pisa/sif/carla.sif",
       docker: "tonychi/carla-wrapper:latest",
     },
     config_path: "config/sim/carla.yaml",
@@ -54,14 +54,14 @@ const SEED_SIMULATORS: CreateSimulatorRequest[] = [
   },
 ];
 
-const SEED_MAPS: CreateMapRequest[] = [
+const SEED_MAPS: Omit<MapResponse, "id">[] = [
   { name: "tyms", xodr_path: "map/tyms/xodr/", osm_path: "map/tyms/osm/" },
   { name: "frankenburg", xodr_path: "map/frankenburg/xodr/", osm_path: "map/frankenburg/osm/" },
   { name: "Town10HD_Opt", xodr_path: "map/Town10HD_Opt/xodr/", osm_path: "map/Town10HD_Opt/osm/" },
 ];
 
-const SEED_SAMPLERS: CreateSamplerRequest[] = [
-  { name: "grid", module_path: "runner.sampler.grid_search_sampler:GridSearchSampler" },
+const SEED_SAMPLERS: Omit<SamplerResponse, "id">[] = [
+  { name: "grid", module_path: "runner.sampler.grid_search_sampler:GridSearchSampler", config_path: null },
 ];
 
 interface SeedResult {
@@ -80,10 +80,10 @@ export default function Init() {
     setResults([]);
     const log: SeedResult[] = [];
 
-    const seedResource = async <T extends { name: string }, R>(
+    const seedResource = async <T extends { name: string }, R extends { name: string }>(
       resourceName: string,
       items: T[],
-      listFn: () => Promise<(R & { name: string })[]>,
+      listFn: () => Promise<R[]>,
       createFn: (item: T) => Promise<R>,
     ) => {
       try {
