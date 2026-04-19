@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Typography, Space } from "antd";
+import { Button, Typography, Space } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { ExecutorResponse } from "../api/types";
+import ResizableTable from "../components/ResizableTable";
 
 export default function Executors() {
   const [data, setData] = useState<ExecutorResponse[]>([]);
@@ -15,11 +16,11 @@ export default function Executors() {
   useEffect(load, []);
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Hostname", dataIndex: "hostname", key: "hostname" },
-    { title: "SLURM Job ID", dataIndex: "job_id", key: "job_id" },
-    { title: "Array ID", dataIndex: "array_id", key: "array_id" },
-    { title: "Node List", dataIndex: "node_list", key: "node_list" },
+    { title: "ID", dataIndex: "id", key: "id", width: 60 },
+    { title: "Hostname", dataIndex: "hostname", key: "hostname", width: 200, ellipsis: true },
+    { title: "SLURM Job ID", dataIndex: "job_id", key: "job_id", width: 120 },
+    { title: "Array ID", dataIndex: "array_id", key: "array_id", width: 100 },
+    { title: "Node List", dataIndex: "node_list", key: "node_list", width: 200, ellipsis: true },
   ];
 
   return (
@@ -28,7 +29,7 @@ export default function Executors() {
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
     </>
   );
 }

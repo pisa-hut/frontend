@@ -1,8 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { Resizable } from "react-resizable";
-import "react-resizable/css/styles.css";
+import { useEffect, useState } from "react";
 import {
-  Table,
   Tag,
   Button,
   Modal,
@@ -21,6 +18,7 @@ import {
   Checkbox,
 } from "antd";
 import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import ResizableTable from "../components/ResizableTable";
 import { api } from "../api/client";
 import type {
   TaskResponse,
@@ -39,35 +37,6 @@ const statusColors: Record<TaskStatus, string> = {
   failed: "error",
   invalid: "default",
 };
-
-function ResizableTitle(
-  props: React.HTMLAttributes<HTMLTableCellElement> & {
-    onResize?: (e: React.SyntheticEvent, data: { size: { width: number } }) => void;
-    width?: number;
-  }
-) {
-  const { onResize, width, ...restProps } = props;
-  if (!width || !onResize) {
-    return <th {...restProps} />;
-  }
-  return (
-    <Resizable
-      width={width}
-      height={0}
-      handle={
-        <span
-          className="react-resizable-handle"
-          style={{ position: "absolute", right: -5, bottom: 0, top: 0, cursor: "col-resize", width: 10 }}
-          onClick={(e) => e.stopPropagation()}
-        />
-      }
-      onResize={onResize}
-      draggableOpts={{ enableUserSelectHack: false }}
-    >
-      <th {...restProps} />
-    </Resizable>
-  );
-}
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
@@ -237,31 +206,17 @@ export default function Tasks() {
   const simName = (id: number) => simulators.find((s) => s.id === id)?.name ?? `#${id}`;
   const samplerName = (id: number) => samplers.find((s) => s.id === id)?.name ?? `#${id}`;
 
-  const [colWidths, setColWidths] = useState([60, 250, 100, 100, 80, 100, 60, 170]);
-
-  const handleResize = useCallback(
-    (index: number) =>
-      (_: unknown, { size }: { size: { width: number } }) => {
-        setColWidths((prev) => {
-          const next = [...prev];
-          next[index] = size.width;
-          return next;
-        });
-      },
-    []
-  );
-
-  const baseColumns = [
-    { title: "ID", dataIndex: "id", key: "id", width: colWidths[0], sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: colWidths[1], ellipsis: true, render: (id: number) => planName(id) },
-    { title: "AV", dataIndex: "av_id", key: "av_id", width: colWidths[2], ellipsis: true, render: (id: number) => avName(id) },
-    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: colWidths[3], ellipsis: true, render: (id: number) => simName(id) },
-    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: colWidths[4], ellipsis: true, render: (id: number) => samplerName(id) },
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
+    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true, render: (id: number) => planName(id) },
+    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true, render: (id: number) => avName(id) },
+    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true, render: (id: number) => simName(id) },
+    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true, render: (id: number) => samplerName(id) },
     {
       title: "Status",
       dataIndex: "task_status",
       key: "task_status",
-      width: colWidths[5],
+      width: 100,
       filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map(
         (s) => ({ text: s, value: s })
       ),
@@ -270,25 +225,17 @@ export default function Tasks() {
         <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag>
       ),
     },
-    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: colWidths[6] },
+    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60 },
     {
       title: "Created",
       dataIndex: "created_at",
       key: "created_at",
-      width: colWidths[7],
+      width: 170,
       render: (v: string) => new Date(v).toLocaleString(),
       sorter: (a: TaskResponse, b: TaskResponse) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     },
   ];
-
-  const columns = baseColumns.map((col, index) => ({
-    ...col,
-    onHeaderCell: () => ({
-      width: col.width,
-      onResize: handleResize(index),
-    }),
-  }));
 
   return (
     <>
@@ -304,19 +251,12 @@ export default function Tasks() {
           Refresh
         </Button>
       </Space>
-      <Table
+      <ResizableTable
         dataSource={tasks}
         columns={columns}
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 20 }}
-        tableLayout="fixed"
-        scroll={{ x: "max-content" }}
-        components={{
-          header: {
-            cell: ResizableTitle,
-          },
-        }}
       />
 
       {/* Single task modal */}
@@ -440,11 +380,11 @@ export default function Tasks() {
           </Row>
 
           {filteredPlans.length > 0 && (
-            <Table
+            <ResizableTable
               dataSource={filteredPlans}
               columns={[
                 { title: "ID", dataIndex: "id", key: "id", width: 60 },
-                { title: "Plan Name", dataIndex: "name", key: "name", ellipsis: true },
+                { title: "Plan Name", dataIndex: "name", key: "name", width: 300, ellipsis: true },
                 { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
                 { title: "Scenario", dataIndex: "scenario_id", key: "scenario_id", width: 80 },
               ]}

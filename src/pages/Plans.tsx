@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Modal, Form, Select, Input, message, Typography, Space } from "antd";
+import { Button, Modal, Form, Select, Input, message, Typography, Space } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import ResizableTable from "../components/ResizableTable";
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
 
@@ -43,10 +44,10 @@ export default function Plans() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Name", dataIndex: "name", key: "name" },
-    { title: "Map ID", dataIndex: "map_id", key: "map_id" },
-    { title: "Scenario ID", dataIndex: "scenario_id", key: "scenario_id" },
+    { title: "ID", dataIndex: "id", key: "id", width: 60 },
+    { title: "Name", dataIndex: "name", key: "name", width: 300, ellipsis: true },
+    { title: "Map ID", dataIndex: "map_id", key: "map_id", width: 80 },
+    { title: "Scenario ID", dataIndex: "scenario_id", key: "scenario_id", width: 100 },
   ];
 
   return (
@@ -56,7 +57,7 @@ export default function Plans() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>Create Plan</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
 
       <Modal title="Create Plan" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>

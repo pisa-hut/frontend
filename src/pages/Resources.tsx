@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Tabs,
-  Table,
   Button,
   Modal,
   Form,
@@ -12,6 +11,7 @@ import {
   Space,
 } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import ResizableTable from "../components/ResizableTable";
 import { api } from "../api/client";
 import type {
   AvResponse,
@@ -67,19 +67,13 @@ function AvsTab() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Name", dataIndex: "name", key: "name" },
-    {
-      title: "Image Path",
-      dataIndex: "image_path",
-      key: "image_path",
-      ellipsis: true,
-      render: (v: Record<string, unknown>) => JSON.stringify(v),
-    },
-    { title: "Config Path", dataIndex: "config_path", key: "config_path", ellipsis: true },
-    { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", render: (v: boolean) => v ? "Yes" : "No" },
-    { title: "CARLA", dataIndex: "carla_runtime", key: "carla_runtime", render: (v: boolean) => v ? "Yes" : "No" },
-    { title: "ROS", dataIndex: "ros_runtime", key: "ros_runtime", render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Image Path", dataIndex: "image_path", key: "image_path", width: 200, ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
+    { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 180, ellipsis: true },
+    { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "CARLA", dataIndex: "carla_runtime", key: "carla_runtime", width: 60, render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "ROS", dataIndex: "ros_runtime", key: "ros_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
   ];
 
   return (
@@ -88,7 +82,7 @@ function AvsTab() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Add AV</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table<AvResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable<AvResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
       <Modal title="Add AV" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}
           initialValues={{ nv_runtime: false, carla_runtime: false, ros_runtime: false }}>
@@ -138,13 +132,13 @@ function SimulatorsTab() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Name", dataIndex: "name", key: "name" },
-    { title: "Image Path", dataIndex: "image_path", key: "image_path", ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
-    { title: "Config Path", dataIndex: "config_path", key: "config_path", ellipsis: true },
-    { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", render: (v: boolean) => v ? "Yes" : "No" },
-    { title: "CARLA", dataIndex: "carla_runtime", key: "carla_runtime", render: (v: boolean) => v ? "Yes" : "No" },
-    { title: "ROS", dataIndex: "ros_runtime", key: "ros_runtime", render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Image Path", dataIndex: "image_path", key: "image_path", width: 200, ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
+    { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 180, ellipsis: true },
+    { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "CARLA", dataIndex: "carla_runtime", key: "carla_runtime", width: 60, render: (v: boolean) => v ? "Yes" : "No" },
+    { title: "ROS", dataIndex: "ros_runtime", key: "ros_runtime", width: 50, render: (v: boolean) => v ? "Yes" : "No" },
   ];
 
   return (
@@ -153,7 +147,7 @@ function SimulatorsTab() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Add Simulator</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table<SimulatorResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable<SimulatorResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
       <Modal title="Add Simulator" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}
           initialValues={{ nv_runtime: false, carla_runtime: false, ros_runtime: false }}>
@@ -195,10 +189,10 @@ function SamplersTab() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Name", dataIndex: "name", key: "name" },
-    { title: "Module Path", dataIndex: "module_path", key: "module_path", ellipsis: true },
-    { title: "Config Path", dataIndex: "config_path", key: "config_path", render: (v: string | null) => v ?? "-" },
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ellipsis: true },
+    { title: "Module Path", dataIndex: "module_path", key: "module_path", width: 300, ellipsis: true },
+    { title: "Config Path", dataIndex: "config_path", key: "config_path", width: 200, render: (v: string | null) => v ?? "-" },
   ];
 
   return (
@@ -207,7 +201,7 @@ function SamplersTab() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Add Sampler</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table<SamplerResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable<SamplerResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
       <Modal title="Add Sampler" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -242,10 +236,10 @@ function MapsTab() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Name", dataIndex: "name", key: "name" },
-    { title: "XODR Path", dataIndex: "xodr_path", key: "xodr_path", render: (v: string | null) => v ?? "-" },
-    { title: "OSM Path", dataIndex: "osm_path", key: "osm_path", render: (v: string | null) => v ?? "-" },
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
+    { title: "Name", dataIndex: "name", key: "name", width: 150, ellipsis: true },
+    { title: "XODR Path", dataIndex: "xodr_path", key: "xodr_path", width: 200, ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { title: "OSM Path", dataIndex: "osm_path", key: "osm_path", width: 200, ellipsis: true, render: (v: string | null) => v ?? "-" },
   ];
 
   return (
@@ -254,7 +248,7 @@ function MapsTab() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Add Map</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table<MapResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable<MapResponse> dataSource={data} columns={columns} rowKey="id" loading={loading} />
       <Modal title="Add Map" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>

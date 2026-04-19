@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Modal, Form, Input, Select, message, Typography, Space } from "antd";
+import { Button, Modal, Form, Input, Select, message, Typography, Space } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import ResizableTable from "../components/ResizableTable";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
 
@@ -50,14 +51,15 @@ export default function Scenarios() {
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
-    { title: "Title", dataIndex: "title", key: "title", render: (v: string | null) => v ?? "-" },
-    { title: "Format", dataIndex: "format", key: "format" },
-    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", ellipsis: true },
+    { title: "ID", dataIndex: "id", key: "id", width: 60 },
+    { title: "Title", dataIndex: "title", key: "title", width: 250, ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { title: "Format", dataIndex: "format", key: "format", width: 120 },
+    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true },
     {
       title: "Goal Config",
       dataIndex: "goal_config",
       key: "goal_config",
+      width: 200,
       ellipsis: true,
       render: (v: unknown) => JSON.stringify(v),
     },
@@ -72,7 +74,7 @@ export default function Scenarios() {
         </Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} />
+      <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
 
       <Modal title="Create Scenario" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
