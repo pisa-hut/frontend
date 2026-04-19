@@ -315,7 +315,7 @@ export default function Tasks() {
         <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag>
       ),
     },
-    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60 },
+    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
     {
       title: "Created",
       dataIndex: "created_at",
