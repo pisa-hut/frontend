@@ -511,6 +511,7 @@ export default function Tasks() {
           ),
           expandedRowKeys: expandedRows,
           expandIcon: () => null,
+          columnWidth: 0,
           expandRowByClick: true,
           onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
         }}
