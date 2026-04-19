@@ -510,6 +510,8 @@ export default function Tasks() {
             <TaskRunsPanel taskId={record.id} />
           ),
           expandedRowKeys: expandedRows,
+          expandIcon: () => null,
+          expandRowByClick: true,
           onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
         }}
       />
