@@ -17,7 +17,7 @@ import {
   Input,
   Checkbox,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined, StopOutlined } from "@ant-design/icons";
 import { Popconfirm } from "antd";
 import ResizableTable from "../components/ResizableTable";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -175,6 +175,16 @@ export default function Tasks() {
     try {
       await api.updateTask(taskId, { task_status: "pending" });
       message.success(`Task #${taskId} queued for execution`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
+  };
+
+  const handleStop = async (taskId: number) => {
+    try {
+      await api.updateTask(taskId, { task_status: "created" });
+      message.success(`Task #${taskId} stopped`);
       load();
     } catch (e) {
       message.error(String(e));
@@ -361,26 +371,30 @@ export default function Tasks() {
     {
       title: "Actions",
       key: "actions",
-      width: 120,
+      width: 150,
       render: (_: unknown, record: TaskResponse) => {
         const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
+        const canStop = ["pending", "running"].includes(record.task_status);
         return (
           <Space>
-            <Popconfirm
-              title="Queue this task for execution?"
-              description="Status will be set to pending"
-              onConfirm={() => handleRun(record.id)}
-              disabled={!canRun}
-            >
-              <Button
-                size="small"
-                type="primary"
-                icon={<CaretRightOutlined />}
+            {canStop ? (
+              <Popconfirm
+                title="Stop this task?"
+                description="Status will be set back to created"
+                onConfirm={() => handleStop(record.id)}
+              >
+                <Button size="small" icon={<StopOutlined />}>Stop</Button>
+              </Popconfirm>
+            ) : (
+              <Popconfirm
+                title="Queue this task for execution?"
+                description="Status will be set to pending"
+                onConfirm={() => handleRun(record.id)}
                 disabled={!canRun}
               >
-                Run
-              </Button>
-            </Popconfirm>
+                <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun}>Run</Button>
+              </Popconfirm>
+            )}
             <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Popconfirm>
