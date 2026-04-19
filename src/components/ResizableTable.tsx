@@ -1,8 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Table } from "antd";
 import type { TableProps } from "antd";
 import { Resizable } from "react-resizable";
 import "react-resizable/css/styles.css";
+
+const isTouchDevice =
+  typeof window !== "undefined" &&
+  ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 
 function ResizableTitle(
   props: React.HTMLAttributes<HTMLTableCellElement> & {
@@ -55,14 +59,22 @@ export default function ResizableTable<T extends Record<string, any>>(
     []
   );
 
-  const columns = (inputColumns ?? []).map((col, index) => ({
-    ...col,
-    width: colWidths[index],
-    onHeaderCell: () => ({
-      width: colWidths[index],
-      onResize: handleResize(index),
-    }),
-  }));
+  const columns = useMemo(
+    () =>
+      (inputColumns ?? []).map((col, index) => ({
+        ...col,
+        width: colWidths[index],
+        ...(isTouchDevice
+          ? {}
+          : {
+              onHeaderCell: () => ({
+                width: colWidths[index],
+                onResize: handleResize(index),
+              }),
+            }),
+      })),
+    [inputColumns, colWidths, handleResize]
+  );
 
   return (
     <Table<T>
@@ -71,11 +83,13 @@ export default function ResizableTable<T extends Record<string, any>>(
       tableLayout="fixed"
       scroll={{ x: "max-content" }}
       size="small"
-      components={{
-        header: {
-          cell: ResizableTitle,
-        },
-      }}
+      {...(isTouchDevice
+        ? {}
+        : {
+            components: {
+              header: { cell: ResizableTitle },
+            },
+          })}
     />
   );
 }
