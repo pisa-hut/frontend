@@ -6,6 +6,8 @@ import {
   ProjectOutlined,
   AppstoreOutlined,
   ClusterOutlined,
+  ThunderboltOutlined,
+  CloudUploadOutlined,
 } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
@@ -18,6 +20,8 @@ const menuItems = [
   { key: "/plans", icon: <ProjectOutlined />, label: "Plans" },
   { key: "/resources", icon: <AppstoreOutlined />, label: "Resources" },
   { key: "/executors", icon: <ClusterOutlined />, label: "Executors" },
+  { key: "/upload", icon: <CloudUploadOutlined />, label: "Upload" },
+  { key: "/init", icon: <ThunderboltOutlined />, label: "Init" },
 ];
 
 export default function AppLayout() {
