@@ -18,7 +18,7 @@ import {
   Input,
   Checkbox,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined, StopOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined } from "@ant-design/icons";
 import { Popconfirm } from "antd";
 import ResizableTable from "../components/ResizableTable";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -146,6 +146,7 @@ export default function Tasks() {
     return s ? [s] : undefined;
   }, []);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -429,12 +430,27 @@ export default function Tasks() {
     {
       title: "Actions",
       key: "actions",
-      width: 150,
+      width: 180,
       render: (_: unknown, record: TaskResponse) => {
         const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
         const canStop = ["pending", "running"].includes(record.task_status);
+        const isPinned = pinnedIds.has(record.id);
         return (
           <Space>
+            <Button
+              size="small"
+              type={isPinned ? "primary" : "default"}
+              icon={<PushpinOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPinnedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(record.id)) next.delete(record.id);
+                  else next.add(record.id);
+                  return next;
+                });
+              }}
+            />
             {canStop ? (
               <Popconfirm
                 title="Stop this task?"
@@ -500,7 +516,11 @@ export default function Tasks() {
         );
       })()}
       <ResizableTable
-        dataSource={tasks}
+        dataSource={[...tasks].sort((a, b) => {
+          const ap = pinnedIds.has(a.id) ? 0 : 1;
+          const bp = pinnedIds.has(b.id) ? 0 : 1;
+          return ap - bp;
+        })}
         columns={columns}
         rowKey="id"
         loading={loading}
