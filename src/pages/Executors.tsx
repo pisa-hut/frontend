@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Typography, Space, Input } from "antd";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { ExecutorResponse } from "../api/types";
 import ResizableTable from "../components/ResizableTable";
@@ -9,7 +10,8 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 export default function Executors() {
   const [data, setData] = useState<ExecutorResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
 
   const load = () => {
     setLoading(true);

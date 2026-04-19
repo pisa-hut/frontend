@@ -31,6 +31,7 @@ import type {
   SamplerResponse,
   TaskRunResponse,
   TaskRunStatus,
+  ExecutorResponse,
 } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
@@ -51,6 +52,7 @@ const runStatusColors: Record<TaskRunStatus, string> = {
 
 function TaskRunsPanel({ taskId }: { taskId: number }) {
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
+  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,54 +62,75 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
     return () => clearInterval(interval);
   }, [taskId]);
 
+  useEffect(() => {
+    const ids = [...new Set(runs.map((r) => r.executor_id))];
+    const missing = ids.filter((id) => !executors.has(id));
+    if (missing.length === 0) return;
+    api.listExecutors().then((all) => {
+      const map = new Map(all.map((e) => [e.id, e]));
+      setExecutors(map);
+    });
+  }, [runs]);
+
   if (loading) return <Typography.Text type="secondary">Loading runs...</Typography.Text>;
   if (runs.length === 0) return <Typography.Text type="secondary">No runs yet</Typography.Text>;
 
   return (
     <div style={{ padding: "0 8px" }}>
-      {runs.map((run) => (
-        <Card
-          key={run.id}
-          size="small"
-          style={{ marginBottom: 8 }}
-          title={
-            <Space>
-              <span>Attempt #{run.attempt}</span>
-              <Tag color={runStatusColors[run.task_run_status]}>
-                {run.task_run_status.toUpperCase()}
-              </Tag>
-            </Space>
-          }
-        >
-          <Row gutter={[16, 4]}>
-            <Col span={12}>
-              <Typography.Text type="secondary">Started: </Typography.Text>
-              {run.started_at ? new Date(run.started_at).toLocaleString() : "-"}
-            </Col>
-            <Col span={12}>
-              <Typography.Text type="secondary">Finished: </Typography.Text>
-              {run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}
-            </Col>
-            {run.finished_at && run.started_at && (
+      {runs.map((run) => {
+        const exec = executors.get(run.executor_id);
+        return (
+          <Card
+            key={run.id}
+            size="small"
+            style={{ marginBottom: 8 }}
+            title={
+              <Space>
+                <span>Attempt #{run.attempt}</span>
+                <Tag color={runStatusColors[run.task_run_status]}>
+                  {run.task_run_status.toUpperCase()}
+                </Tag>
+              </Space>
+            }
+          >
+            <Row gutter={[16, 4]}>
               <Col span={12}>
-                <Typography.Text type="secondary">Duration: </Typography.Text>
-                {((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s
+                <Typography.Text type="secondary">Started: </Typography.Text>
+                {run.started_at ? new Date(run.started_at).toLocaleString() : "-"}
               </Col>
-            )}
-            <Col span={12}>
-              <Typography.Text type="secondary">Executor: </Typography.Text>
-              #{run.executor_id}
-            </Col>
-            {run.error_message && (
-              <Col span={24}>
-                <Typography.Text type="danger">
-                  {run.error_message}
-                </Typography.Text>
+              <Col span={12}>
+                <Typography.Text type="secondary">Finished: </Typography.Text>
+                {run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}
               </Col>
-            )}
-          </Row>
-        </Card>
-      ))}
+              {run.finished_at && run.started_at && (
+                <Col span={12}>
+                  <Typography.Text type="secondary">Duration: </Typography.Text>
+                  {((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s
+                </Col>
+              )}
+              <Col span={12}>
+                <Typography.Text type="secondary">Executor: </Typography.Text>
+                <a href={`/executors?search=${run.executor_id}`}>
+                  {exec ? `${exec.hostname} (job ${exec.slurm_job_id})` : `#${run.executor_id}`}
+                </a>
+              </Col>
+              {exec && (
+                <Col span={12}>
+                  <Typography.Text type="secondary">Node: </Typography.Text>
+                  {exec.slurm_node_list}
+                </Col>
+              )}
+              {run.error_message && (
+                <Col span={24}>
+                  <Typography.Text type="danger">
+                    {run.error_message}
+                  </Typography.Text>
+                </Col>
+              )}
+            </Row>
+          </Card>
+        );
+      })}
     </div>
   );
 }
