@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { Button, Modal, Form, Input, Select, message, Typography, Space, Popconfirm } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import ResizableTable from "../components/ResizableTable";
+import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { AgGridReact } from "ag-grid-react";
+import { AllCommunityModule, ModuleRegistry, type ColDef, type ICellRendererParams } from "ag-grid-community";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
+
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 const formatOptions: { label: string; value: ScenarioFormat }[] = [
   { label: "OpenSCENARIO 1.x", value: "open_scenario1" },
@@ -13,146 +16,77 @@ const formatOptions: { label: string; value: ScenarioFormat }[] = [
 
 export default function Scenarios() {
   const [data, setData] = useState<ScenarioResponse[]>([]);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScenarioResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
-  const load = () => {
-    setLoading(true);
-    api.listScenarios().then(setData).finally(() => setLoading(false));
-  };
-  useEffect(load, []);
+  const load = useCallback(() => { api.listScenarios().then(setData); }, []);
+  useEffect(load, [load]);
 
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
+  const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
+  const openEdit = (r: ScenarioResponse) => {
+    setEditing(r);
+    form.setFieldsValue({ ...r, goal_config: JSON.stringify(r.goal_config, null, 2) });
     setModalOpen(true);
   };
 
-  const openEdit = (record: ScenarioResponse) => {
-    setEditing(record);
-    form.setFieldsValue({
-      scenario_format: record.scenario_format,
-      title: record.title,
-      scenario_path: record.scenario_path,
-      goal_config: JSON.stringify(record.goal_config, null, 2),
-    });
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: {
-    scenario_format: ScenarioFormat;
-    title?: string;
-    scenario_path: string;
-    goal_config: string;
-  }) => {
+  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
     setSaving(true);
     try {
-      const goalConfig = JSON.parse(values.goal_config);
-      const payload = {
-        scenario_format: values.scenario_format,
-        title: values.title || null,
-        scenario_path: values.scenario_path,
-        goal_config: goalConfig,
-      };
-      if (editing) {
-        await api.updateScenario(editing.id, payload);
-        message.success("Scenario updated");
-      } else {
-        await api.createScenario(payload);
-        message.success("Scenario created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
+      const payload = { ...values, goal_config: JSON.parse(values.goal_config), title: values.title || null };
+      if (editing) { await api.updateScenario(editing.id, payload); message.success("Updated"); }
+      else { await api.createScenario(payload); message.success("Created"); }
+      setModalOpen(false); form.resetFields(); setEditing(null); load();
+    } catch (e) { message.error(String(e)); } finally { setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      await api.deleteScenario(id);
-      message.success("Scenario deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
+    try { await api.deleteScenario(id); message.success("Deleted"); load(); } catch (e) { message.error(String(e)); }
   };
 
-  const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60 },
-    { title: "Title", dataIndex: "title", key: "title", width: 250, ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 120 },
-    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true },
-    {
-      title: "Goal Config",
-      dataIndex: "goal_config",
-      key: "goal_config",
-      width: 200,
-      ellipsis: true,
-      render: (v: unknown) => JSON.stringify(v),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 100,
-      render: (_: unknown, record: ScenarioResponse) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+  const ActionsRenderer = useCallback((params: ICellRendererParams<ScenarioResponse>) => {
+    const r = params.data!;
+    return (
+      <Space>
+        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+      </Space>
+    );
+  }, []);
+
+  const columnDefs = useMemo<ColDef<ScenarioResponse>[]>(() => [
+    { field: "id", width: 70, filter: "agNumberColumnFilter" },
+    { field: "title", flex: 2, filter: "agTextColumnFilter" },
+    { field: "scenario_format", headerName: "Format", width: 140, filter: "agSetColumnFilter" },
+    { field: "scenario_path", headerName: "Path", flex: 1, filter: "agTextColumnFilter" },
+    { field: "goal_config", headerName: "Goal Config", flex: 1, valueFormatter: (p) => JSON.stringify(p.value) },
+    { headerName: "Actions", width: 100, sortable: false, filter: false, cellRenderer: ActionsRenderer },
+  ], [ActionsRenderer]);
 
   return (
     <>
       <Typography.Title level={3}>Scenarios</Typography.Title>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Scenario</Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
-      <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
-
-      <Modal
-        title={editing ? "Edit Scenario" : "Create Scenario"}
-        open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); }}
-        footer={null}
-      >
+      <div style={{ width: "100%", height: "calc(100vh - 200px)" }}>
+        <AgGridReact<ScenarioResponse>
+          rowData={data} columnDefs={columnDefs}
+          defaultColDef={{ sortable: true, resizable: true, filter: true }}
+          getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50} theme="legacy"
+        />
+      </div>
+      <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}>
-            <Select options={formatOptions} />
-          </Form.Item>
-          <Form.Item name="title" label="Title">
-            <Input />
-          </Form.Item>
-          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="goal_config"
-            label="Goal Config (JSON)"
-            rules={[
-              { required: true },
-              { validator: (_, value) => { try { JSON.parse(value); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } },
-            ]}
-          >
+          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
+          <Form.Item name="title" label="Title"><Input /></Form.Item>
+          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
+            { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
             <Input.TextArea rows={4} placeholder='{"key": "value"}' />
           </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving} block>
-              {editing ? "Save" : "Create"}
-            </Button>
-          </Form.Item>
+          <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
       </Modal>
     </>
