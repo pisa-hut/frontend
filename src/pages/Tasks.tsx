@@ -9,8 +9,15 @@ import {
   message,
   Typography,
   Space,
+  Progress,
+  Alert,
+  Statistic,
+  Card,
+  Row,
+  Col,
+  Input,
 } from "antd";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type {
   TaskResponse,
@@ -34,12 +41,21 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [creating, setCreating] = useState(false);
   const [form] = Form.useForm();
+  const [bulkForm] = Form.useForm();
+
+  // Bulk creation progress
+  const [bulkProgress, setBulkProgress] = useState<{
+    total: number;
+    done: number;
+    errors: number;
+  } | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -48,7 +64,7 @@ export default function Tasks() {
 
   useEffect(load, []);
 
-  const openModal = () => {
+  const fetchResources = () =>
     Promise.all([
       api.listPlans(),
       api.listAvs(),
@@ -59,8 +75,14 @@ export default function Tasks() {
       setAvs(a);
       setSimulators(s);
       setSamplers(sa);
-      setModalOpen(true);
     });
+
+  const openModal = () => {
+    fetchResources().then(() => setModalOpen(true));
+  };
+
+  const openBulkModal = () => {
+    fetchResources().then(() => setBulkModalOpen(true));
   };
 
   const handleCreate = async (values: {
@@ -81,6 +103,81 @@ export default function Tasks() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleBulkCreate = async (values: {
+    av_ids: number[];
+    simulator_ids: number[];
+    sampler_ids: number[];
+    plan_ids: number[];
+    plan_filter?: string;
+  }) => {
+    const selectedPlans = values.plan_ids?.length
+      ? values.plan_ids
+      : plans
+          .filter((p) =>
+            values.plan_filter
+              ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
+              : true
+          )
+          .map((p) => p.id);
+
+    const combos: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }[] = [];
+    for (const av_id of values.av_ids) {
+      for (const simulator_id of values.simulator_ids) {
+        for (const sampler_id of values.sampler_ids) {
+          for (const plan_id of selectedPlans) {
+            combos.push({ plan_id, av_id, simulator_id, sampler_id });
+          }
+        }
+      }
+    }
+
+    if (combos.length === 0) {
+      message.warning("No task combinations to create");
+      return;
+    }
+
+    setCreating(true);
+    setBulkProgress({ total: combos.length, done: 0, errors: 0 });
+
+    let done = 0;
+    let errors = 0;
+
+    for (const combo of combos) {
+      try {
+        await api.createTask(combo);
+      } catch {
+        errors++;
+      }
+      done++;
+      setBulkProgress({ total: combos.length, done, errors });
+    }
+
+    setCreating(false);
+    message.success(`Created ${done - errors}/${combos.length} tasks (${errors} errors)`);
+    setBulkModalOpen(false);
+    bulkForm.resetFields();
+    setBulkProgress(null);
+    load();
+  };
+
+  // Compute preview count
+  const [previewCount, setPreviewCount] = useState(0);
+  const updatePreview = () => {
+    const values = bulkForm.getFieldsValue();
+    const avCount = values.av_ids?.length || 0;
+    const simCount = values.simulator_ids?.length || 0;
+    const samplerCount = values.sampler_ids?.length || 0;
+    let planCount = values.plan_ids?.length || 0;
+    if (planCount === 0 && values.plan_filter) {
+      planCount = plans.filter((p) =>
+        p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
+      ).length;
+    } else if (planCount === 0) {
+      planCount = plans.length;
+    }
+    setPreviewCount(avCount * simCount * samplerCount * planCount);
   };
 
   const columns = [
@@ -119,6 +216,9 @@ export default function Tasks() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>
           Create Task
         </Button>
+        <Button type="primary" icon={<ThunderboltOutlined />} onClick={openBulkModal}>
+          Bulk Create
+        </Button>
         <Button icon={<ReloadOutlined />} onClick={load}>
           Refresh
         </Button>
@@ -131,6 +231,7 @@ export default function Tasks() {
         pagination={{ pageSize: 20 }}
       />
 
+      {/* Single task modal */}
       <Modal
         title="Create Task"
         open={modalOpen}
@@ -169,6 +270,114 @@ export default function Tasks() {
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={creating} block>
               Create
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Bulk create modal */}
+      <Modal
+        title="Bulk Create Tasks"
+        open={bulkModalOpen}
+        onCancel={() => {
+          if (!creating) {
+            setBulkModalOpen(false);
+            setBulkProgress(null);
+          }
+        }}
+        footer={null}
+        width={640}
+      >
+        <Typography.Paragraph type="secondary">
+          Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.
+        </Typography.Paragraph>
+
+        <Form
+          form={bulkForm}
+          layout="vertical"
+          onFinish={handleBulkCreate}
+          onValuesChange={updatePreview}
+        >
+          <Form.Item name="av_ids" label="AVs" rules={[{ required: true, message: "Select at least one AV" }]}>
+            <Select
+              mode="multiple"
+              options={avs.map((a) => ({ label: a.name, value: a.id }))}
+              placeholder="Select AVs"
+            />
+          </Form.Item>
+          <Form.Item name="simulator_ids" label="Simulators" rules={[{ required: true, message: "Select at least one Simulator" }]}>
+            <Select
+              mode="multiple"
+              options={simulators.map((s) => ({ label: s.name, value: s.id }))}
+              placeholder="Select Simulators"
+            />
+          </Form.Item>
+          <Form.Item name="sampler_ids" label="Samplers" rules={[{ required: true, message: "Select at least one Sampler" }]}>
+            <Select
+              mode="multiple"
+              options={samplers.map((s) => ({ label: s.name, value: s.id }))}
+              placeholder="Select Samplers"
+            />
+          </Form.Item>
+          <Form.Item name="plan_filter" label="Plan name filter (optional)">
+            <Input placeholder="e.g. tyms, route, HetroD" allowClear />
+          </Form.Item>
+          <Form.Item name="plan_ids" label="Plans (leave empty to use all matching plans)">
+            <Select
+              mode="multiple"
+              options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))}
+              showSearch
+              optionFilterProp="label"
+              placeholder="All plans (or filter above)"
+              maxTagCount={5}
+            />
+          </Form.Item>
+
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic title="Tasks to create" value={previewCount} />
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic title="Available plans" value={plans.length} />
+              </Card>
+            </Col>
+          </Row>
+
+          {bulkProgress && (
+            <div style={{ marginBottom: 16 }}>
+              <Progress
+                percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)}
+                status={bulkProgress.errors > 0 ? "exception" : "active"}
+              />
+              <Typography.Text>
+                {bulkProgress.done}/{bulkProgress.total} created
+                {bulkProgress.errors > 0 && (
+                  <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>
+                )}
+              </Typography.Text>
+            </div>
+          )}
+
+          {previewCount > 5000 && (
+            <Alert
+              type="warning"
+              message={`This will create ${previewCount.toLocaleString()} tasks. Are you sure?`}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
+          <Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={creating}
+              block
+              disabled={previewCount === 0}
+            >
+              Create {previewCount.toLocaleString()} Tasks
             </Button>
           </Form.Item>
         </Form>
