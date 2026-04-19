@@ -24,12 +24,12 @@ export default function Executors() {
   return (
     <>
       <Typography.Title level={3}>Executors</Typography.Title>
-      <div style={{ width: "100%", height: "calc(100vh - 200px)" }}>
+      <div className="ag-theme-alpine" style={{ width: "100%", height: "calc(100vh - 200px)" }}>
         <AgGridReact<ExecutorResponse>
           rowData={data} columnDefs={columnDefs}
           defaultColDef={{ sortable: true, resizable: true, filter: true }}
           getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50}
-          quickFilterText="" theme="legacy"
+          quickFilterText=""
         />
       </div>
     </>

@@ -54,7 +54,7 @@ function AvsTab() {
   return (
     <>
       <Space style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add AV</Button></Space>
-      <div style={{ height: "calc(100vh - 280px)" }}><AgGridReact<AvResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} theme="legacy" /></div>
+      <div className="ag-theme-alpine" style={{ height: "calc(100vh - 280px)" }}><AgGridReact<AvResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} /></div>
       <Modal title={editing ? "Edit AV" : "Add AV"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ nv_runtime: false, carla_runtime: false, ros_runtime: false }}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -105,7 +105,7 @@ function SimulatorsTab() {
   return (
     <>
       <Space style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Simulator</Button></Space>
-      <div style={{ height: "calc(100vh - 280px)" }}><AgGridReact<SimulatorResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} theme="legacy" /></div>
+      <div className="ag-theme-alpine" style={{ height: "calc(100vh - 280px)" }}><AgGridReact<SimulatorResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} /></div>
       <Modal title={editing ? "Edit Simulator" : "Add Simulator"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ nv_runtime: false, carla_runtime: false, ros_runtime: false }}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -152,7 +152,7 @@ function SamplersTab() {
   return (
     <>
       <Space style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Sampler</Button></Space>
-      <div style={{ height: "calc(100vh - 280px)" }}><AgGridReact<SamplerResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} theme="legacy" /></div>
+      <div className="ag-theme-alpine" style={{ height: "calc(100vh - 280px)" }}><AgGridReact<SamplerResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} /></div>
       <Modal title={editing ? "Edit Sampler" : "Add Sampler"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
@@ -196,7 +196,7 @@ function MapsTab() {
   return (
     <>
       <Space style={{ marginBottom: 16 }}><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Map</Button></Space>
-      <div style={{ height: "calc(100vh - 280px)" }}><AgGridReact<MapResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} theme="legacy" /></div>
+      <div className="ag-theme-alpine" style={{ height: "calc(100vh - 280px)" }}><AgGridReact<MapResponse> rowData={data} columnDefs={cols} defaultColDef={{ sortable: true, resizable: true, filter: true }} getRowId={(p) => String(p.data.id)} pagination paginationPageSize={20} /></div>
       <Modal title={editing ? "Edit Map" : "Add Map"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>

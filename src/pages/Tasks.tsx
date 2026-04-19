@@ -21,7 +21,7 @@ import {
 import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Popconfirm } from "antd";
 import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry, type ColDef, type ICellRendererParams, type GridReadyEvent } from "ag-grid-community";
+import { AllCommunityModule, ModuleRegistry, type ColDef, type ICellRendererParams, type GridReadyEvent, type RowClickedEvent } from "ag-grid-community";
 import { api } from "../api/client";
 import type {
   TaskResponse,
@@ -127,6 +127,7 @@ export default function Tasks() {
   const [form] = Form.useForm();
   const [bulkForm] = Form.useForm();
   const gridRef = useRef<AgGridReact>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
 
   const [bulkProgress, setBulkProgress] = useState<{
     total: number;
@@ -228,8 +229,9 @@ export default function Tasks() {
     filter: true,
   }), []);
 
-  const detailCellRenderer = useCallback((params: ICellRendererParams<TaskResponse>) => {
-    return <TaskRunsPanel taskId={params.data!.id} />;
+  const onRowClicked = useCallback((event: RowClickedEvent<TaskResponse>) => {
+    const id = event.data?.id;
+    if (id != null) setSelectedTaskId((prev) => (prev === id ? null : id));
   }, []);
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
@@ -303,23 +305,32 @@ export default function Tasks() {
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
 
-      <div style={{ width: "100%", height: "calc(100vh - 200px)" }}>
+      <div className="ag-theme-alpine" style={{ width: "100%", height: selectedTaskId ? "calc(50vh - 100px)" : "calc(100vh - 200px)" }}>
         <AgGridReact<TaskResponse>
           ref={gridRef}
           rowData={tasks}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
           getRowId={(params) => String(params.data.id)}
-          masterDetail
-          detailCellRenderer={detailCellRenderer}
-          detailRowAutoHeight
           pagination
           paginationPageSize={50}
           animateRows={false}
           onGridReady={onGridReady}
-          theme="legacy"
+          onRowClicked={onRowClicked}
+          rowSelection="single"
+         
         />
       </div>
+      {selectedTaskId && (
+        <Card
+          title={`Task #${selectedTaskId} — Runs`}
+          size="small"
+          style={{ marginTop: 8 }}
+          extra={<Button size="small" onClick={() => setSelectedTaskId(null)}>Close</Button>}
+        >
+          <TaskRunsPanel taskId={selectedTaskId} />
+        </Card>
+      )}
 
       {/* Single task modal */}
       <Modal title="Create Task" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>

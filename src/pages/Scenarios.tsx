@@ -70,11 +70,11 @@ export default function Scenarios() {
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Scenario</Button>
       </Space>
-      <div style={{ width: "100%", height: "calc(100vh - 200px)" }}>
+      <div className="ag-theme-alpine" style={{ width: "100%", height: "calc(100vh - 200px)" }}>
         <AgGridReact<ScenarioResponse>
           rowData={data} columnDefs={columnDefs}
           defaultColDef={{ sortable: true, resizable: true, filter: true }}
-          getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50} theme="legacy"
+          getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50}
         />
       </div>
       <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>

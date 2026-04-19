@@ -61,11 +61,11 @@ export default function Plans() {
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Plan</Button>
       </Space>
-      <div style={{ width: "100%", height: "calc(100vh - 200px)" }}>
+      <div className="ag-theme-alpine" style={{ width: "100%", height: "calc(100vh - 200px)" }}>
         <AgGridReact<PlanResponse>
           rowData={data} columnDefs={columnDefs}
           defaultColDef={{ sortable: true, resizable: true, filter: true }}
-          getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50} theme="legacy"
+          getRowId={(p) => String(p.data.id)} pagination paginationPageSize={50}
         />
       </div>
       <Modal title={editing ? "Edit Plan" : "Create Plan"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
