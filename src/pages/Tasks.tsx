@@ -196,12 +196,22 @@ export default function Tasks() {
     setConfirmed(false);
   };
 
+  // Load resources on mount for name resolution in the table
+  useEffect(() => {
+    fetchResources();
+  }, []);
+
+  const planName = (id: number) => plans.find((p) => p.id === id)?.name ?? `#${id}`;
+  const avName = (id: number) => avs.find((a) => a.id === id)?.name ?? `#${id}`;
+  const simName = (id: number) => simulators.find((s) => s.id === id)?.name ?? `#${id}`;
+  const samplerName = (id: number) => samplers.find((s) => s.id === id)?.name ?? `#${id}`;
+
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id" },
-    { title: "AV", dataIndex: "av_id", key: "av_id" },
-    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id" },
-    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id" },
+    { title: "ID", dataIndex: "id", key: "id", width: 70, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
+    { title: "Plan", dataIndex: "plan_id", key: "plan_id", ellipsis: true, render: (id: number) => planName(id) },
+    { title: "AV", dataIndex: "av_id", key: "av_id", render: (id: number) => avName(id) },
+    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", render: (id: number) => simName(id) },
+    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", render: (id: number) => samplerName(id) },
     {
       title: "Status",
       dataIndex: "task_status",
