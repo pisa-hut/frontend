@@ -475,21 +475,30 @@ export default function Tasks() {
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
         <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto-refresh</Checkbox>
       </Space>
-      {selectedRowKeys.length > 0 && (
+      {selectedRowKeys.length > 0 && (() => {
+        const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+        const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
+        const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
+        return (
         <Space style={{ marginBottom: 8 }}>
           <Typography.Text>{selectedRowKeys.length} selected</Typography.Text>
-          <Popconfirm title={`Run ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkRun}>
-            <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run Selected</Button>
-          </Popconfirm>
-          <Popconfirm title={`Stop ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkStop}>
-            <Button size="small" icon={<StopOutlined />}>Stop Selected</Button>
-          </Popconfirm>
+          {runnableCount > 0 && (
+            <Popconfirm title={`Run ${runnableCount} tasks?`} onConfirm={handleBulkRun}>
+              <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button>
+            </Popconfirm>
+          )}
+          {stoppableCount > 0 && (
+            <Popconfirm title={`Stop ${stoppableCount} tasks?`} onConfirm={handleBulkStop}>
+              <Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button>
+            </Popconfirm>
+          )}
           <Popconfirm title={`Delete ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkDelete}>
-            <Button size="small" danger icon={<DeleteOutlined />}>Delete Selected</Button>
+            <Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button>
           </Popconfirm>
           <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
         </Space>
-      )}
+        );
+      })()}
       <ResizableTable
         dataSource={tasks}
         columns={columns}
