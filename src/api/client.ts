@@ -60,6 +60,13 @@ async function pgDelete(table: string, id: number): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+async function pgDeleteWhere(tableAndFilter: string): Promise<void> {
+  const res = await fetch(`${POSTGREST_URL}/${tableAndFilter}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
 // Manager API helpers (business logic only)
 
 async function managerPost<T>(path: string, data?: unknown): Promise<T> {
@@ -115,7 +122,10 @@ export const api = {
   listTasks: () => pgList<TaskResponse>("task"),
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
-  deleteTask: (id: number) => pgDelete("task", id),
+  deleteTask: async (id: number) => {
+    await pgDeleteWhere(`task_run?task_id=eq.${id}`);
+    await pgDelete("task", id);
+  },
 
   // Task Runs
   listTaskRuns: (taskId: number) =>
