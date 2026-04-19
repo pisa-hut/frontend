@@ -8,6 +8,7 @@ import Plans from "./pages/Plans";
 import Resources from "./pages/Resources";
 import Executors from "./pages/Executors";
 import Init from "./pages/Init";
+import Upload from "./pages/Upload";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/plans" element={<Plans />} />
             <Route path="/resources" element={<Resources />} />
             <Route path="/executors" element={<Executors />} />
+            <Route path="/upload" element={<Upload />} />
             <Route path="/init" element={<Init />} />
           </Route>
         </Routes>
