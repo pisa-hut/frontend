@@ -51,7 +51,7 @@ const runStatusColors: Record<TaskRunStatus, string> = {
   aborted: "default",
 };
 
-function TaskRunsPanel({ taskId }: { taskId: number }) {
+function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number; autoRefresh: boolean }) {
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
   const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -59,9 +59,10 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
   useEffect(() => {
     const load = () => api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
     load();
+    if (!autoRefresh) return;
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [taskId]);
+  }, [taskId, autoRefresh]);
 
   useEffect(() => {
     const ids = [...new Set(runs.map((r) => r.executor_id))];
@@ -507,7 +508,7 @@ export default function Tasks() {
         }}
         expandable={{
           expandedRowRender: (record: TaskResponse) => (
-            <TaskRunsPanel taskId={record.id} />
+            <TaskRunsPanel taskId={record.id} autoRefresh={autoRefresh} />
           ),
           expandedRowKeys: expandedRows,
           expandIcon: () => null,
