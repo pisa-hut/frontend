@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Tag,
   Button,
@@ -138,6 +139,11 @@ export default function Tasks() {
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [searchParams] = useSearchParams();
+  const defaultStatusFilter = useMemo(() => {
+    const s = searchParams.get("status");
+    return s ? [s] : undefined;
+  }, []);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -397,6 +403,7 @@ export default function Tasks() {
       filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map(
         (s) => ({ text: s, value: s })
       ),
+      defaultFilteredValue: defaultStatusFilter,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (
         <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag>

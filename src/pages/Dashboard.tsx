@@ -8,6 +8,7 @@ import {
   PlusCircleOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
@@ -24,6 +25,7 @@ const statusConfig: Record<
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,7 +52,11 @@ export default function Dashboard() {
         {(Object.entries(statusConfig) as [TaskStatus, typeof statusConfig[TaskStatus]][]).map(
           ([status, cfg]) => (
             <Col xs={12} sm={8} md={4} key={status}>
-              <Card>
+              <Card
+                hoverable
+                onClick={() => navigate(`/tasks?status=${status}`)}
+                style={{ cursor: "pointer" }}
+              >
                 <Statistic
                   title={cfg.label}
                   value={counts[status]}
