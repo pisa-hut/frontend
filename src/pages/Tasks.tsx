@@ -324,6 +324,7 @@ export default function Tasks() {
       render: (v: string) => new Date(v).toLocaleString(),
       sorter: (a: TaskResponse, b: TaskResponse) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      defaultSortOrder: "descend" as const,
     },
     {
       title: "Actions",

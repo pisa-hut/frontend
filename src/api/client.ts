@@ -119,7 +119,7 @@ export const api = {
   deletePlan: (id: number) => pgDelete("plan", id),
 
   // Tasks
-  listTasks: () => pgList<TaskResponse>("task"),
+  listTasks: () => pgList<TaskResponse>("task?order=created_at.desc"),
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   deleteTask: async (id: number) => {
