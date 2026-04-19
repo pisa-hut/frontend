@@ -70,6 +70,7 @@ export default function ResizableTable<T extends Record<string, any>>(
       columns={columns}
       tableLayout="fixed"
       scroll={{ x: "max-content" }}
+      size="small"
       components={{
         header: {
           cell: ResizableTitle,
