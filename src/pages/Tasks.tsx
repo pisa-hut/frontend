@@ -163,7 +163,7 @@ export default function Tasks() {
     errors: number;
   } | null>(null);
 
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -410,15 +410,6 @@ export default function Tasks() {
       ),
     },
     { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
-    {
-      title: "Created",
-      dataIndex: "created_at",
-      key: "created_at",
-      width: 170,
-      render: (v: string) => new Date(v).toLocaleString(),
-      sorter: (a: TaskResponse, b: TaskResponse) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-    },
     {
       title: "Last Run",
       key: "last_run",
