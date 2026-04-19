@@ -17,7 +17,8 @@ import {
   Input,
   Checkbox,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Popconfirm } from "antd";
 import ResizableTable from "../components/ResizableTable";
 import { api } from "../api/client";
 import type {
@@ -89,6 +90,26 @@ export default function Tasks() {
       setPreviewCount(0);
       setBulkModalOpen(true);
     });
+  };
+
+  const handleRun = async (taskId: number) => {
+    try {
+      await api.updateTask(taskId, { task_status: "pending" });
+      message.success(`Task #${taskId} queued for execution`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
+  };
+
+  const handleDelete = async (taskId: number) => {
+    try {
+      await api.deleteTask(taskId);
+      message.success(`Task #${taskId} deleted`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
 
   const handleCreate = async (values: {
@@ -234,6 +255,36 @@ export default function Tasks() {
       render: (v: string) => new Date(v).toLocaleString(),
       sorter: (a: TaskResponse, b: TaskResponse) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 120,
+      render: (_: unknown, record: TaskResponse) => {
+        const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
+        return (
+          <Space>
+            <Popconfirm
+              title="Queue this task for execution?"
+              description="Status will be set to pending"
+              onConfirm={() => handleRun(record.id)}
+              disabled={!canRun}
+            >
+              <Button
+                size="small"
+                type="primary"
+                icon={<CaretRightOutlined />}
+                disabled={!canRun}
+              >
+                Run
+              </Button>
+            </Popconfirm>
+            <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
