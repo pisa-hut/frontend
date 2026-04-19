@@ -120,7 +120,7 @@ export default function Tasks() {
   }) => {
     setCreating(true);
     try {
-      await api.createTask(values);
+      await api.createTask({ ...values, task_status: "created" });
       message.success("Task created");
       setModalOpen(false);
       form.resetFields();
@@ -173,7 +173,7 @@ export default function Tasks() {
 
     for (const combo of combos) {
       try {
-        await api.createTask(combo);
+        await api.createTask({ ...combo, task_status: "created" });
       } catch {
         errors++;
       }
