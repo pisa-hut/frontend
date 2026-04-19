@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Typography, Space, Input } from "antd";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { useSearchParams } from "react-router-dom";
+import { Button, Typography, Space } from "antd";
+import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { ExecutorResponse } from "../api/types";
 import ResizableTable from "../components/ResizableTable";
@@ -10,26 +9,12 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 export default function Executors() {
   const [data, setData] = useState<ExecutorResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchParams] = useSearchParams();
-  const [search, setSearch] = useState(searchParams.get("search") ?? "");
 
   const load = () => {
     setLoading(true);
     api.listExecutors().then(setData).finally(() => setLoading(false));
   };
   useEffect(load, []);
-
-  const filtered = search
-    ? data.filter((e) => {
-        const q = search.toLowerCase();
-        return (
-          e.hostname.toLowerCase().includes(q) ||
-          e.slurm_node_list.toLowerCase().includes(q) ||
-          String(e.slurm_job_id).includes(q) ||
-          String(e.id).includes(q)
-        );
-      })
-    : data;
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: ExecutorResponse, b: ExecutorResponse) => a.id - b.id, ...getColumnSearchProps<ExecutorResponse>("id") },
@@ -43,18 +28,10 @@ export default function Executors() {
     <>
       <Typography.Title level={3}>Executors</Typography.Title>
       <Space style={{ marginBottom: 16 }}>
-        <Input
-          placeholder="Search by hostname, job ID, node list..."
-          prefix={<SearchOutlined />}
-          allowClear
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 300 }}
-        />
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
       <ResizableTable
-        dataSource={filtered}
+        dataSource={data}
         columns={columns}
         rowKey="id"
         loading={loading}

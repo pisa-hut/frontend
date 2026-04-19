@@ -110,9 +110,7 @@ function TaskRunsPanel({ taskId }: { taskId: number }) {
               )}
               <Col span={12}>
                 <Typography.Text type="secondary">Executor: </Typography.Text>
-                <a href={`/executors?search=${run.executor_id}`}>
-                  {exec ? `${exec.hostname} (job ${exec.slurm_job_id})` : `#${run.executor_id}`}
-                </a>
+                {exec ? `${exec.hostname} (job ${exec.slurm_job_id})` : `#${run.executor_id}`}
               </Col>
               {exec && (
                 <Col span={12}>
