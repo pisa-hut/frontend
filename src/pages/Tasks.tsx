@@ -16,6 +16,7 @@ import {
   Row,
   Col,
   Input,
+  Checkbox,
 } from "antd";
 import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
@@ -82,7 +83,12 @@ export default function Tasks() {
   };
 
   const openBulkModal = () => {
-    fetchResources().then(() => setBulkModalOpen(true));
+    fetchResources().then(() => {
+      setConfirmed(false);
+      setFilteredPlans([]);
+      setPreviewCount(0);
+      setBulkModalOpen(true);
+    });
   };
 
   const handleCreate = async (values: {
@@ -162,22 +168,32 @@ export default function Tasks() {
     load();
   };
 
-  // Compute preview count
+  const [confirmed, setConfirmed] = useState(false);
   const [previewCount, setPreviewCount] = useState(0);
+  const [filteredPlans, setFilteredPlans] = useState<PlanResponse[]>([]);
+
+  const computeFilteredPlans = (): PlanResponse[] => {
+    const values = bulkForm.getFieldsValue();
+    if (values.plan_ids?.length) {
+      return plans.filter((p) => values.plan_ids.includes(p.id));
+    }
+    if (values.plan_filter) {
+      return plans.filter((p) =>
+        p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
+      );
+    }
+    return plans;
+  };
+
   const updatePreview = () => {
     const values = bulkForm.getFieldsValue();
     const avCount = values.av_ids?.length || 0;
     const simCount = values.simulator_ids?.length || 0;
     const samplerCount = values.sampler_ids?.length || 0;
-    let planCount = values.plan_ids?.length || 0;
-    if (planCount === 0 && values.plan_filter) {
-      planCount = plans.filter((p) =>
-        p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
-      ).length;
-    } else if (planCount === 0) {
-      planCount = plans.length;
-    }
-    setPreviewCount(avCount * simCount * samplerCount * planCount);
+    const matched = computeFilteredPlans();
+    setFilteredPlans(matched);
+    setPreviewCount(avCount * simCount * samplerCount * matched.length);
+    setConfirmed(false);
   };
 
   const columns = [
@@ -334,17 +350,38 @@ export default function Tasks() {
           </Form.Item>
 
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={12}>
+            <Col span={8}>
+              <Card size="small">
+                <Statistic title="Matched plans" value={filteredPlans.length} />
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card size="small">
+                <Statistic title="Total plans" value={plans.length} />
+              </Card>
+            </Col>
+            <Col span={8}>
               <Card size="small">
                 <Statistic title="Tasks to create" value={previewCount} />
               </Card>
             </Col>
-            <Col span={12}>
-              <Card size="small">
-                <Statistic title="Available plans" value={plans.length} />
-              </Card>
-            </Col>
           </Row>
+
+          {filteredPlans.length > 0 && (
+            <Table
+              dataSource={filteredPlans}
+              columns={[
+                { title: "ID", dataIndex: "id", key: "id", width: 60 },
+                { title: "Plan Name", dataIndex: "name", key: "name", ellipsis: true },
+                { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
+                { title: "Scenario", dataIndex: "scenario_id", key: "scenario_id", width: 80 },
+              ]}
+              rowKey="id"
+              size="small"
+              pagination={{ pageSize: 5, size: "small" }}
+              style={{ marginBottom: 16 }}
+            />
+          )}
 
           {bulkProgress && (
             <div style={{ marginBottom: 16 }}>
@@ -364,10 +401,20 @@ export default function Tasks() {
           {previewCount > 5000 && (
             <Alert
               type="warning"
-              message={`This will create ${previewCount.toLocaleString()} tasks. Are you sure?`}
+              message={`This will create ${previewCount.toLocaleString()} tasks.`}
               style={{ marginBottom: 16 }}
             />
           )}
+
+          <Form.Item style={{ marginBottom: 8 }}>
+            <Checkbox
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              disabled={previewCount === 0}
+            >
+              I confirm creating {previewCount.toLocaleString()} tasks
+            </Checkbox>
+          </Form.Item>
 
           <Form.Item>
             <Button
@@ -375,7 +422,7 @@ export default function Tasks() {
               htmlType="submit"
               loading={creating}
               block
-              disabled={previewCount === 0}
+              disabled={previewCount === 0 || !confirmed}
             >
               Create {previewCount.toLocaleString()} Tasks
             </Button>
