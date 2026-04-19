@@ -6,6 +6,7 @@ import type {
   ScenarioResponse,
   PlanResponse,
   TaskResponse,
+  TaskRunResponse,
   ExecutorResponse,
 } from "./types";
 
@@ -115,6 +116,10 @@ export const api = {
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   deleteTask: (id: number) => pgDelete("task", id),
+
+  // Task Runs
+  listTaskRuns: (taskId: number) =>
+    pgList<TaskRunResponse>(`task_run?task_id=eq.${taskId}&order=attempt.desc`),
 
   // Executors
   listExecutors: () => pgList<ExecutorResponse>("executor"),

@@ -61,7 +61,7 @@ const SEED_MAPS: Omit<MapResponse, "id">[] = [
 ];
 
 const SEED_SAMPLERS: Omit<SamplerResponse, "id">[] = [
-  { name: "grid", module_path: "runner.sampler.grid_search_sampler:GridSearchSampler", config_path: null },
+  { name: "grid", module_path: "simcore.sampler.grid_search_sampler:GridSearchSampler", config_path: null },
 ];
 
 interface SeedResult {

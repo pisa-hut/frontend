@@ -62,6 +62,18 @@ export interface TaskResponse {
   retry_count: number;
 }
 
+export interface TaskRunResponse {
+  id: number;
+  task_id: number;
+  executor_id: number;
+  attempt: number;
+  run_time_env: unknown;
+  task_run_status: TaskRunStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  error_message: string | null;
+}
+
 export interface ExecutorResponse {
   id: number;
   slurm_job_id: number;

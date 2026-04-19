@@ -28,6 +28,8 @@ import type {
   AvResponse,
   SimulatorResponse,
   SamplerResponse,
+  TaskRunResponse,
+  TaskRunStatus,
 } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
@@ -38,6 +40,73 @@ const statusColors: Record<TaskStatus, string> = {
   failed: "error",
   invalid: "default",
 };
+
+const runStatusColors: Record<TaskRunStatus, string> = {
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  aborted: "default",
+};
+
+function TaskRunsPanel({ taskId }: { taskId: number }) {
+  const [runs, setRuns] = useState<TaskRunResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
+  }, [taskId]);
+
+  if (loading) return <Typography.Text type="secondary">Loading runs...</Typography.Text>;
+  if (runs.length === 0) return <Typography.Text type="secondary">No runs yet</Typography.Text>;
+
+  return (
+    <div style={{ padding: "0 8px" }}>
+      {runs.map((run) => (
+        <Card
+          key={run.id}
+          size="small"
+          style={{ marginBottom: 8 }}
+          title={
+            <Space>
+              <span>Attempt #{run.attempt}</span>
+              <Tag color={runStatusColors[run.task_run_status]}>
+                {run.task_run_status.toUpperCase()}
+              </Tag>
+            </Space>
+          }
+        >
+          <Row gutter={[16, 4]}>
+            <Col span={12}>
+              <Typography.Text type="secondary">Started: </Typography.Text>
+              {run.started_at ? new Date(run.started_at).toLocaleString() : "-"}
+            </Col>
+            <Col span={12}>
+              <Typography.Text type="secondary">Finished: </Typography.Text>
+              {run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}
+            </Col>
+            {run.finished_at && run.started_at && (
+              <Col span={12}>
+                <Typography.Text type="secondary">Duration: </Typography.Text>
+                {((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s
+              </Col>
+            )}
+            <Col span={12}>
+              <Typography.Text type="secondary">Executor: </Typography.Text>
+              #{run.executor_id}
+            </Col>
+            {run.error_message && (
+              <Col span={24}>
+                <Typography.Text type="danger">
+                  {run.error_message}
+                </Typography.Text>
+              </Col>
+            )}
+          </Row>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
@@ -308,6 +377,11 @@ export default function Tasks() {
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 20 }}
+        expandable={{
+          expandedRowRender: (record: TaskResponse) => (
+            <TaskRunsPanel taskId={record.id} />
+          ),
+        }}
       />
 
       {/* Single task modal */}
