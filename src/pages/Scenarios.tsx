@@ -96,14 +96,6 @@ export default function Scenarios() {
     { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
     {
-      title: "Goal Config",
-      dataIndex: "goal_config",
-      key: "goal_config",
-      width: 200,
-      ellipsis: true,
-      render: (v: unknown) => JSON.stringify(v),
-    },
-    {
       title: "Actions",
       key: "actions",
       width: 100,
