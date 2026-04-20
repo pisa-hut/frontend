@@ -174,7 +174,7 @@ export default function Scenarios() {
           <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
             { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
-            <Input.TextArea rows={4} placeholder='{"key": "value"}' />
+            <Input.TextArea rows={4} placeholder='{"key": "value"}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />
           </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>

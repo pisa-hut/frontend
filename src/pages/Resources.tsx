@@ -34,7 +34,7 @@ function ImageForm({ saving, onFinish, form, editing }: { saving: boolean; onFin
       <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item name="image_path" label="Image Path (JSON)" rules={[{ required: true },
         { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
-        <Input.TextArea rows={2} placeholder='{"docker": "ghcr.io/..."}' />
+        <Input.TextArea rows={2} placeholder='{"docker": "ghcr.io/..."}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />
       </Form.Item>
       <Form.Item name="config_path" label="Config Path" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item name="nv_runtime" label="NV Runtime" valuePropName="checked"><Switch /></Form.Item>
