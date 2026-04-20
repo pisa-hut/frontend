@@ -152,9 +152,28 @@ export default function Scenarios() {
         title={`${previewTitle}.xosc`}
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
-        footer={null}
         width="80%"
         styles={{ body: { maxHeight: "70vh", overflow: "auto", padding: 0 } }}
+        footer={
+          previewContent && !previewLoading ? (
+            <Space>
+              <Button onClick={() => { navigator.clipboard.writeText(previewContent); message.success("Copied to clipboard"); }}>
+                Copy
+              </Button>
+              <Button type="primary" onClick={() => {
+                const blob = new Blob([previewContent], { type: "text/xml" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${previewTitle}.xosc`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                Download
+              </Button>
+            </Space>
+          ) : null
+        }
       >
         {previewLoading ? (
           <div style={{ textAlign: "center", padding: 48 }}><Spin size="large" /></div>
