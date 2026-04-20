@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Popconfirm, Table, Spin } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
-import { Tooltip } from "antd";
+import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Dropdown } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined, MoreOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
@@ -115,13 +114,16 @@ export default function Scenarios() {
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
     { title: "Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
-    { title: "", key: "actions", width: 120, render: (_: unknown, r: ScenarioResponse) => (
-      <Space size={2}>
-        <Tooltip title="Preview XOSC"><Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)} /></Tooltip>
-        <Tooltip title="Render Video"><Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)} /></Tooltip>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, fixed: "right" as const, render: (_: unknown, r: ScenarioResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "preview", icon: <EyeOutlined />, label: "Preview XOSC", onClick: () => openPreview(r) },
+        { key: "video", icon: <PlayCircleOutlined />, label: "Render Video", onClick: () => openVideo(r) },
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 

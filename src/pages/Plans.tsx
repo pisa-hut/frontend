@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Select, Input, message, Space, Popconfirm, Table } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Button, Modal, Form, Select, Input, message, Table, Dropdown } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
@@ -41,11 +41,14 @@ export default function Plans() {
     { title: "Name", dataIndex: "name", key: "name", ellipsis: true, ...getColumnSearchProps<PlanResponse>("name") },
     { title: "Map", dataIndex: "map_id", key: "map_id", width: 80, ...getColumnSearchProps<PlanResponse>("map_id") },
     { title: "Scenario", dataIndex: "scenario_id", key: "scenario_id", width: 100, ...getColumnSearchProps<PlanResponse>("scenario_id") },
-    { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: PlanResponse) => (
-      <Space>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, render: (_: unknown, r: PlanResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 

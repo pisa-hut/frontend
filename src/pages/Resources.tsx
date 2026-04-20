@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Tabs, Button, Modal, Form, Input, Switch, message, Space, Popconfirm, Table } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Tabs, Button, Modal, Form, Input, Switch, message, Space, Table, Dropdown } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
@@ -71,11 +71,14 @@ function AvsTab() {
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     ...imageColumns,
-    { title: "", key: "actions", width: 80, render: (_: unknown, r: AvResponse) => (
-      <Space>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, render: (_: unknown, r: AvResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 
@@ -119,11 +122,14 @@ function SimulatorsTab() {
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     ...imageColumns,
-    { title: "", key: "actions", width: 80, render: (_: unknown, r: SimulatorResponse) => (
-      <Space>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, render: (_: unknown, r: SimulatorResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 
@@ -167,11 +173,14 @@ function SamplersTab() {
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     { title: "Module", dataIndex: "module_path", key: "module_path", ellipsis: true },
     { title: "Config", dataIndex: "config_path", key: "config_path", width: 200, render: (v: string | null) => v ?? "-" },
-    { title: "", key: "actions", width: 80, render: (_: unknown, r: SamplerResponse) => (
-      <Space>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, render: (_: unknown, r: SamplerResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 
@@ -220,11 +229,14 @@ function MapsTab() {
     { title: "Name", dataIndex: "name", key: "name", width: 150, ...getColumnSearchProps("name") },
     { title: "XODR", dataIndex: "xodr_path", key: "xodr_path", ellipsis: true, render: (v: string | null) => v ?? "-" },
     { title: "OSM", dataIndex: "osm_path", key: "osm_path", ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "", key: "actions", width: 80, render: (_: unknown, r: MapResponse) => (
-      <Space>
-        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
-      </Space>
+    { title: "", key: "actions", width: 50, render: (_: unknown, r: MapResponse) => (
+      <Dropdown menu={{ items: [
+        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
+        { type: "divider" as const },
+        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
+      ]}} trigger={["click"]}>
+        <Button size="small" icon={<MoreOutlined />} />
+      </Dropdown>
     )},
   ];
 
