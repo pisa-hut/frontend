@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Descriptions, Card } from "antd";
+import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Card, Row, Col, Typography } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
@@ -123,39 +123,48 @@ export default function Scenarios() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
-      <Table
-        dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }}
-        onRow={(r) => ({
-          onClick: () => setSelectedId((prev) => (prev === r.id ? null : r.id)),
-          style: { cursor: "pointer", background: selectedId === r.id ? "var(--ant-color-primary-bg, #e6f4ff)" : undefined },
-        })}
-      />
-      {selectedId && (() => {
-        const r = data.find((s) => s.id === selectedId);
-        if (!r) return null;
-        return (
-          <Card size="small" style={{ marginTop: 8 }} title={`Scenario #${r.id} — ${r.title ?? r.scenario_path}`}
-            extra={<Button size="small" onClick={() => setSelectedId(null)}>Close</Button>}>
-            <Descriptions size="small" column={1} style={{ marginBottom: 12 }}>
-              <Descriptions.Item label="Format">{r.scenario_format}</Descriptions.Item>
-              <Descriptions.Item label="Path">{r.scenario_path}</Descriptions.Item>
-              <Descriptions.Item label="Goal Config">
-                <pre style={{ margin: 0, fontSize: 11, maxHeight: 120, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
-                  {JSON.stringify(r.goal_config, null, 2)}
-                </pre>
-              </Descriptions.Item>
-            </Descriptions>
-            <Space wrap>
-              <Button icon={<EyeOutlined />} onClick={() => openPreview(r)}>Preview XOSC</Button>
-              <Button icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Render Video</Button>
-              <Button icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
-              <Popconfirm title="Delete this scenario?" onConfirm={() => handleDelete(r.id)}>
-                <Button danger icon={<DeleteOutlined />}>Delete</Button>
-              </Popconfirm>
-            </Space>
-          </Card>
-        );
-      })()}
+      <Row gutter={12}>
+        <Col xs={24} lg={selectedId ? 14 : 24}>
+          <Table
+            dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }}
+            onRow={(r) => ({
+              onClick: () => setSelectedId((prev) => (prev === r.id ? null : r.id)),
+              style: { cursor: "pointer", background: selectedId === r.id ? "var(--ant-color-primary-bg, #e6f4ff)" : undefined },
+            })}
+          />
+        </Col>
+        {selectedId && (() => {
+          const r = data.find((s) => s.id === selectedId);
+          if (!r) return null;
+          return (
+            <Col xs={24} lg={10}>
+              <Card size="small"
+                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? r.scenario_path}</Typography.Text>}
+                extra={<Button size="small" type="text" onClick={() => setSelectedId(null)}>x</Button>}
+              >
+                <div style={{ marginBottom: 12, fontSize: 13 }}>
+                  <div><Typography.Text type="secondary">Format: </Typography.Text>{r.scenario_format}</div>
+                  <div style={{ marginTop: 4 }}><Typography.Text type="secondary">Path: </Typography.Text><Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text></div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Typography.Text type="secondary" style={{ display: "block", marginBottom: 4 }}>Goal Config</Typography.Text>
+                  <pre style={{ margin: 0, fontSize: 11, maxHeight: 200, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
+                    {JSON.stringify(r.goal_config, null, 2)}
+                  </pre>
+                </div>
+                <Space wrap size="small">
+                  <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>XOSC</Button>
+                  <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Video</Button>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
+                  <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
+                  </Popconfirm>
+                </Space>
+              </Card>
+            </Col>
+          );
+        })()}
+      </Row>
 
       {/* Edit/Create modal */}
       <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
