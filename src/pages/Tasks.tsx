@@ -479,49 +479,59 @@ export default function Tasks() {
 
   return (
     <>
-      <Typography.Title level={3}>Tasks</Typography.Title>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>
-          Create Task
-        </Button>
-        <Button type="primary" icon={<ThunderboltOutlined />} onClick={openBulkModal}>
-          Bulk Create
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-        <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto-refresh</Checkbox>
-      </Space>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <Typography.Title level={3} style={{ margin: 0 }}>Tasks</Typography.Title>
+        <Space wrap>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>Create</Button>
+          <Button icon={<ThunderboltOutlined />} onClick={openBulkModal}>Bulk Create</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+          <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto</Checkbox>
+        </Space>
+      </div>
       {selectedRowKeys.length > 0 && (() => {
         const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-        const allSelected = selectedRowKeys.length === tasks.filter((t) => !pinnedIds.has(t.id)).length;
+        const unpinnedCount = tasks.filter((t) => !pinnedIds.has(t.id)).length;
+        const allSelected = selectedRowKeys.length === unpinnedCount;
         const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
         const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
         return (
-        <Space style={{ marginBottom: 8 }} wrap>
-          <Typography.Text>{selectedRowKeys.length} selected</Typography.Text>
-          {!allSelected ? (
-            <Button size="small" type="link" onClick={() => setSelectedRowKeys(tasks.filter((t) => !pinnedIds.has(t.id)).map((t) => t.id))}>
-              Select all {tasks.filter((t) => !pinnedIds.has(t.id)).length} tasks
-            </Button>
-          ) : (
-            <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>
-              Deselect all
-            </Button>
-          )}
-          {runnableCount > 0 && (
-            <Popconfirm title={`Run ${runnableCount} tasks?`} onConfirm={handleBulkRun}>
-              <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button>
-            </Popconfirm>
-          )}
-          {stoppableCount > 0 && (
-            <Popconfirm title={`Stop ${stoppableCount} tasks?`} onConfirm={handleBulkStop}>
-              <Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button>
-            </Popconfirm>
-          )}
-          <Popconfirm title={`Delete ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkDelete}>
-            <Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button>
-          </Popconfirm>
-          <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
-        </Space>
+        <Alert
+          type="info"
+          showIcon={false}
+          style={{ marginBottom: 8, padding: "6px 12px" }}
+          message={
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <Space>
+                <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
+                {!allSelected ? (
+                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys(tasks.filter((t) => !pinnedIds.has(t.id)).map((t) => t.id))}>
+                    Select all {unpinnedCount}
+                  </Button>
+                ) : (
+                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>
+                    Deselect all
+                  </Button>
+                )}
+              </Space>
+              <Space>
+                {runnableCount > 0 && (
+                  <Popconfirm title={`Run ${runnableCount} tasks?`} onConfirm={handleBulkRun}>
+                    <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button>
+                  </Popconfirm>
+                )}
+                {stoppableCount > 0 && (
+                  <Popconfirm title={`Stop ${stoppableCount} tasks?`} onConfirm={handleBulkStop}>
+                    <Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button>
+                  </Popconfirm>
+                )}
+                <Popconfirm title={`Delete ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkDelete}>
+                  <Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button>
+                </Popconfirm>
+                <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
+              </Space>
+            </div>
+          }
+        />
         );
       })()}
       {pinnedIds.size > 0 && (
