@@ -82,7 +82,7 @@ function AvsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 12 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add AV</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
@@ -151,7 +151,7 @@ function SimulatorsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 12 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Simulator</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
@@ -212,7 +212,7 @@ function SamplersTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 12 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Sampler</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
@@ -268,7 +268,7 @@ function MapsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 12 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Add Map</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
@@ -288,7 +288,7 @@ function MapsTab() {
 export default function Resources() {
   return (
     <>
-      <Typography.Title level={3}>Resources</Typography.Title>
+      <Typography.Title level={3} style={{ marginBottom: 12 }}>Resources</Typography.Title>
       <Tabs
         items={[
           { key: "avs", label: "AVs", children: <AvsTab /> },

@@ -112,11 +112,13 @@ export default function Scenarios() {
 
   return (
     <>
-      <Typography.Title level={3}>Scenarios</Typography.Title>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Scenario</Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-      </Space>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <Typography.Title level={3} style={{ margin: 0 }}>Scenarios</Typography.Title>
+        <Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        </Space>
+      </div>
       <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
 
       <Modal

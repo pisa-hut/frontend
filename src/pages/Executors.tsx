@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Typography, Space } from "antd";
+import { Button, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { ExecutorResponse } from "../api/types";
@@ -26,10 +26,10 @@ export default function Executors() {
 
   return (
     <>
-      <Typography.Title level={3}>Executors</Typography.Title>
-      <Space style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <Typography.Title level={3} style={{ margin: 0 }}>Executors</Typography.Title>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-      </Space>
+      </div>
       <ResizableTable
         dataSource={data}
         columns={columns}
