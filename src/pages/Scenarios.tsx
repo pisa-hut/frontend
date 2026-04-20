@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Dropdown } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined, MoreOutlined } from "@ant-design/icons";
+import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Descriptions, Card } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
@@ -20,6 +20,7 @@ export default function Scenarios() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScenarioResponse | null>(null);
   const [saving, setSaving] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [form] = Form.useForm();
 
   // XOSC preview state
@@ -112,19 +113,8 @@ export default function Scenarios() {
     { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 140,
       filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
-    { title: "Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
+    { title: "Path", dataIndex: "scenario_path", key: "scenario_path", ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
-    { title: "", key: "actions", width: 50, fixed: "right" as const, render: (_: unknown, r: ScenarioResponse) => (
-      <Dropdown menu={{ items: [
-        { key: "preview", icon: <EyeOutlined />, label: "Preview XOSC", onClick: () => openPreview(r) },
-        { key: "video", icon: <PlayCircleOutlined />, label: "Render Video", onClick: () => openVideo(r) },
-        { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
-        { type: "divider" as const },
-        { key: "delete", icon: <DeleteOutlined />, label: "Delete", danger: true, onClick: () => handleDelete(r.id) },
-      ]}} trigger={["click"]}>
-        <Button size="small" icon={<MoreOutlined />} />
-      </Dropdown>
-    )},
   ];
 
   return (
@@ -133,7 +123,39 @@ export default function Scenarios() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
-      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }} />
+      <Table
+        dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }}
+        expandable={{
+          expandedRowRender: (r: ScenarioResponse) => (
+            <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+              <Descriptions size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
+                <Descriptions.Item label="ID">{r.id}</Descriptions.Item>
+                <Descriptions.Item label="Format">{r.scenario_format}</Descriptions.Item>
+                <Descriptions.Item label="Title">{r.title ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label="Path">{r.scenario_path}</Descriptions.Item>
+                <Descriptions.Item label="Goal Config" span={2}>
+                  <pre style={{ margin: 0, fontSize: 11, maxHeight: 120, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
+                    {JSON.stringify(r.goal_config, null, 2)}
+                  </pre>
+                </Descriptions.Item>
+              </Descriptions>
+              <Space>
+                <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>Preview XOSC</Button>
+                <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Render Video</Button>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
+                <Popconfirm title="Delete this scenario?" onConfirm={() => handleDelete(r.id)}>
+                  <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
+                </Popconfirm>
+              </Space>
+            </Card>
+          ),
+          expandedRowKeys: expandedRows,
+          expandIcon: () => null,
+          columnWidth: 0,
+          expandRowByClick: true,
+          onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+        }}
+      />
 
       {/* Edit/Create modal */}
       <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
