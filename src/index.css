@@ -8,10 +8,19 @@ body {
   overflow-x: hidden;
 }
 
-/* Mobile table: horizontal scroll with momentum */
+/* Table fixes */
 .ant-table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Safari fix: expanded rows cause siblings to disappear */
+.ant-table-tbody > tr {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+.ant-table-expanded-row > td {
+  overflow: visible !important;
 }
 
 /* Mobile modals */
