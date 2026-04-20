@@ -199,7 +199,14 @@ export default function Scenarios() {
         title={`${videoTitle} — Video Preview`}
         open={videoOpen}
         onCancel={() => { setVideoOpen(false); if (videoUrl) URL.revokeObjectURL(videoUrl); }}
-        footer={null}
+        footer={videoUrl && !videoLoading ? (
+          <Button type="primary" onClick={() => {
+            const a = document.createElement("a");
+            a.href = videoUrl;
+            a.download = `${videoTitle}.mp4`;
+            a.click();
+          }}>Download</Button>
+        ) : null}
         width="80%"
         styles={{ body: { padding: videoLoading || videoError ? 48 : 0, textAlign: "center" } }}
       >
