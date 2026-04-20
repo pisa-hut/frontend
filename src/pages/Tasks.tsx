@@ -217,7 +217,7 @@ export default function Tasks() {
 
   const handleStop = async (taskId: number) => {
     try {
-      await api.updateTask(taskId, { task_status: "created" });
+      await api.stopTask(taskId);
       message.success(`Task #${taskId} stopped`);
       load();
     } catch (e) {
@@ -250,7 +250,7 @@ export default function Tasks() {
     const ids = selectedRowKeys as number[];
     let ok = 0;
     for (const id of ids) {
-      try { await api.updateTask(id, { task_status: "created" }); ok++; } catch {}
+      try { await api.stopTask(id); ok++; } catch {}
     }
     message.success(`Stopped ${ok}/${ids.length} tasks`);
     setSelectedRowKeys([]);

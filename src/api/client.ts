@@ -122,6 +122,16 @@ export const api = {
   listTasks: () => pgList<TaskResponse>("task?select=*,task_run(started_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc"),
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
+  stopTask: async (id: number) => {
+    // Abort any running task_runs first
+    const res = await fetch(`${POSTGREST_URL}/task_run?task_id=eq.${id}&task_run_status=eq.running`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
+    });
+    if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
+    await pgUpdate<TaskResponse>("task", id, { task_status: "created" });
+  },
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
