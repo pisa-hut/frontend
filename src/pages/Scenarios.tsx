@@ -20,7 +20,7 @@ export default function Scenarios() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScenarioResponse | null>(null);
   const [saving, setSaving] = useState(false);
-  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form] = Form.useForm();
 
   // XOSC preview state
@@ -125,37 +125,37 @@ export default function Scenarios() {
       </PageHeader>
       <Table
         dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }}
-        expandable={{
-          expandedRowRender: (r: ScenarioResponse) => (
-            <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-              <Descriptions size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
-                <Descriptions.Item label="ID">{r.id}</Descriptions.Item>
-                <Descriptions.Item label="Format">{r.scenario_format}</Descriptions.Item>
-                <Descriptions.Item label="Title">{r.title ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Path">{r.scenario_path}</Descriptions.Item>
-                <Descriptions.Item label="Goal Config" span={2}>
-                  <pre style={{ margin: 0, fontSize: 11, maxHeight: 120, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
-                    {JSON.stringify(r.goal_config, null, 2)}
-                  </pre>
-                </Descriptions.Item>
-              </Descriptions>
-              <Space>
-                <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>Preview XOSC</Button>
-                <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Render Video</Button>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
-                <Popconfirm title="Delete this scenario?" onConfirm={() => handleDelete(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
-                </Popconfirm>
-              </Space>
-            </Card>
-          ),
-          expandedRowKeys: expandedRows,
-          expandIcon: () => null,
-          columnWidth: 0,
-          expandRowByClick: true,
-          onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
-        }}
+        onRow={(r) => ({
+          onClick: () => setSelectedId((prev) => (prev === r.id ? null : r.id)),
+          style: { cursor: "pointer", background: selectedId === r.id ? "var(--ant-color-primary-bg, #e6f4ff)" : undefined },
+        })}
       />
+      {selectedId && (() => {
+        const r = data.find((s) => s.id === selectedId);
+        if (!r) return null;
+        return (
+          <Card size="small" style={{ marginTop: 8 }} title={`Scenario #${r.id} — ${r.title ?? r.scenario_path}`}
+            extra={<Button size="small" onClick={() => setSelectedId(null)}>Close</Button>}>
+            <Descriptions size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
+              <Descriptions.Item label="Format">{r.scenario_format}</Descriptions.Item>
+              <Descriptions.Item label="Path">{r.scenario_path}</Descriptions.Item>
+              <Descriptions.Item label="Goal Config" span={2}>
+                <pre style={{ margin: 0, fontSize: 11, maxHeight: 120, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
+                  {JSON.stringify(r.goal_config, null, 2)}
+                </pre>
+              </Descriptions.Item>
+            </Descriptions>
+            <Space wrap>
+              <Button icon={<EyeOutlined />} onClick={() => openPreview(r)}>Preview XOSC</Button>
+              <Button icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Render Video</Button>
+              <Button icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
+              <Popconfirm title="Delete this scenario?" onConfirm={() => handleDelete(r.id)}>
+                <Button danger icon={<DeleteOutlined />}>Delete</Button>
+              </Popconfirm>
+            </Space>
+          </Card>
+        );
+      })()}
 
       {/* Edit/Create modal */}
       <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
