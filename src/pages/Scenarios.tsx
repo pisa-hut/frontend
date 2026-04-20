@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Popconfirm, Table } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Button, Modal, Form, Input, Select, message, Space, Popconfirm, Table, Spin } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
+
+const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
 
 const formatOptions: { label: string; value: ScenarioFormat }[] = [
   { label: "OpenSCENARIO 1.x", value: "open_scenario1" },
@@ -20,6 +22,12 @@ export default function Scenarios() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewContent, setPreviewContent] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const load = () => { setLoading(true); api.listScenarios().then(setData).finally(() => setLoading(false)); };
   useEffect(load, []);
 
@@ -28,6 +36,24 @@ export default function Scenarios() {
     setEditing(r);
     form.setFieldsValue({ ...r, goal_config: JSON.stringify(r.goal_config, null, 2) });
     setModalOpen(true);
+  };
+
+  const openPreview = async (r: ScenarioResponse) => {
+    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
+    setPreviewTitle(name);
+    setPreviewContent("");
+    setPreviewLoading(true);
+    setPreviewOpen(true);
+    try {
+      const filePath = `${r.scenario_path}/${name}.xosc`;
+      const res = await fetch(`${MANAGER_URL}/scenario/file?path=${encodeURIComponent(filePath)}`);
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      setPreviewContent(await res.text());
+    } catch (e) {
+      setPreviewContent(`Error loading file: ${e}`);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
@@ -53,8 +79,9 @@ export default function Scenarios() {
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
     { title: "Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
-    { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: ScenarioResponse) => (
-      <Space>
+    { title: "", key: "actions", width: 100, render: (_: unknown, r: ScenarioResponse) => (
+      <Space size={2}>
+        <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)} />
         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
         <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
       </Space>
@@ -68,6 +95,8 @@ export default function Scenarios() {
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
       <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }} />
+
+      {/* Edit/Create modal */}
       <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
@@ -79,6 +108,34 @@ export default function Scenarios() {
           </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
+      </Modal>
+
+      {/* XOSC Preview modal */}
+      <Modal
+        title={`${previewTitle}.xosc`}
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={null}
+        width="80%"
+        styles={{ body: { maxHeight: "70vh", overflow: "auto", padding: 0 } }}
+      >
+        {previewLoading ? (
+          <div style={{ textAlign: "center", padding: 48 }}><Spin size="large" /></div>
+        ) : (
+          <pre style={{
+            margin: 0,
+            padding: 16,
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+            fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+            background: "var(--ant-color-bg-layout, #f5f5f5)",
+            borderRadius: 4,
+          }}>
+            {previewContent}
+          </pre>
+        )}
       </Modal>
     </>
   );
