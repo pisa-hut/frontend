@@ -12,6 +12,7 @@ import {
   Alert,
 } from "antd";
 import { UploadOutlined, InboxOutlined } from "@ant-design/icons";
+import PageHeader from "../components/PageHeader";
 import type { ScenarioFormat } from "../api/types";
 
 const { Dragger } = AntUpload;
@@ -89,28 +90,13 @@ export default function Upload() {
 
   return (
     <>
-      <Typography.Title level={3}>Upload Scenarios</Typography.Title>
+      <PageHeader title="Upload Scenarios" />
       <Typography.Paragraph type="secondary">
-        Upload a zip file containing scenario folders. Each folder should have a{" "}
-        <code>spec.yaml</code> and one or more <code>.xosc</code> files.
+        Upload a zip containing scenario folders, each with <code>spec.yaml</code> and <code>.xosc</code> files.
       </Typography.Paragraph>
 
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Card title="Zip Structure" size="small">
-          <pre style={{ margin: 0, fontSize: 13 }}>
-{`scenarios.zip
-├── ScenarioA/
-│   ├── spec.yaml
-│   └── ScenarioA.xosc
-├── ScenarioB/
-│   ├── spec.yaml
-│   ├── ScenarioB.xosc
-│   └── ScenarioB_param.xosc
-└── ...`}
-          </pre>
-        </Card>
-
-        <Card title="Upload">
+      <Space direction="vertical" size="middle" style={{ width: "100%", maxWidth: 600 }}>
+        <Card size="small">
           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
             <div>
               <Typography.Text strong>Scenario Format</Typography.Text>

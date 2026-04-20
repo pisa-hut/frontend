@@ -1,14 +1,60 @@
 * {
   -webkit-text-size-adjust: 100%;
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  overflow-x: hidden;
 }
 
+/* Mobile table: horizontal scroll with momentum */
+.ant-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile modals */
 @media (max-width: 767px) {
   .ant-modal {
-    max-width: calc(100vw - 32px) !important;
-    margin: 16px auto !important;
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto !important;
+    top: 20px !important;
+  }
+  .ant-modal .ant-modal-content {
+    padding: 12px !important;
+  }
+
+  /* Compact table cells on mobile */
+  .ant-table-small .ant-table-cell {
+    padding: 4px 6px !important;
+    font-size: 12px !important;
+  }
+
+  /* Stack action buttons */
+  .ant-table-cell .ant-space {
+    gap: 2px !important;
+  }
+  .ant-table-cell .ant-btn-sm {
+    padding: 0 4px !important;
+    font-size: 11px !important;
+  }
+
+  /* Full-width selects in modals */
+  .ant-select {
+    width: 100% !important;
+  }
+
+  /* Smaller page title on mobile */
+  h3.ant-typography {
+    font-size: 16px !important;
+  }
+
+  /* Compact stat cards */
+  .ant-statistic-title {
+    font-size: 11px !important;
+  }
+  .ant-statistic-content {
+    font-size: 20px !important;
   }
 }

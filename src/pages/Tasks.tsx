@@ -198,18 +198,18 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "Actions", key: "actions", width: 150, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 80, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
       const canStop = ["pending", "running"].includes(record.task_status);
       return (
-        <Space>
+        <Space size={2}>
           {canStop ? (
             <Popconfirm title="Stop?" onConfirm={() => handleStop(record.id)}>
-              <Button size="small" icon={<StopOutlined />}>Stop</Button>
+              <Button size="small" icon={<StopOutlined />} />
             </Popconfirm>
           ) : (
             <Popconfirm title="Run?" onConfirm={() => handleRun(record.id)} disabled={!canRun}>
-              <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun}>Run</Button>
+              <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun} />
             </Popconfirm>
           )}
           <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>

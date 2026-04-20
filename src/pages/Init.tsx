@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, Button, Typography, Space, Alert, List, Tag, Row, Col } from "antd";
+import PageHeader from "../components/PageHeader";
 import { ThunderboltOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, MapResponse, SamplerResponse } from "../api/types";
@@ -126,10 +127,10 @@ export default function Init() {
 
   return (
     <>
-      <Typography.Title level={3}>Initialize Database</Typography.Title>
+      <PageHeader title="Initialize Database" />
       <Typography.Paragraph type="secondary">
         Seed the database with default AVs, Simulators, Maps, and Samplers.
-        Existing entries (matched by name) will be skipped.
+        Existing entries will be skipped.
       </Typography.Paragraph>
 
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>

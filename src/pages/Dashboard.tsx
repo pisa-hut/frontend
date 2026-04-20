@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Col, Row, Statistic, Spin, Typography } from "antd";
+import { Card, Col, Row, Statistic, Spin } from "antd";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -9,13 +9,11 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
-const statusConfig: Record<
-  TaskStatus,
-  { color: string; icon: React.ReactNode; label: string }
-> = {
+const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; label: string }> = {
   created: { color: "#8c8c8c", icon: <PlusCircleOutlined />, label: "Created" },
   pending: { color: "#faad14", icon: <ClockCircleOutlined />, label: "Pending" },
   running: { color: "#1890ff", icon: <SyncOutlined spin />, label: "Running" },
@@ -32,49 +30,41 @@ export default function Dashboard() {
   useEffect(() => {
     const load = () => api.listTasks().then(setTasks).finally(() => setLoading(false));
     load();
-    const interval = setInterval(load, 5000);
+    const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <Spin size="large" />;
+  if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
 
-  const counts: Record<TaskStatus, number> = {
-    created: 0, pending: 0, running: 0, completed: 0, failed: 0, invalid: 0,
-  };
-  for (const t of tasks) {
-    counts[t.task_status]++;
-  }
+  const counts: Record<TaskStatus, number> = { created: 0, pending: 0, running: 0, completed: 0, failed: 0, invalid: 0 };
+  for (const t of tasks) counts[t.task_status]++;
 
   return (
     <>
-      <Typography.Title level={3}>Dashboard</Typography.Title>
-      <Row gutter={[16, 16]}>
-        {(Object.entries(statusConfig) as [TaskStatus, typeof statusConfig[TaskStatus]][]).map(
-          ([status, cfg]) => (
-            <Col xs={12} sm={8} md={4} key={status}>
-              <Card
-                hoverable
-                onClick={() => navigate(`/tasks?status=${status}`)}
-                style={{ cursor: "pointer" }}
-              >
-                <Statistic
-                  title={cfg.label}
-                  value={counts[status]}
-                  prefix={cfg.icon}
-                  valueStyle={{ color: cfg.color }}
-                />
-              </Card>
-            </Col>
-          )
-        )}
+      <PageHeader title="Dashboard" />
+      <Row gutter={[12, 12]}>
+        {(Object.entries(statusConfig) as [TaskStatus, (typeof statusConfig)[TaskStatus]][]).map(([status, cfg]) => (
+          <Col xs={8} sm={8} md={4} key={status}>
+            <Card
+              hoverable
+              size="small"
+              onClick={() => navigate(`/tasks?status=${status}`)}
+              style={{ cursor: "pointer", textAlign: "center" }}
+              styles={{ body: { padding: "12px 8px" } }}
+            >
+              <Statistic
+                title={cfg.label}
+                value={counts[status]}
+                prefix={cfg.icon}
+                valueStyle={{ color: cfg.color, fontSize: 24 }}
+              />
+            </Card>
+          </Col>
+        ))}
       </Row>
-      <Row style={{ marginTop: 16 }}>
-        <Col span={24}>
-          <Card>
-            <Statistic title="Total Tasks" value={tasks.length} />
-          </Card>
-        </Col>
-      </Row>
+      <Card size="small" style={{ marginTop: 12 }} styles={{ body: { padding: "12px 16px" } }}>
+        <Statistic title="Total Tasks" value={tasks.length} />
+      </Card>
     </>
   );
 }
