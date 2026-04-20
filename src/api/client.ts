@@ -67,6 +67,24 @@ async function pgDeleteWhere(tableAndFilter: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+async function pgBatchUpdate<T>(table: string, ids: number[], data: Partial<T>): Promise<void> {
+  if (ids.length === 0) return;
+  const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${ids.join(",")})`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+async function pgBatchDelete(table: string, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${ids.join(",")})`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
 // Manager API helpers (business logic only)
 
 async function managerPost<T>(path: string, data?: unknown): Promise<T> {
@@ -135,6 +153,24 @@ export const api = {
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
+  },
+  batchRunTasks: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "pending" }),
+  batchStopTasks: async (ids: number[]) => {
+    if (ids.length === 0) return;
+    // Abort running task_runs for all selected tasks
+    const res = await fetch(`${POSTGREST_URL}/task_run?task_id=in.(${ids.join(",")})&task_run_status=eq.running`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
+    });
+    if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
+    await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "created" });
+  },
+  batchDeleteTasks: async (ids: number[]) => {
+    if (ids.length === 0) return;
+    await pgDeleteWhere(`task_run?task_id=in.(${ids.join(",")})`);
+    await pgBatchDelete("task", ids);
   },
 
   // Task Runs

@@ -236,34 +236,33 @@ export default function Tasks() {
   };
 
   const handleBulkRun = async () => {
-    const ids = selectedRowKeys as number[];
-    let ok = 0;
-    for (const id of ids) {
-      try { await api.updateTask(id, { task_status: "pending" }); ok++; } catch {}
-    }
-    message.success(`Queued ${ok}/${ids.length} tasks`);
+    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+    const ids = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).map((t) => t.id);
+    try {
+      await api.batchRunTasks(ids);
+      message.success(`Queued ${ids.length} tasks`);
+    } catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]);
     load();
   };
 
   const handleBulkStop = async () => {
-    const ids = selectedRowKeys as number[];
-    let ok = 0;
-    for (const id of ids) {
-      try { await api.stopTask(id); ok++; } catch {}
-    }
-    message.success(`Stopped ${ok}/${ids.length} tasks`);
+    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+    const ids = selected.filter((t) => ["pending", "running"].includes(t.task_status)).map((t) => t.id);
+    try {
+      await api.batchStopTasks(ids);
+      message.success(`Stopped ${ids.length} tasks`);
+    } catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]);
     load();
   };
 
   const handleBulkDelete = async () => {
     const ids = selectedRowKeys as number[];
-    let ok = 0;
-    for (const id of ids) {
-      try { await api.deleteTask(id); ok++; } catch {}
-    }
-    message.success(`Deleted ${ok}/${ids.length} tasks`);
+    try {
+      await api.batchDeleteTasks(ids);
+      message.success(`Deleted ${ids.length} tasks`);
+    } catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]);
     load();
   };
