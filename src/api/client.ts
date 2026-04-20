@@ -67,22 +67,36 @@ async function pgDeleteWhere(tableAndFilter: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+const BATCH_CHUNK_SIZE = 200;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 async function pgBatchUpdate<T>(table: string, ids: number[], data: Partial<T>): Promise<void> {
   if (ids.length === 0) return;
-  const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${ids.join(",")})`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+    const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${batch.join(",")})`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  }
 }
 
 async function pgBatchDelete(table: string, ids: number[]): Promise<void> {
   if (ids.length === 0) return;
-  const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${ids.join(",")})`, {
-    method: "DELETE",
-  });
-  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+    const res = await fetch(`${POSTGREST_URL}/${table}?id=in.(${batch.join(",")})`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  }
 }
 
 // Manager API helpers (business logic only)
@@ -158,18 +172,22 @@ export const api = {
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "pending" }),
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
-    // Abort running task_runs for all selected tasks
-    const res = await fetch(`${POSTGREST_URL}/task_run?task_id=in.(${ids.join(",")})&task_run_status=eq.running`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
-    });
-    if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
+    const abortData = { task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" };
+    for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+      const res = await fetch(`${POSTGREST_URL}/task_run?task_id=in.(${batch.join(",")})&task_run_status=eq.running`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(abortData),
+      });
+      if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
+    }
     await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "created" });
   },
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
-    await pgDeleteWhere(`task_run?task_id=in.(${ids.join(",")})`);
+    for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+      await pgDeleteWhere(`task_run?task_id=in.(${batch.join(",")})`);
+    }
     await pgBatchDelete("task", ids);
   },
 
