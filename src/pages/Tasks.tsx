@@ -492,11 +492,17 @@ export default function Tasks() {
       </Space>
       {selectedRowKeys.length > 0 && (() => {
         const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+        const allSelected = selectedRowKeys.length === tasks.filter((t) => !pinnedIds.has(t.id)).length;
         const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
         const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
         return (
-        <Space style={{ marginBottom: 8 }}>
+        <Space style={{ marginBottom: 8 }} wrap>
           <Typography.Text>{selectedRowKeys.length} selected</Typography.Text>
+          {!allSelected && (
+            <Button size="small" type="link" onClick={() => setSelectedRowKeys(tasks.filter((t) => !pinnedIds.has(t.id)).map((t) => t.id))}>
+              Select all {tasks.filter((t) => !pinnedIds.has(t.id)).length} tasks
+            </Button>
+          )}
           {runnableCount > 0 && (
             <Popconfirm title={`Run ${runnableCount} tasks?`} onConfirm={handleBulkRun}>
               <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button>
