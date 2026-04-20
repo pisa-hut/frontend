@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Modal, Form, Input, Select, message, Space, Popconfirm, Table, Spin } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { Tooltip } from "antd";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
@@ -22,11 +23,18 @@ export default function Scenarios() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
-  // Preview state
+  // XOSC preview state
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Video preview state
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState("");
 
   const load = () => { setLoading(true); api.listScenarios().then(setData).finally(() => setLoading(false)); };
   useEffect(load, []);
@@ -56,6 +64,34 @@ export default function Scenarios() {
     }
   };
 
+  const RENDERER_URL = "/renderer";
+
+  const openVideo = async (r: ScenarioResponse) => {
+    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
+    setVideoTitle(name);
+    setVideoUrl("");
+    setVideoError("");
+    setVideoLoading(true);
+    setVideoOpen(true);
+    try {
+      const res = await fetch(`${RENDERER_URL}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario_path: r.scenario_path }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      const blob = await res.blob();
+      setVideoUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setVideoError(String(e));
+    } finally {
+      setVideoLoading(false);
+    }
+  };
+
   const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
     setSaving(true);
     try {
@@ -79,9 +115,10 @@ export default function Scenarios() {
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
     { title: "Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
-    { title: "", key: "actions", width: 100, render: (_: unknown, r: ScenarioResponse) => (
+    { title: "", key: "actions", width: 120, render: (_: unknown, r: ScenarioResponse) => (
       <Space size={2}>
-        <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)} />
+        <Tooltip title="Preview XOSC"><Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)} /></Tooltip>
+        <Tooltip title="Render Video"><Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)} /></Tooltip>
         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
         <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
       </Space>
@@ -136,6 +173,32 @@ export default function Scenarios() {
             {previewContent}
           </pre>
         )}
+      </Modal>
+
+      {/* Video Preview modal */}
+      <Modal
+        title={`${videoTitle} — Video Preview`}
+        open={videoOpen}
+        onCancel={() => { setVideoOpen(false); if (videoUrl) URL.revokeObjectURL(videoUrl); }}
+        footer={null}
+        width="80%"
+        styles={{ body: { padding: videoLoading || videoError ? 48 : 0, textAlign: "center" } }}
+      >
+        {videoLoading ? (
+          <div>
+            <Spin size="large" />
+            <p style={{ marginTop: 16, color: "#999" }}>Rendering scenario... this may take a minute</p>
+          </div>
+        ) : videoError ? (
+          <div style={{ color: "#ff4d4f" }}>{videoError}</div>
+        ) : videoUrl ? (
+          <video
+            src={videoUrl}
+            controls
+            autoPlay
+            style={{ width: "100%", maxHeight: "70vh", background: "#000" }}
+          />
+        ) : null}
       </Modal>
     </>
   );
