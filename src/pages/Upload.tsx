@@ -137,8 +137,8 @@ export default function Upload() {
               </Row>
 
               <Table
-                dataSource={results.results}
-                rowKey="name"
+                dataSource={results.results.map((r, i) => ({ ...r, _key: i }))}
+                rowKey="_key"
                 size="small"
                 scroll={{ x: "max-content" }}
                 pagination={{ pageSize: 20, showTotal: (t) => `${t} scenarios` }}
