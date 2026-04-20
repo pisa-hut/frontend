@@ -136,10 +136,10 @@ export default function Scenarios() {
         return (
           <Card size="small" style={{ marginTop: 8 }} title={`Scenario #${r.id} — ${r.title ?? r.scenario_path}`}
             extra={<Button size="small" onClick={() => setSelectedId(null)}>Close</Button>}>
-            <Descriptions size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
+            <Descriptions size="small" column={1} style={{ marginBottom: 12 }}>
               <Descriptions.Item label="Format">{r.scenario_format}</Descriptions.Item>
               <Descriptions.Item label="Path">{r.scenario_path}</Descriptions.Item>
-              <Descriptions.Item label="Goal Config" span={2}>
+              <Descriptions.Item label="Goal Config">
                 <pre style={{ margin: 0, fontSize: 11, maxHeight: 120, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
                   {JSON.stringify(r.goal_config, null, 2)}
                 </pre>
