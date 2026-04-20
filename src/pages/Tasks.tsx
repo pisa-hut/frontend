@@ -498,9 +498,13 @@ export default function Tasks() {
         return (
         <Space style={{ marginBottom: 8 }} wrap>
           <Typography.Text>{selectedRowKeys.length} selected</Typography.Text>
-          {!allSelected && (
+          {!allSelected ? (
             <Button size="small" type="link" onClick={() => setSelectedRowKeys(tasks.filter((t) => !pinnedIds.has(t.id)).map((t) => t.id))}>
               Select all {tasks.filter((t) => !pinnedIds.has(t.id)).length} tasks
+            </Button>
+          ) : (
+            <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>
+              Deselect all
             </Button>
           )}
           {runnableCount > 0 && (
