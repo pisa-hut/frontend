@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Typography, Space, Popconfirm } from "antd";
+import { Button, Modal, Form, Input, Select, message, Space, Popconfirm, Table } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import ResizableTable from "../components/ResizableTable";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
 
@@ -20,138 +20,64 @@ export default function Scenarios() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
-  const load = () => {
-    setLoading(true);
-    api.listScenarios().then(setData).finally(() => setLoading(false));
-  };
+  const load = () => { setLoading(true); api.listScenarios().then(setData).finally(() => setLoading(false)); };
   useEffect(load, []);
 
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
+  const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
+  const openEdit = (r: ScenarioResponse) => {
+    setEditing(r);
+    form.setFieldsValue({ ...r, goal_config: JSON.stringify(r.goal_config, null, 2) });
     setModalOpen(true);
   };
 
-  const openEdit = (record: ScenarioResponse) => {
-    setEditing(record);
-    form.setFieldsValue({
-      scenario_format: record.scenario_format,
-      title: record.title,
-      scenario_path: record.scenario_path,
-      goal_config: JSON.stringify(record.goal_config, null, 2),
-    });
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: {
-    scenario_format: ScenarioFormat;
-    title?: string;
-    scenario_path: string;
-    goal_config: string;
-  }) => {
+  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
     setSaving(true);
     try {
-      const goalConfig = JSON.parse(values.goal_config);
-      const payload = {
-        scenario_format: values.scenario_format,
-        title: values.title || null,
-        scenario_path: values.scenario_path,
-        goal_config: goalConfig,
-      };
-      if (editing) {
-        await api.updateScenario(editing.id, payload);
-        message.success("Scenario updated");
-      } else {
-        await api.createScenario(payload);
-        message.success("Scenario created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
+      const payload = { ...values, goal_config: JSON.parse(values.goal_config), title: values.title || null };
+      if (editing) { await api.updateScenario(editing.id, payload); message.success("Updated"); }
+      else { await api.createScenario(payload); message.success("Created"); }
+      setModalOpen(false); form.resetFields(); setEditing(null); load();
+    } catch (e) { message.error(String(e)); } finally { setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      await api.deleteScenario(id);
-      message.success("Scenario deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
+    try { await api.deleteScenario(id); message.success("Deleted"); load(); } catch (e) { message.error(String(e)); }
   };
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60, ...getColumnSearchProps<ScenarioResponse>("id") },
-    { title: "Title", dataIndex: "title", key: "title", width: 250, ellipsis: true, render: (v: string | null) => v ?? "-",
+    { title: "Title", dataIndex: "title", key: "title", ellipsis: true, render: (v: string | null) => v ?? "-",
       ...getColumnSearchProps<ScenarioResponse>("title") },
-    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 120,
-      filters: [{ text: "open_scenario1", value: "open_scenario1" }, { text: "open_scenario2", value: "open_scenario2" }, { text: "carla_lb_route", value: "carla_lb_route" }],
-      onFilter: (value: unknown, record: ScenarioResponse) => record.scenario_format === value },
-    { title: "Scenario Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
+    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 140,
+      filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
+      onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
+    { title: "Path", dataIndex: "scenario_path", key: "scenario_path", width: 200, ellipsis: true,
       ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 100,
-      render: (_: unknown, record: ScenarioResponse) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    { title: "Actions", key: "actions", width: 90, render: (_: unknown, r: ScenarioResponse) => (
+      <Space>
+        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>
+      </Space>
+    )},
   ];
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>Scenarios</Typography.Title>
-        <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-        </Space>
-      </div>
-      <ResizableTable dataSource={data} columns={columns} rowKey="id" loading={loading} />
-
-      <Modal
-        title={editing ? "Edit Scenario" : "Create Scenario"}
-        open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); }}
-        footer={null}
-      >
+      <PageHeader title="Scenarios">
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+      </PageHeader>
+      <Table dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }} />
+      <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}>
-            <Select options={formatOptions} />
-          </Form.Item>
-          <Form.Item name="title" label="Title">
-            <Input />
-          </Form.Item>
-          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="goal_config"
-            label="Goal Config (JSON)"
-            rules={[
-              { required: true },
-              { validator: (_, value) => { try { JSON.parse(value); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } },
-            ]}
-          >
+          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
+          <Form.Item name="title" label="Title"><Input /></Form.Item>
+          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
+            { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
             <Input.TextArea rows={4} placeholder='{"key": "value"}' />
           </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving} block>
-              {editing ? "Save" : "Create"}
-            </Button>
-          </Form.Item>
+          <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
       </Modal>
     </>

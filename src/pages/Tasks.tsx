@@ -1,38 +1,20 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Tag,
-  Button,
-  Modal,
-  Form,
-  Select,
-  message,
-  Typography,
-  Space,
-  Progress,
-  Alert,
-  Statistic,
-  Card,
-  Row,
-  Col,
-  Input,
-  Checkbox,
+  Tag, Button, Modal, Form, Select, message, Typography, Space,
+  Progress, Alert, Statistic, Card, Row, Col, Input, Checkbox, Table, Popconfirm,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined } from "@ant-design/icons";
-import { Popconfirm } from "antd";
-import ResizableTable from "../components/ResizableTable";
+import {
+  PlusOutlined, ReloadOutlined, ThunderboltOutlined,
+  CaretRightOutlined, DeleteOutlined, StopOutlined,
+} from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import PageHeader from "../components/PageHeader";
+import TaskRunsPanel from "../components/TaskRunsPanel";
 import { api } from "../api/client";
 import type {
-  TaskResponse,
-  TaskStatus,
-  PlanResponse,
-  AvResponse,
-  SimulatorResponse,
-  SamplerResponse,
-  TaskRunResponse,
-  TaskRunStatus,
-  ExecutorResponse,
+  TaskResponse, TaskStatus, PlanResponse,
+  AvResponse, SimulatorResponse, SamplerResponse,
 } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
@@ -44,128 +26,38 @@ const statusColors: Record<TaskStatus, string> = {
   invalid: "default",
 };
 
-const runStatusColors: Record<TaskRunStatus, string> = {
-  running: "processing",
-  completed: "success",
-  failed: "error",
-  aborted: "default",
-};
-
-function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number; autoRefresh: boolean }) {
-  const [runs, setRuns] = useState<TaskRunResponse[]>([]);
-  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const load = () => api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
-    load();
-    if (!autoRefresh) return;
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [taskId, autoRefresh]);
-
-  useEffect(() => {
-    const ids = [...new Set(runs.map((r) => r.executor_id))];
-    const missing = ids.filter((id) => !executors.has(id));
-    if (missing.length === 0) return;
-    api.listExecutors().then((all) => {
-      const map = new Map(all.map((e) => [e.id, e]));
-      setExecutors(map);
-    });
-  }, [runs]);
-
-  if (loading) return <Typography.Text type="secondary">Loading runs...</Typography.Text>;
-  if (runs.length === 0) return <Typography.Text type="secondary">No runs yet</Typography.Text>;
-
-  return (
-    <div style={{ padding: "0 8px" }}>
-      {runs.map((run) => {
-        const exec = executors.get(run.executor_id);
-        return (
-          <Card
-            key={run.id}
-            size="small"
-            style={{ marginBottom: 8 }}
-            title={
-              <Space>
-                <span>Attempt #{run.attempt}</span>
-                <Tag color={runStatusColors[run.task_run_status]}>
-                  {run.task_run_status.toUpperCase()}
-                </Tag>
-              </Space>
-            }
-          >
-            <Row gutter={[16, 4]}>
-              <Col span={12}>
-                <Typography.Text type="secondary">Started: </Typography.Text>
-                {run.started_at ? new Date(run.started_at).toLocaleString() : "-"}
-              </Col>
-              <Col span={12}>
-                <Typography.Text type="secondary">Finished: </Typography.Text>
-                {run.finished_at ? new Date(run.finished_at).toLocaleString() : "-"}
-              </Col>
-              {run.finished_at && run.started_at && (
-                <Col span={12}>
-                  <Typography.Text type="secondary">Duration: </Typography.Text>
-                  {((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s
-                </Col>
-              )}
-              <Col span={12}>
-                <Typography.Text type="secondary">Executor: </Typography.Text>
-                {exec ? `${exec.hostname} (job ${exec.slurm_job_id})` : `#${run.executor_id}`}
-              </Col>
-              {exec && (
-                <Col span={12}>
-                  <Typography.Text type="secondary">Node: </Typography.Text>
-                  {exec.slurm_node_list}
-                </Col>
-              )}
-              {run.error_message && (
-                <Col span={24}>
-                  <Typography.Text type="danger">
-                    {run.error_message}
-                  </Typography.Text>
-                </Col>
-              )}
-            </Row>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function Tasks() {
-  const [tasks, setTasks] = useState<TaskResponse[]>([]);
-  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
   const [searchParams] = useSearchParams();
   const defaultStatusFilter = useMemo(() => {
     const s = searchParams.get("status");
     return s ? [s] : undefined;
   }, []);
+
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
-  const [plans, setPlans] = useState<PlanResponse[]>([]);
-  const [avs, setAvs] = useState<AvResponse[]>([]);
-  const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
-  const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [creating, setCreating] = useState(false);
   const [form] = Form.useForm();
   const [bulkForm] = Form.useForm();
 
-  // Bulk creation progress
-  const [bulkProgress, setBulkProgress] = useState<{
-    total: number;
-    done: number;
-    errors: number;
-  } | null>(null);
+  const [plans, setPlans] = useState<PlanResponse[]>([]);
+  const [avs, setAvs] = useState<AvResponse[]>([]);
+  const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
+  const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
 
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ total: number; done: number; errors: number } | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [previewCount, setPreviewCount] = useState(0);
+  const [filteredPlans, setFilteredPlans] = useState<PlanResponse[]>([]);
+
+  // --- Data loading ---
 
   const load = () => {
     setLoading(true);
@@ -180,403 +72,205 @@ export default function Tasks() {
   }, [autoRefresh]);
 
   const fetchResources = () =>
-    Promise.all([
-      api.listPlans(),
-      api.listAvs(),
-      api.listSimulators(),
-      api.listSamplers(),
-    ]).then(([p, a, s, sa]) => {
-      setPlans(p);
-      setAvs(a);
-      setSimulators(s);
-      setSamplers(sa);
-    });
+    Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()])
+      .then(([p, a, s, sa]) => { setPlans(p); setAvs(a); setSimulators(s); setSamplers(sa); });
 
-  const openModal = () => {
-    fetchResources().then(() => setModalOpen(true));
+  useEffect(() => { fetchResources(); }, []);
+
+  const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
+  const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
+  const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
+  const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
+
+  // --- Actions ---
+
+  const handleRun = async (id: number) => {
+    try { await api.updateTask(id, { task_status: "pending" }); message.success(`Task #${id} queued`); load(); }
+    catch (e) { message.error(String(e)); }
   };
 
-  const openBulkModal = () => {
-    fetchResources().then(() => {
-      setConfirmed(false);
-      setFilteredPlans([]);
-      setPreviewCount(0);
-      setBulkModalOpen(true);
-    });
+  const handleStop = async (id: number) => {
+    try { await api.stopTask(id); message.success(`Task #${id} stopped`); load(); }
+    catch (e) { message.error(String(e)); }
   };
 
-  const handleRun = async (taskId: number) => {
-    try {
-      await api.updateTask(taskId, { task_status: "pending" });
-      message.success(`Task #${taskId} queued for execution`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
-
-  const handleStop = async (taskId: number) => {
-    try {
-      await api.stopTask(taskId);
-      message.success(`Task #${taskId} stopped`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
-
-  const handleDelete = async (taskId: number) => {
-    try {
-      await api.deleteTask(taskId);
-      message.success(`Task #${taskId} deleted`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
+  const handleDelete = async (id: number) => {
+    try { await api.deleteTask(id); message.success(`Task #${id} deleted`); load(); }
+    catch (e) { message.error(String(e)); }
   };
 
   const handleBulkRun = async () => {
-    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-    const ids = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).map((t) => t.id);
-    try {
-      await api.batchRunTasks(ids);
-      message.success(`Queued ${ids.length} tasks`);
-    } catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]);
-    load();
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && ["created", "failed", "invalid", "completed"].includes(t.task_status)).map((t) => t.id);
+    try { await api.batchRunTasks(ids); message.success(`Queued ${ids.length} tasks`); }
+    catch (e) { message.error(String(e)); }
+    setSelectedRowKeys([]); load();
   };
 
   const handleBulkStop = async () => {
-    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-    const ids = selected.filter((t) => ["pending", "running"].includes(t.task_status)).map((t) => t.id);
-    try {
-      await api.batchStopTasks(ids);
-      message.success(`Stopped ${ids.length} tasks`);
-    } catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]);
-    load();
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && ["pending", "running"].includes(t.task_status)).map((t) => t.id);
+    try { await api.batchStopTasks(ids); message.success(`Stopped ${ids.length} tasks`); }
+    catch (e) { message.error(String(e)); }
+    setSelectedRowKeys([]); load();
   };
 
   const handleBulkDelete = async () => {
-    const ids = selectedRowKeys as number[];
-    try {
-      await api.batchDeleteTasks(ids);
-      message.success(`Deleted ${ids.length} tasks`);
-    } catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]);
-    load();
+    try { await api.batchDeleteTasks(selectedRowKeys as number[]); message.success(`Deleted ${selectedRowKeys.length} tasks`); }
+    catch (e) { message.error(String(e)); }
+    setSelectedRowKeys([]); load();
   };
 
-  const handleCreate = async (values: {
-    plan_id: number;
-    av_id: number;
-    simulator_id: number;
-    sampler_id: number;
-  }) => {
+  // --- Create ---
+
+  const handleCreate = async (values: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }) => {
     setCreating(true);
     try {
       await api.createTask({ ...values, task_status: "created" });
-      message.success("Task created");
-      setModalOpen(false);
-      form.resetFields();
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setCreating(false);
-    }
+      message.success("Task created"); setModalOpen(false); form.resetFields(); load();
+    } catch (e) { message.error(String(e)); } finally { setCreating(false); }
   };
 
-  const handleBulkCreate = async (values: {
-    av_ids: number[];
-    simulator_ids: number[];
-    sampler_ids: number[];
-    plan_ids: number[];
-    plan_filter?: string;
-  }) => {
-    const selectedPlans = values.plan_ids?.length
-      ? values.plan_ids
-      : plans
-          .filter((p) =>
-            values.plan_filter
-              ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
-              : true
-          )
-          .map((p) => p.id);
+  // --- Bulk create ---
 
+  const handleBulkCreate = async (values: { av_ids: number[]; simulator_ids: number[]; sampler_ids: number[]; plan_ids: number[]; plan_filter?: string }) => {
+    const selectedPlans = values.plan_ids?.length ? values.plan_ids
+      : plans.filter((p) => values.plan_filter ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase()) : true).map((p) => p.id);
     const combos: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }[] = [];
-    for (const av_id of values.av_ids) {
-      for (const simulator_id of values.simulator_ids) {
-        for (const sampler_id of values.sampler_ids) {
-          for (const plan_id of selectedPlans) {
+    for (const av_id of values.av_ids)
+      for (const simulator_id of values.simulator_ids)
+        for (const sampler_id of values.sampler_ids)
+          for (const plan_id of selectedPlans)
             combos.push({ plan_id, av_id, simulator_id, sampler_id });
-          }
-        }
-      }
-    }
-
-    if (combos.length === 0) {
-      message.warning("No task combinations to create");
-      return;
-    }
-
-    setCreating(true);
-    setBulkProgress({ total: combos.length, done: 0, errors: 0 });
-
-    let done = 0;
-    let errors = 0;
-
+    if (!combos.length) { message.warning("No combinations"); return; }
+    setCreating(true); setBulkProgress({ total: combos.length, done: 0, errors: 0 });
+    let done = 0, errors = 0;
     for (const combo of combos) {
-      try {
-        await api.createTask({ ...combo, task_status: "created" });
-      } catch {
-        errors++;
-      }
-      done++;
-      setBulkProgress({ total: combos.length, done, errors });
+      try { await api.createTask({ ...combo, task_status: "created" }); } catch { errors++; }
+      done++; setBulkProgress({ total: combos.length, done, errors });
     }
-
     setCreating(false);
-    message.success(`Created ${done - errors}/${combos.length} tasks (${errors} errors)`);
-    setBulkModalOpen(false);
-    bulkForm.resetFields();
-    setBulkProgress(null);
-    load();
+    message.success(`Created ${done - errors}/${combos.length} tasks`);
+    setBulkModalOpen(false); bulkForm.resetFields(); setBulkProgress(null); load();
   };
-
-  const [confirmed, setConfirmed] = useState(false);
-  const [previewCount, setPreviewCount] = useState(0);
-  const [filteredPlans, setFilteredPlans] = useState<PlanResponse[]>([]);
 
   const computeFilteredPlans = (): PlanResponse[] => {
-    const values = bulkForm.getFieldsValue();
-    if (values.plan_ids?.length) {
-      return plans.filter((p) => values.plan_ids.includes(p.id));
-    }
-    if (values.plan_filter) {
-      return plans.filter((p) =>
-        p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
-      );
-    }
+    const v = bulkForm.getFieldsValue();
+    if (v.plan_ids?.length) return plans.filter((p) => v.plan_ids.includes(p.id));
+    if (v.plan_filter) return plans.filter((p) => p.name.toLowerCase().includes(v.plan_filter.toLowerCase()));
     return plans;
   };
 
   const updatePreview = () => {
-    const values = bulkForm.getFieldsValue();
-    const avCount = values.av_ids?.length || 0;
-    const simCount = values.simulator_ids?.length || 0;
-    const samplerCount = values.sampler_ids?.length || 0;
+    const v = bulkForm.getFieldsValue();
     const matched = computeFilteredPlans();
     setFilteredPlans(matched);
-    setPreviewCount(avCount * simCount * samplerCount * matched.length);
+    setPreviewCount((v.av_ids?.length || 0) * (v.simulator_ids?.length || 0) * (v.sampler_ids?.length || 0) * matched.length);
     setConfirmed(false);
   };
 
-  // Load resources on mount for name resolution in the table
-  useEffect(() => {
-    fetchResources();
-  }, []);
-
-  const planName = (id: number) => plans.find((p) => p.id === id)?.name ?? `#${id}`;
-  const avName = (id: number) => avs.find((a) => a.id === id)?.name ?? `#${id}`;
-  const simName = (id: number) => simulators.find((s) => s.id === id)?.name ?? `#${id}`;
-  const samplerName = (id: number) => samplers.find((s) => s.id === id)?.name ?? `#${id}`;
+  // --- Columns ---
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id,
       ...getColumnSearchProps<TaskResponse>("id") },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true, render: (id: number) => planName(id),
-      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planName(r.plan_id)) },
-    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true, render: (id: number) => avName(id),
+    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
+      render: (id: number) => planMap.get(id) ?? `#${id}`,
+      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
+    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true,
+      render: (id: number) => avMap.get(id) ?? `#${id}`,
       filters: avs.map((a) => ({ text: a.name, value: a.id })),
       onFilter: (value: unknown, record: TaskResponse) => record.av_id === value },
-    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true, render: (id: number) => simName(id),
+    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true,
+      render: (id: number) => simMap.get(id) ?? `#${id}`,
       filters: simulators.map((s) => ({ text: s.name, value: s.id })),
       onFilter: (value: unknown, record: TaskResponse) => record.simulator_id === value },
-    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true, render: (id: number) => samplerName(id),
+    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true,
+      render: (id: number) => samplerMap.get(id) ?? `#${id}`,
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
-    {
-      title: "Status",
-      dataIndex: "task_status",
-      key: "task_status",
-      width: 100,
-      filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map(
-        (s) => ({ text: s, value: s })
-      ),
+    { title: "Status", dataIndex: "task_status", key: "task_status", width: 100,
+      filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
       defaultFilteredValue: defaultStatusFilter,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
-      render: (status: TaskStatus) => (
-        <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag>
-      ),
-    },
-    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
-    {
-      title: "Last Run",
-      key: "last_run",
-      width: 170,
-      render: (_: unknown, record: TaskResponse) => {
-        const lastRun = record.task_run?.[0]?.started_at;
-        return lastRun ? new Date(lastRun).toLocaleString() : "-";
-      },
-      sorter: (a: TaskResponse, b: TaskResponse) => {
-        const aTime = a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0;
-        const bTime = b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0;
-        return aTime - bTime;
-      },
-      defaultSortOrder: "descend" as const,
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 180,
-      render: (_: unknown, record: TaskResponse) => {
-        const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
-        const canStop = ["pending", "running"].includes(record.task_status);
-        const isPinned = pinnedIds.has(record.id);
-        return (
-          <Space>
-            <Button
-              size="small"
-              type={isPinned ? "primary" : "default"}
-              icon={<PushpinOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                setPinnedIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(record.id)) next.delete(record.id);
-                  else next.add(record.id);
-                  return next;
-                });
-              }}
-            />
-            {canStop ? (
-              <Popconfirm
-                title="Stop this task?"
-                description="Status will be set back to created"
-                onConfirm={() => handleStop(record.id)}
-              >
-                <Button size="small" icon={<StopOutlined />}>Stop</Button>
-              </Popconfirm>
-            ) : (
-              <Popconfirm
-                title="Queue this task for execution?"
-                description="Status will be set to pending"
-                onConfirm={() => handleRun(record.id)}
-                disabled={!canRun}
-              >
-                <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun}>Run</Button>
-              </Popconfirm>
-            )}
-            <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
-              <Button size="small" danger icon={<DeleteOutlined />} />
+      render: (status: TaskStatus) => <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag> },
+    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60,
+      sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
+    { title: "Last Run", key: "last_run", width: 170,
+      render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
+      sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
+      defaultSortOrder: "descend" as const },
+    { title: "Actions", key: "actions", width: 150, render: (_: unknown, record: TaskResponse) => {
+      const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
+      const canStop = ["pending", "running"].includes(record.task_status);
+      return (
+        <Space>
+          {canStop ? (
+            <Popconfirm title="Stop?" onConfirm={() => handleStop(record.id)}>
+              <Button size="small" icon={<StopOutlined />}>Stop</Button>
             </Popconfirm>
-          </Space>
-        );
-      },
-    },
+          ) : (
+            <Popconfirm title="Run?" onConfirm={() => handleRun(record.id)} disabled={!canRun}>
+              <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun}>Run</Button>
+            </Popconfirm>
+          )}
+          <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      );
+    }},
   ];
+
+  // --- Selection bar ---
+
+  const selectionBar = selectedRowKeys.length > 0 && (() => {
+    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+    const allSelected = selectedRowKeys.length === tasks.length;
+    const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
+    const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
+    return (
+      <Alert type="info" showIcon={false} style={{ marginBottom: 8, padding: "6px 12px" }} message={
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <Space>
+            <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
+            {!allSelected ? (
+              <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys(tasks.map((t) => t.id))}>Select all {tasks.length}</Button>
+            ) : (
+              <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>Deselect all</Button>
+            )}
+          </Space>
+          <Space>
+            {runnableCount > 0 && <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}><Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button></Popconfirm>}
+            {stoppableCount > 0 && <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}><Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button></Popconfirm>}
+            <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}><Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button></Popconfirm>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
+          </Space>
+        </div>
+      } />
+    );
+  })();
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>Tasks</Typography.Title>
-        <Space wrap>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>Create</Button>
-          <Button icon={<ThunderboltOutlined />} onClick={openBulkModal}>Bulk Create</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-          <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto</Checkbox>
-        </Space>
-      </div>
-      {selectedRowKeys.length > 0 && (() => {
-        const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-        const unpinnedCount = tasks.filter((t) => !pinnedIds.has(t.id)).length;
-        const allSelected = selectedRowKeys.length === unpinnedCount;
-        const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
-        const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
-        return (
-        <Alert
-          type="info"
-          showIcon={false}
-          style={{ marginBottom: 8, padding: "6px 12px" }}
-          message={
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <Space>
-                <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
-                {!allSelected ? (
-                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys(tasks.filter((t) => !pinnedIds.has(t.id)).map((t) => t.id))}>
-                    Select all {unpinnedCount}
-                  </Button>
-                ) : (
-                  <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>
-                    Deselect all
-                  </Button>
-                )}
-              </Space>
-              <Space>
-                {runnableCount > 0 && (
-                  <Popconfirm title={`Run ${runnableCount} tasks?`} onConfirm={handleBulkRun}>
-                    <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button>
-                  </Popconfirm>
-                )}
-                {stoppableCount > 0 && (
-                  <Popconfirm title={`Stop ${stoppableCount} tasks?`} onConfirm={handleBulkStop}>
-                    <Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button>
-                  </Popconfirm>
-                )}
-                <Popconfirm title={`Delete ${selectedRowKeys.length} tasks?`} onConfirm={handleBulkDelete}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button>
-                </Popconfirm>
-                <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
-              </Space>
-            </div>
-          }
-        />
-        );
-      })()}
-      {pinnedIds.size > 0 && (
-        <ResizableTable
-          dataSource={tasks.filter((t) => pinnedIds.has(t.id))}
-          columns={columns}
-          rowKey="id"
-          pagination={false}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: (keys) => setSelectedRowKeys(keys),
-          }}
-          expandable={{
-            expandedRowRender: (record: TaskResponse) => (
-              <TaskRunsPanel taskId={record.id} autoRefresh={autoRefresh} />
-            ),
-            expandedRowKeys: expandedRows,
-            expandIcon: () => null,
-            columnWidth: 0,
-            expandRowByClick: true,
-            onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
-          }}
-          style={{ marginBottom: 8 }}
-        />
-      )}
-      <ResizableTable
-        dataSource={tasks.filter((t) => !pinnedIds.has(t.id))}
+      <PageHeader title="Tasks">
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => { fetchResources().then(() => setModalOpen(true)); }}>Create</Button>
+        <Button icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Bulk Create</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto</Checkbox>
+      </PageHeader>
+
+      {selectionBar}
+
+      <Table
+        dataSource={tasks}
         columns={columns}
         rowKey="id"
         loading={loading}
-        pagination={{
-          current: currentPage,
-          pageSize: pageSize,
-          showSizeChanger: true,
-          showTotal: (total) => `${total} tasks`,
-          onChange: (page, size) => { setCurrentPage(page); setPageSize(size); },
-        }}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (keys) => setSelectedRowKeys(keys),
-        }}
+        size="small"
+        scroll={{ x: "max-content" }}
+        pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
+        rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         expandable={{
-          expandedRowRender: (record: TaskResponse) => (
-            <TaskRunsPanel taskId={record.id} autoRefresh={autoRefresh} />
-          ),
+          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} autoRefresh={autoRefresh} />,
           expandedRowKeys: expandedRows,
           expandIcon: () => null,
           columnWidth: 0,
@@ -585,183 +279,70 @@ export default function Tasks() {
         }}
       />
 
-      {/* Single task modal */}
-      <Modal
-        title="Create Task"
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        footer={null}
-      >
+      {/* Single create */}
+      <Modal title="Create Task" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item name="plan_id" label="Plan" rules={[{ required: true }]}>
-            <Select
-              options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))}
-              showSearch
-              optionFilterProp="label"
-            />
+            <Select options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))} showSearch optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="av_id" label="AV" rules={[{ required: true }]}>
-            <Select
-              options={avs.map((a) => ({ label: `${a.name} (#${a.id})`, value: a.id }))}
-              showSearch
-              optionFilterProp="label"
-            />
+            <Select options={avs.map((a) => ({ label: `${a.name} (#${a.id})`, value: a.id }))} showSearch optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="simulator_id" label="Simulator" rules={[{ required: true }]}>
-            <Select
-              options={simulators.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))}
-              showSearch
-              optionFilterProp="label"
-            />
+            <Select options={simulators.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))} showSearch optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="sampler_id" label="Sampler" rules={[{ required: true }]}>
-            <Select
-              options={samplers.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))}
-              showSearch
-              optionFilterProp="label"
-            />
+            <Select options={samplers.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))} showSearch optionFilterProp="label" />
           </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={creating} block>
-              Create
-            </Button>
-          </Form.Item>
+          <Form.Item><Button type="primary" htmlType="submit" loading={creating} block>Create</Button></Form.Item>
         </Form>
       </Modal>
 
-      {/* Bulk create modal */}
-      <Modal
-        title="Bulk Create Tasks"
-        open={bulkModalOpen}
-        onCancel={() => {
-          if (!creating) {
-            setBulkModalOpen(false);
-            setBulkProgress(null);
-          }
-        }}
-        footer={null}
-        width={640}
-      >
-        <Typography.Paragraph type="secondary">
-          Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.
-        </Typography.Paragraph>
-
-        <Form
-          form={bulkForm}
-          layout="vertical"
-          onFinish={handleBulkCreate}
-          onValuesChange={updatePreview}
-        >
-          <Form.Item name="av_ids" label="AVs" rules={[{ required: true, message: "Select at least one AV" }]}>
-            <Select
-              mode="multiple"
-              options={avs.map((a) => ({ label: a.name, value: a.id }))}
-              placeholder="Select AVs"
-            />
+      {/* Bulk create */}
+      <Modal title="Bulk Create Tasks" open={bulkModalOpen} onCancel={() => { if (!creating) { setBulkModalOpen(false); setBulkProgress(null); } }} footer={null} width={640}>
+        <Typography.Paragraph type="secondary">Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.</Typography.Paragraph>
+        <Form form={bulkForm} layout="vertical" onFinish={handleBulkCreate} onValuesChange={updatePreview}>
+          <Form.Item name="av_ids" label="AVs" rules={[{ required: true }]}>
+            <Select mode="multiple" options={avs.map((a) => ({ label: a.name, value: a.id }))} placeholder="Select AVs" />
           </Form.Item>
-          <Form.Item name="simulator_ids" label="Simulators" rules={[{ required: true, message: "Select at least one Simulator" }]}>
-            <Select
-              mode="multiple"
-              options={simulators.map((s) => ({ label: s.name, value: s.id }))}
-              placeholder="Select Simulators"
-            />
+          <Form.Item name="simulator_ids" label="Simulators" rules={[{ required: true }]}>
+            <Select mode="multiple" options={simulators.map((s) => ({ label: s.name, value: s.id }))} placeholder="Select Simulators" />
           </Form.Item>
-          <Form.Item name="sampler_ids" label="Samplers" rules={[{ required: true, message: "Select at least one Sampler" }]}>
-            <Select
-              mode="multiple"
-              options={samplers.map((s) => ({ label: s.name, value: s.id }))}
-              placeholder="Select Samplers"
-            />
+          <Form.Item name="sampler_ids" label="Samplers" rules={[{ required: true }]}>
+            <Select mode="multiple" options={samplers.map((s) => ({ label: s.name, value: s.id }))} placeholder="Select Samplers" />
           </Form.Item>
-          <Form.Item name="plan_filter" label="Plan name filter (optional)">
-            <Input placeholder="e.g. tyms, route, HetroD" allowClear />
+          <Form.Item name="plan_filter" label="Plan name filter">
+            <Input placeholder="e.g. tyms, route" allowClear />
           </Form.Item>
-          <Form.Item name="plan_ids" label="Plans (leave empty to use all matching plans)">
-            <Select
-              mode="multiple"
-              options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))}
-              showSearch
-              optionFilterProp="label"
-              placeholder="All plans (or filter above)"
-              maxTagCount={5}
-            />
+          <Form.Item name="plan_ids" label="Plans (leave empty for all matching)">
+            <Select mode="multiple" options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))} showSearch optionFilterProp="label" placeholder="All plans" maxTagCount={5} />
           </Form.Item>
-
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Matched plans" value={filteredPlans.length} />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Total plans" value={plans.length} />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Tasks to create" value={previewCount} />
-              </Card>
-            </Col>
+            <Col span={8}><Card size="small"><Statistic title="Matched" value={filteredPlans.length} /></Card></Col>
+            <Col span={8}><Card size="small"><Statistic title="Total plans" value={plans.length} /></Card></Col>
+            <Col span={8}><Card size="small"><Statistic title="Tasks" value={previewCount} /></Card></Col>
           </Row>
-
           {filteredPlans.length > 0 && (
-            <ResizableTable
-              dataSource={filteredPlans}
-              columns={[
-                { title: "ID", dataIndex: "id", key: "id", width: 60 },
-                { title: "Plan Name", dataIndex: "name", key: "name", width: 300, ellipsis: true },
-                { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
-                { title: "Scenario", dataIndex: "scenario_id", key: "scenario_id", width: 80 },
-              ]}
-              rowKey="id"
-              size="small"
-              pagination={{ pageSize: 5, size: "small" }}
-              style={{ marginBottom: 16 }}
-            />
+            <Table dataSource={filteredPlans} columns={[
+              { title: "ID", dataIndex: "id", key: "id", width: 60 },
+              { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
+              { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
+            ]} rowKey="id" size="small" pagination={{ pageSize: 5, size: "small" }} style={{ marginBottom: 16 }} />
           )}
-
           {bulkProgress && (
             <div style={{ marginBottom: 16 }}>
-              <Progress
-                percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)}
-                status={bulkProgress.errors > 0 ? "exception" : "active"}
-              />
-              <Typography.Text>
-                {bulkProgress.done}/{bulkProgress.total} created
-                {bulkProgress.errors > 0 && (
-                  <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>
-                )}
-              </Typography.Text>
+              <Progress percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)} status={bulkProgress.errors > 0 ? "exception" : "active"} />
+              <Typography.Text>{bulkProgress.done}/{bulkProgress.total}{bulkProgress.errors > 0 && <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>}</Typography.Text>
             </div>
           )}
-
-          {previewCount > 5000 && (
-            <Alert
-              type="warning"
-              message={`This will create ${previewCount.toLocaleString()} tasks.`}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
+          {previewCount > 5000 && <Alert type="warning" message={`This will create ${previewCount.toLocaleString()} tasks.`} style={{ marginBottom: 16 }} />}
           <Form.Item style={{ marginBottom: 8 }}>
-            <Checkbox
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-              disabled={previewCount === 0}
-            >
+            <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!previewCount}>
               I confirm creating {previewCount.toLocaleString()} tasks
             </Checkbox>
           </Form.Item>
-
           <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={creating}
-              block
-              disabled={previewCount === 0 || !confirmed}
-            >
+            <Button type="primary" htmlType="submit" loading={creating} block disabled={!previewCount || !confirmed}>
               Create {previewCount.toLocaleString()} Tasks
             </Button>
           </Form.Item>
