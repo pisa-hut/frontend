@@ -135,22 +135,29 @@ export default function Tasks() {
   const handleBulkCreate = async (values: { av_ids: number[]; simulator_ids: number[]; sampler_ids: number[]; plan_ids: number[]; plan_filter?: string }) => {
     const selectedPlans = values.plan_ids?.length ? values.plan_ids
       : plans.filter((p) => values.plan_filter ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase()) : true).map((p) => p.id);
-    const combos: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }[] = [];
+    const combos: Partial<TaskResponse>[] = [];
     for (const av_id of values.av_ids)
       for (const simulator_id of values.simulator_ids)
         for (const sampler_id of values.sampler_ids)
           for (const plan_id of selectedPlans)
-            combos.push({ plan_id, av_id, simulator_id, sampler_id });
+            combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "created" });
     if (!combos.length) { message.warning("No combinations"); return; }
     setCreating(true); setBulkProgress({ total: combos.length, done: 0, errors: 0 });
-    let done = 0, errors = 0;
-    for (const combo of combos) {
-      try { await api.createTask({ ...combo, task_status: "created" }); } catch { errors++; }
-      done++; setBulkProgress({ total: combos.length, done, errors });
+    try {
+      const { done, errors } = await api.batchCreateTasks(combos, (d, e, t) =>
+        setBulkProgress({ total: t, done: d, errors: e }),
+      );
+      if (errors === 0) {
+        message.success(`Created ${done} tasks`);
+      } else {
+        message.warning(`Created ${done}, ${errors} failed`);
+      }
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setCreating(false);
+      setBulkModalOpen(false); bulkForm.resetFields(); setBulkProgress(null); load();
     }
-    setCreating(false);
-    message.success(`Created ${done - errors}/${combos.length} tasks`);
-    setBulkModalOpen(false); bulkForm.resetFields(); setBulkProgress(null); load();
   };
 
   const computeFilteredPlans = (): PlanResponse[] => {

@@ -102,6 +102,37 @@ async function pgBatchDelete(table: string, ids: number[]): Promise<void> {
   }
 }
 
+/** Bulk-insert rows via PostgREST array body. Sends up to `chunkSize` rows
+ * per request and calls `onProgress` after each chunk so callers can render
+ * progress during long runs. Uses Prefer: return=minimal to skip sending
+ * the full inserted rows back over the wire. */
+async function pgBatchCreate<T>(
+  table: string,
+  rows: Partial<T>[],
+  onProgress?: (done: number, errors: number, total: number) => void,
+  chunkSize = 500,
+): Promise<{ done: number; errors: number }> {
+  let done = 0;
+  let errors = 0;
+  if (rows.length === 0) return { done, errors };
+  for (const batch of chunk(rows, chunkSize)) {
+    try {
+      const res = await fetch(`${POSTGREST_URL}/${table}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(batch),
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      done += batch.length;
+    } catch (e) {
+      errors += batch.length;
+      console.error(`pgBatchCreate(${table}) chunk failed`, e);
+    }
+    onProgress?.(done, errors, rows.length);
+  }
+  return { done, errors };
+}
+
 // Manager API helpers (business logic only)
 
 async function managerPost<T>(path: string, data?: unknown): Promise<T> {
@@ -195,6 +226,10 @@ export const api = {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
   },
+  batchCreateTasks: (
+    rows: Partial<TaskResponse>[],
+    onProgress?: (done: number, errors: number, total: number) => void,
+  ) => pgBatchCreate<TaskResponse>("task", rows, onProgress),
   batchRunTasks: (ids: number[]) =>
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "pending" }),
   batchStopTasks: async (ids: number[]) => {
