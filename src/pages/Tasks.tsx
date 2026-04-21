@@ -41,7 +41,6 @@ export default function Tasks() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -69,8 +68,8 @@ export default function Tasks() {
   useEffect(() => { load(); }, []);
 
   // Realtime updates: coalesce bursty inserts/updates into a single refetch
-  // per frame. Falls back to the 5 s interval only if `autoRefresh` is on
-  // AND the SSE stream never connects (safety net for dev proxies).
+  // per frame. SSE is always on — the Refresh button stays as a manual
+  // re-fetch for the rare case where the stream silently went away.
   const refetchTimer = useRef<number | null>(null);
   const scheduleRefetch = useCallback(() => {
     if (refetchTimer.current !== null) return;
@@ -83,12 +82,6 @@ export default function Tasks() {
     if (ev.kind !== "row") return;
     if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
   }, [scheduleRefetch]));
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
 
   const fetchResources = () =>
     Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()])
@@ -300,7 +293,6 @@ export default function Tasks() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { fetchResources().then(() => setModalOpen(true)); }}>Create</Button>
         <Button icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Bulk Create</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
-        <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}>Auto</Checkbox>
       </PageHeader>
 
       {selectionBar}
@@ -315,7 +307,7 @@ export default function Tasks() {
           pagination={false}
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
           expandable={{
-            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} autoRefresh={autoRefresh} />,
+            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} />,
             expandedRowKeys: expandedRows,
             showExpandColumn: false,
             expandRowByClick: true,
@@ -335,7 +327,7 @@ export default function Tasks() {
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         expandable={{
-          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} autoRefresh={autoRefresh} />,
+          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} />,
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
           expandRowByClick: true,

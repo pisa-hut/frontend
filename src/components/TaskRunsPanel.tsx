@@ -72,7 +72,7 @@ interface LogDrawerState {
 const INITIAL_LIMIT = 5;
 const PAGE_SIZE = 20;
 
-export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number; autoRefresh: boolean }) {
+export default function TaskRunsPanel({ taskId }: { taskId: number }) {
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
   const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -92,11 +92,7 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
   useEffect(() => {
     setLoading(true);
     load().finally(() => setLoading(false));
-    if (!autoRefresh) return;
-    // Interval is a safety net only — real-time updates come through SSE.
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [load, autoRefresh]);
+  }, [load]);
 
   // SSE: refetch this task's runs on row events for our taskId, and
   // append streamed log chunks to the open Drawer (if any).
