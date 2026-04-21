@@ -171,8 +171,6 @@ export default function Tasks() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60, ellipsis: true,
-      onHeaderCell: () => ({ style: { minWidth: 60, maxWidth: 60, width: 60 } }),
-      onCell: () => ({ style: { minWidth: 60, maxWidth: 60, width: 60 } }),
       sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
     { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
@@ -274,8 +272,7 @@ export default function Tasks() {
         expandable={{
           expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} autoRefresh={autoRefresh} />,
           expandedRowKeys: expandedRows,
-          expandIcon: () => null,
-          columnWidth: 0,
+          showExpandColumn: false,
           expandRowByClick: true,
           onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
         }}
