@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography,
   Space,
@@ -25,6 +25,7 @@ import {
 } from "@ant-design/icons";
 import type React from "react";
 import { api } from "../api/client";
+import { usePisaEvents } from "../api/events";
 import type { TaskRunResponse, TaskRunStatus, ExecutorResponse } from "../api/types";
 
 function statusIcon(status: TaskRunStatus): React.ReactNode {
@@ -81,20 +82,43 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [log, setLog] = useState<LogDrawerState | null>(null);
 
+  const load = useCallback(() => {
+    return api.listTaskRuns(taskId, limit).then((rows) => {
+      setRuns(rows);
+      setReachedEnd(rows.length < limit);
+    });
+  }, [taskId, limit]);
+
   useEffect(() => {
-    const load = () =>
-      api
-        .listTaskRuns(taskId, limit)
-        .then((rows) => {
-          setRuns(rows);
-          setReachedEnd(rows.length < limit);
-        })
-        .finally(() => setLoading(false));
-    load();
+    setLoading(true);
+    load().finally(() => setLoading(false));
     if (!autoRefresh) return;
+    // Interval is a safety net only — real-time updates come through SSE.
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [taskId, autoRefresh, limit]);
+  }, [load, autoRefresh]);
+
+  // SSE: refetch this task's runs whenever the manager emits an event for
+  // our taskId (task row transition) or a task_run row we're watching.
+  const refetchTimer = useRef<number | null>(null);
+  const knownRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
+  usePisaEvents(
+    useCallback(
+      (ev) => {
+        const concerns =
+          (ev.table === "task" && ev.id === taskId) ||
+          (ev.table === "task_run" && knownRunIds.has(ev.id)) ||
+          ev.table === "task_run"; // insert of a new run we don't yet know about
+        if (!concerns) return;
+        if (refetchTimer.current !== null) return;
+        refetchTimer.current = window.setTimeout(() => {
+          refetchTimer.current = null;
+          load();
+        }, 250);
+      },
+      [taskId, knownRunIds, load],
+    ),
+  );
 
   const loadMore = async () => {
     setLoadingMore(true);

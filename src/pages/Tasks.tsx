@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Tag, Button, Modal, Form, Select, message, Typography, Space,
@@ -12,6 +12,7 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import { api } from "../api/client";
+import { usePisaEvents } from "../api/events";
 import type {
   TaskResponse, TaskStatus, PlanResponse,
   AvResponse, SimulatorResponse, SamplerResponse,
@@ -65,8 +66,24 @@ export default function Tasks() {
     api.listTasks().then(setTasks).finally(() => setLoading(false));
   };
 
+  useEffect(() => { load(); }, []);
+
+  // Realtime updates: coalesce bursty inserts/updates into a single refetch
+  // per frame. Falls back to the 5 s interval only if `autoRefresh` is on
+  // AND the SSE stream never connects (safety net for dev proxies).
+  const refetchTimer = useRef<number | null>(null);
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimer.current !== null) return;
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = null;
+      api.listTasks().then(setTasks);
+    }, 250);
+  }, []);
+  usePisaEvents(useCallback((ev) => {
+    if (ev.table === "task" || ev.table === "task_run") scheduleRefetch();
+  }, [scheduleRefetch]));
+
   useEffect(() => {
-    load();
     if (!autoRefresh) return;
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
