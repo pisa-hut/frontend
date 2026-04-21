@@ -170,8 +170,7 @@ export default function Tasks() {
   // --- Columns ---
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id,
-      ...getColumnSearchProps<TaskResponse>("id") },
+    { title: "ID", dataIndex: "id", key: "id", width: 60, sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
     { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
       ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
