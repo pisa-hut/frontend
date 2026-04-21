@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
-  CaretRightOutlined, DeleteOutlined, StopOutlined,
+  CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
@@ -35,6 +35,7 @@ export default function Tasks() {
 
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set());
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -198,11 +199,26 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "", key: "actions", width: 80, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 110, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
       const canStop = ["pending", "running"].includes(record.task_status);
+      const isPinned = pinnedIds.has(record.id);
       return (
         <Space size={2}>
+          <Button
+            size="small"
+            type={isPinned ? "primary" : "default"}
+            icon={<PushpinOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPinnedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(record.id)) next.delete(record.id);
+                else next.add(record.id);
+                return next;
+              });
+            }}
+          />
           {canStop ? (
             <Popconfirm title="Stop?" onConfirm={() => handleStop(record.id)}>
               <Button size="small" icon={<StopOutlined />} />
@@ -260,8 +276,28 @@ export default function Tasks() {
 
       {selectionBar}
 
+      {pinnedIds.size > 0 && (
+        <Table
+          dataSource={tasks.filter((t) => pinnedIds.has(t.id))}
+          columns={columns}
+          rowKey="id"
+          size="small"
+          scroll={{ x: "max-content" }}
+          pagination={false}
+          rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
+          expandable={{
+            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} autoRefresh={autoRefresh} />,
+            expandedRowKeys: expandedRows,
+            showExpandColumn: false,
+            expandRowByClick: true,
+            onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+          }}
+          style={{ marginBottom: 8 }}
+        />
+      )}
+
       <Table
-        dataSource={tasks}
+        dataSource={tasks.filter((t) => !pinnedIds.has(t.id))}
         columns={columns}
         rowKey="id"
         loading={loading}
