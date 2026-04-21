@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Card, Row, Col, Typography } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
@@ -21,11 +22,14 @@ export default function Scenarios() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form] = Form.useForm();
 
-  // XOSC preview state
+  // XOSC preview state (one-click preview of the main .xosc)
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // All-files browser state
+  const [filesFor, setFilesFor] = useState<ScenarioResponse | null>(null);
 
   // Video preview state
   const [videoOpen, setVideoOpen] = useState(false);
@@ -161,6 +165,7 @@ export default function Scenarios() {
                 </div>
                 <Space wrap size="small">
                   <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>XOSC</Button>
+                  <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setFilesFor(r)}>Files</Button>
                   <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Video</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
                   <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
@@ -232,6 +237,17 @@ export default function Scenarios() {
           </pre>
         )}
       </Modal>
+
+      {/* All-files browser */}
+      <FileBrowser
+        open={filesFor !== null}
+        title={filesFor ? `Files — ${filesFor.title ?? `scenario ${filesFor.id}`}` : ""}
+        onClose={() => setFilesFor(null)}
+        listFiles={() => (filesFor ? api.listScenarioFiles(filesFor.id) : Promise.resolve([]))}
+        fileUrl={(rel) => (filesFor ? api.scenarioFileUrl(filesFor.id, rel) : "")}
+        uploadFile={filesFor ? (rel, data) => api.uploadScenarioFile(filesFor.id, rel, data) : undefined}
+        deleteFile={filesFor ? (rel) => api.deleteScenarioFile(filesFor.id, rel) : undefined}
+      />
 
       {/* Video Preview modal */}
       <Modal

@@ -3,7 +3,7 @@ import { Tabs, Button, Modal, Form, Input, Switch, message, Space, Table, Dropdo
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfigUpload from "../components/ConfigUpload";
-import MapFilesModal from "../components/MapFilesModal";
+import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, SamplerResponse, MapResponse } from "../api/types";
@@ -265,10 +265,15 @@ function MapsTab() {
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
       </Modal>
-      <MapFilesModal
-        mapId={filesFor?.id ?? null}
-        mapName={filesFor?.name}
+      <FileBrowser
+        open={filesFor !== null}
+        title={filesFor ? `Files — ${filesFor.name}` : ""}
         onClose={() => setFilesFor(null)}
+        listFiles={() => (filesFor ? api.listMapFiles(filesFor.id) : Promise.resolve([]))}
+        fileUrl={(rel) => (filesFor ? api.mapFileUrl(filesFor.id, rel) : "")}
+        uploadFile={filesFor ? (rel, data) => api.uploadMapFile(filesFor.id, rel, data) : undefined}
+        deleteFile={filesFor ? (rel) => api.deleteMapFile(filesFor.id, rel) : undefined}
+        defaultUploadPrefix="xodr/"
       />
     </>
   );
