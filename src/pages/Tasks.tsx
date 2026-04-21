@@ -80,7 +80,8 @@ export default function Tasks() {
     }, 250);
   }, []);
   usePisaEvents(useCallback((ev) => {
-    if (ev.table === "task" || ev.table === "task_run") scheduleRefetch();
+    if (ev.kind !== "row") return;
+    if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
   }, [scheduleRefetch]));
 
   useEffect(() => {

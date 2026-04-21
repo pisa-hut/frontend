@@ -98,17 +98,33 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
     return () => clearInterval(interval);
   }, [load, autoRefresh]);
 
-  // SSE: refetch this task's runs whenever the manager emits an event for
-  // our taskId (task row transition) or a task_run row we're watching.
+  // SSE: refetch this task's runs on row events for our taskId, and
+  // append streamed log chunks to the open Drawer (if any).
   const refetchTimer = useRef<number | null>(null);
   const knownRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
+  const openLogRunId = log?.run.id;
   usePisaEvents(
     useCallback(
       (ev) => {
+        if (ev.kind === "log") {
+          if (openLogRunId !== undefined && ev.task_run_id === openLogRunId) {
+            setLog((prev) => {
+              if (!prev || prev.run.id !== ev.task_run_id) return prev;
+              // Drop chunks that arrive while the initial snapshot fetch is
+              // still in flight — the fetch's result is authoritative for
+              // everything up to that moment, and we don't want a double
+              // copy when the fetch lands.
+              if (prev.loading) return prev;
+              return { ...prev, content: (prev.content ?? "") + ev.chunk };
+            });
+          }
+          return;
+        }
+        const row = ev.row;
         const concerns =
-          (ev.table === "task" && ev.id === taskId) ||
-          (ev.table === "task_run" && knownRunIds.has(ev.id)) ||
-          ev.table === "task_run"; // insert of a new run we don't yet know about
+          (row.table === "task" && row.id === taskId) ||
+          (row.table === "task_run" && knownRunIds.has(row.id)) ||
+          row.table === "task_run"; // insert of a new run we don't yet know about
         if (!concerns) return;
         if (refetchTimer.current !== null) return;
         refetchTimer.current = window.setTimeout(() => {
@@ -116,7 +132,7 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
           load();
         }, 250);
       },
-      [taskId, knownRunIds, load],
+      [taskId, knownRunIds, load, openLogRunId],
     ),
   );
 
@@ -302,10 +318,35 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
   );
 
   const drawerTitle = (() => {
-    if (!log) return "";
+    if (!log) return null;
     const exec = log.executor;
-    return `Attempt #${log.run.attempt} · ${exec?.hostname ?? "executor"}`;
+    const isLive = log.run.task_run_status === "running";
+    return (
+      <Space>
+        <span>
+          Attempt #{log.run.attempt} · {exec?.hostname ?? "executor"}
+        </span>
+        {isLive && (
+          <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
+            live
+          </Tag>
+        )}
+      </Space>
+    );
   })();
+
+  // Auto-scroll the log pane to the bottom whenever content grows — lets
+  // users watch the tail without manually scrolling. `logPaneRef` is set
+  // by the <pre> below; content length in the deps list is enough because
+  // append mutates the string identity.
+  const logPaneRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = logPaneRef.current;
+    if (!el) return;
+    // If the user has scrolled up, don't yank them back down.
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [log?.content]);
 
   return (
     <div style={{ padding: "4px 8px" }}>
@@ -401,6 +442,7 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
           </div>
         ) : log?.content ? (
           <pre
+            ref={logPaneRef}
             style={{
               flex: 1,
               margin: 0,
@@ -420,7 +462,13 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
           </pre>
         ) : log ? (
           <div style={{ padding: 24 }}>
-            <Empty description="No log captured for this run." />
+            <Empty
+              description={
+                log.run.task_run_status === "running"
+                  ? "Waiting for the executor to stream its first chunk…"
+                  : "No log captured for this run."
+              }
+            />
           </div>
         ) : null}
       </Drawer>

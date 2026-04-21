@@ -2,11 +2,20 @@ import { useEffect } from "react";
 
 const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
 
-export interface PisaEvent {
-  table: "task" | "task_run";
-  op: "insert" | "update" | "delete";
-  id: number;
-}
+export type PisaEvent =
+  | {
+      kind: "row";
+      row: {
+        table: "task" | "task_run";
+        op: "insert" | "update" | "delete";
+        id: number;
+      };
+    }
+  | {
+      kind: "log";
+      task_run_id: number;
+      chunk: string;
+    };
 
 // Single shared EventSource across the whole app. Every hook registers
 // its own listener; only the first mounted hook actually opens the
@@ -37,8 +46,8 @@ function releaseSource() {
   source = null;
 }
 
-/** Subscribe to realtime `task` / `task_run` events from the manager.
- *  Call inside a component; the listener is removed on unmount. */
+/** Subscribe to realtime events from the manager. Call inside a
+ *  component; the listener is removed on unmount. */
 export function usePisaEvents(onEvent: (e: PisaEvent) => void) {
   useEffect(() => {
     ensureSource();
