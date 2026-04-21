@@ -44,7 +44,6 @@ export interface ScenarioResponse {
   scenario_format: ScenarioFormat;
   title: string | null;
   scenario_path?: string;
-  goal_config: unknown;
 }
 
 export interface MapFileMeta {

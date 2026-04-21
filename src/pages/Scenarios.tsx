@@ -48,7 +48,7 @@ export default function Scenarios() {
   const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
   const openEdit = (r: ScenarioResponse) => {
     setEditing(r);
-    form.setFieldsValue({ ...r, goal_config: JSON.stringify(r.goal_config, null, 2) });
+    form.setFieldsValue(r);
     setModalOpen(true);
   };
 
@@ -119,10 +119,10 @@ export default function Scenarios() {
     }
   };
 
-  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; goal_config: string }) => {
+  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string }) => {
     setSaving(true);
     try {
-      const payload = { ...values, goal_config: JSON.parse(values.goal_config), title: values.title || null };
+      const payload = { ...values, title: values.title || null };
       if (editing) { await api.updateScenario(editing.id, payload); message.success("Updated"); }
       else { await api.createScenario(payload); message.success("Created"); }
       setModalOpen(false); form.resetFields(); setEditing(null); load();
@@ -176,12 +176,6 @@ export default function Scenarios() {
                     </div>
                   ) : null}
                 </div>
-                <div style={{ marginBottom: 12 }}>
-                  <Typography.Text type="secondary" style={{ display: "block", marginBottom: 4 }}>Goal Config</Typography.Text>
-                  <pre style={{ margin: 0, fontSize: 11, maxHeight: 200, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
-                    {JSON.stringify(r.goal_config, null, 2)}
-                  </pre>
-                </div>
                 <Space wrap size="small">
                   <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>XOSC</Button>
                   <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setFilesFor(r)}>Files</Button>
@@ -202,12 +196,11 @@ export default function Scenarios() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
           <Form.Item name="title" label="Title"><Input /></Form.Item>
-          <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
-            { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
-            <Input.TextArea rows={4} placeholder='{"key": "value"}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />
-          </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
+          Ego destination and target speed live in the scenario's <code>spec.yaml</code> file — use the <b>Files</b> button to edit it.
+        </Typography.Paragraph>
       </Modal>
 
       {/* XOSC Preview modal — one tab per *.xosc file in the scenario */}
