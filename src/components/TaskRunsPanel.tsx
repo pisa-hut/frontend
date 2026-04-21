@@ -68,20 +68,64 @@ interface LogDrawerState {
   error?: string;
 }
 
+const INITIAL_LIMIT = 5;
+const PAGE_SIZE = 20;
+
 export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number; autoRefresh: boolean }) {
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
   const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [reachedEnd, setReachedEnd] = useState(false);
+  const [limit, setLimit] = useState(INITIAL_LIMIT);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [log, setLog] = useState<LogDrawerState | null>(null);
 
   useEffect(() => {
-    const load = () => api.listTaskRuns(taskId).then(setRuns).finally(() => setLoading(false));
+    const load = () =>
+      api
+        .listTaskRuns(taskId, limit)
+        .then((rows) => {
+          setRuns(rows);
+          setReachedEnd(rows.length < limit);
+        })
+        .finally(() => setLoading(false));
     load();
     if (!autoRefresh) return;
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [taskId, autoRefresh]);
+  }, [taskId, autoRefresh, limit]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const older = await api.listTaskRuns(taskId, PAGE_SIZE, runs.length);
+      if (older.length === 0) {
+        setReachedEnd(true);
+      } else {
+        setRuns((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          return [...prev, ...older.filter((r) => !seen.has(r.id))];
+        });
+        setLimit(runs.length + older.length);
+        if (older.length < PAGE_SIZE) setReachedEnd(true);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const loadAll = async () => {
+    setLoadingMore(true);
+    try {
+      const all = await api.listTaskRuns(taskId, 10000);
+      setRuns(all);
+      setLimit(all.length);
+      setReachedEnd(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     const needed = [...new Set(runs.map((r) => r.executor_id))].filter((id) => !executors.has(id));
@@ -246,7 +290,39 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
       ) : runs.length === 0 ? (
         <Typography.Text type="secondary">No runs yet.</Typography.Text>
       ) : (
-        <Timeline items={items} />
+        <>
+          <Timeline items={items} />
+          {!reachedEnd && (
+            <Space size="small" style={{ marginTop: 4, marginLeft: 6 }}>
+              <Button
+                size="small"
+                type="link"
+                loading={loadingMore}
+                onClick={loadMore}
+                style={{ padding: 0 }}
+              >
+                Show older attempts
+              </Button>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                ·
+              </Typography.Text>
+              <Button
+                size="small"
+                type="link"
+                loading={loadingMore}
+                onClick={loadAll}
+                style={{ padding: 0 }}
+              >
+                Show all
+              </Button>
+            </Space>
+          )}
+          {reachedEnd && runs.length > INITIAL_LIMIT && (
+            <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
+              {runs.length} attempts — end of history
+            </Typography.Text>
+          )}
+        </>
       )}
 
       <Drawer

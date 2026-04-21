@@ -255,9 +255,9 @@ export const api = {
 
   // Task Runs — listing intentionally excludes the `log` column so expanding
   // a task row doesn't pull down hundreds of KB of captured output.
-  listTaskRuns: (taskId: number) =>
+  listTaskRuns: (taskId: number, limit = 5, offset = 0) =>
     pgList<TaskRunResponse>(
-      `task_run?task_id=eq.${taskId}&order=attempt.desc&limit=5&select=id,task_id,executor_id,attempt,run_time_env,task_run_status,started_at,finished_at,error_message`,
+      `task_run?task_id=eq.${taskId}&order=attempt.desc&limit=${limit}&offset=${offset}&select=id,task_id,executor_id,attempt,run_time_env,task_run_status,started_at,finished_at,error_message`,
     ),
   getTaskRunLog: async (runId: number): Promise<string | null> => {
     const rows = await pgList<{ log: string | null }>(
