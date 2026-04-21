@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
-  CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined,
+  CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
@@ -199,7 +199,11 @@ export default function Tasks() {
       filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
       defaultFilteredValue: defaultStatusFilter,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
-      render: (status: TaskStatus) => <Tag color={statusColors[status]}>{status.toUpperCase()}</Tag> },
+      render: (status: TaskStatus) => (
+        <Tag color={statusColors[status]} icon={status === "running" ? <SyncOutlined spin /> : undefined}>
+          {status.toUpperCase()}
+        </Tag>
+      ) },
     { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60,
       sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
     { title: "Last Run", key: "last_run", width: 170,
