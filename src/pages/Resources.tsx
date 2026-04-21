@@ -5,7 +5,6 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfigUpload from "../components/ConfigUpload";
 import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
-import SeedDefaultsButton from "../components/SeedDefaultsButton";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, SamplerResponse, MapResponse } from "../api/types";
 
@@ -281,14 +280,10 @@ function MapsTab() {
 }
 
 export default function Resources() {
-  const [seedTick, setSeedTick] = useState(0);
   return (
     <>
-      <PageHeader title="Resources">
-        <SeedDefaultsButton onChange={() => setSeedTick((n) => n + 1)} />
-      </PageHeader>
+      <PageHeader title="Resources" />
       <Tabs
-        key={seedTick}
         items={[
           { key: "avs", label: "AVs", children: <AvsTab /> },
           { key: "simulators", label: "Simulators", children: <SimulatorsTab /> },
