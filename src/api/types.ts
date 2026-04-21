@@ -94,6 +94,8 @@ export interface TaskRunResponse {
   started_at: string | null;
   finished_at: string | null;
   error_message: string | null;
+  // Not fetched by listTaskRuns to keep payload small — use api.getTaskRunLog(id).
+  log?: string | null;
 }
 
 export interface ExecutorResponse {
