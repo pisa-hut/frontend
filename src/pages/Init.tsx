@@ -12,7 +12,6 @@ const SEED_AVS: Omit<AvResponse, "id">[] = [
       apptainer: "/opt/pisa/sif/autoware.sif",
       docker: "tonychi/autoware-wrapper:latest",
     },
-    config_path: "config/av/autoware.yaml",
     nv_runtime: false,
     ros_runtime: true,
     carla_runtime: false,
@@ -23,7 +22,6 @@ const SEED_AVS: Omit<AvResponse, "id">[] = [
       apptainer: "/opt/pisa/sif/carla-agent.sif",
       docker: "tonychi/carla-agent-wrapper:latest",
     },
-    config_path: "config/av/carla-agent.yaml",
     nv_runtime: false,
     ros_runtime: false,
     carla_runtime: true,
@@ -37,7 +35,6 @@ const SEED_SIMULATORS: Omit<SimulatorResponse, "id">[] = [
       apptainer: "/opt/pisa/sif/esmini.sif",
       docker: "tonychi/esmini-wrapper:latest",
     },
-    config_path: "config/sim/esmini.yaml",
     nv_runtime: false,
     ros_runtime: false,
     carla_runtime: false,
@@ -48,7 +45,6 @@ const SEED_SIMULATORS: Omit<SimulatorResponse, "id">[] = [
       apptainer: "/opt/pisa/sif/carla.sif",
       docker: "tonychi/carla-wrapper:latest",
     },
-    config_path: "config/sim/carla.yaml",
     nv_runtime: false,
     ros_runtime: false,
     carla_runtime: true,
@@ -56,13 +52,13 @@ const SEED_SIMULATORS: Omit<SimulatorResponse, "id">[] = [
 ];
 
 const SEED_MAPS: Omit<MapResponse, "id">[] = [
-  { name: "tyms", xodr_path: "map/tyms/xodr/", osm_path: "map/tyms/osm/" },
-  { name: "frankenburg", xodr_path: "map/frankenburg/xodr/", osm_path: "map/frankenburg/osm/" },
-  { name: "Town10HD_Opt", xodr_path: "map/Town10HD_Opt/xodr/", osm_path: "map/Town10HD_Opt/osm/" },
+  { name: "tyms" },
+  { name: "frankenburg" },
+  { name: "Town10HD_Opt" },
 ];
 
 const SEED_SAMPLERS: Omit<SamplerResponse, "id">[] = [
-  { name: "grid", module_path: "simcore.sampler.grid_search_sampler:GridSearchSampler", config_path: null },
+  { name: "grid", module_path: "simcore.sampler.grid_search_sampler:GridSearchSampler" },
 ];
 
 interface SeedResult {
@@ -130,7 +126,8 @@ export default function Init() {
       <PageHeader title="Initialize Database" />
       <Typography.Paragraph type="secondary">
         Seed the database with default AVs, Simulators, Maps, and Samplers.
-        Existing entries will be skipped.
+        Existing entries will be skipped. After seeding, upload config yaml and
+        map files (xodr/osm) per row from the <b>Resources</b> page.
       </Typography.Paragraph>
 
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>

@@ -6,8 +6,6 @@ import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
 
-const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
-
 const formatOptions: { label: string; value: ScenarioFormat }[] = [
   { label: "OpenSCENARIO 1.x", value: "open_scenario1" },
   { label: "OpenSCENARIO 2.x", value: "open_scenario2" },
@@ -47,14 +45,17 @@ export default function Scenarios() {
   };
 
   const openPreview = async (r: ScenarioResponse) => {
-    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
-    setPreviewTitle(name);
+    const fallbackName = r.title ?? (r.scenario_path ? r.scenario_path.split("/").pop() : null) ?? `scenario-${r.id}`;
+    setPreviewTitle(fallbackName);
     setPreviewContent("");
     setPreviewLoading(true);
     setPreviewOpen(true);
     try {
-      const filePath = `${r.scenario_path}/${name}.xosc`;
-      const res = await fetch(`${MANAGER_URL}/scenario/file?path=${encodeURIComponent(filePath)}`);
+      const files = await api.listScenarioFiles(r.id);
+      const xosc = files.find((f) => f.relative_path.endsWith(".xosc"));
+      if (!xosc) throw new Error("No .xosc file in this scenario");
+      setPreviewTitle(xosc.relative_path.replace(/\.xosc$/, ""));
+      const res = await fetch(api.scenarioFileUrl(r.id, xosc.relative_path));
       if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
       setPreviewContent(await res.text());
     } catch (e) {
@@ -67,13 +68,16 @@ export default function Scenarios() {
   const RENDERER_URL = "/renderer";
 
   const openVideo = async (r: ScenarioResponse) => {
-    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
+    const name = r.title ?? (r.scenario_path ? r.scenario_path.split("/").pop() : null) ?? `scenario-${r.id}`;
     setVideoTitle(name);
     setVideoUrl("");
     setVideoError("");
     setVideoLoading(true);
     setVideoOpen(true);
     try {
+      if (!r.scenario_path) {
+        throw new Error("Video preview is not supported for scenarios without a filesystem path");
+      }
       const res = await fetch(`${RENDERER_URL}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,7 +96,7 @@ export default function Scenarios() {
     }
   };
 
-  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
+  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; goal_config: string }) => {
     setSaving(true);
     try {
       const payload = { ...values, goal_config: JSON.parse(values.goal_config), title: values.title || null };
@@ -113,8 +117,6 @@ export default function Scenarios() {
     { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 140,
       filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
-    { title: "Path", dataIndex: "scenario_path", key: "scenario_path", ellipsis: true,
-      ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
   ];
 
   return (
@@ -139,12 +141,17 @@ export default function Scenarios() {
           return (
             <Col xs={24} lg={10}>
               <Card size="small"
-                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? r.scenario_path}</Typography.Text>}
+                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? `scenario-${r.id}`}</Typography.Text>}
                 extra={<Button size="small" type="text" onClick={() => setSelectedId(null)}>x</Button>}
               >
                 <div style={{ marginBottom: 12, fontSize: 13 }}>
                   <div><Typography.Text type="secondary">Format: </Typography.Text>{r.scenario_format}</div>
-                  <div style={{ marginTop: 4 }}><Typography.Text type="secondary">Path: </Typography.Text><Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text></div>
+                  {r.scenario_path ? (
+                    <div style={{ marginTop: 4 }}>
+                      <Typography.Text type="secondary">Path: </Typography.Text>
+                      <Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
                 <div style={{ marginBottom: 12 }}>
                   <Typography.Text type="secondary" style={{ display: "block", marginBottom: 4 }}>Goal Config</Typography.Text>
@@ -171,7 +178,6 @@ export default function Scenarios() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
           <Form.Item name="title" label="Title"><Input /></Form.Item>
-          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
             { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
             <Input.TextArea rows={4} placeholder='{"key": "value"}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />

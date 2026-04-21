@@ -6,43 +6,64 @@ export interface AvResponse {
   id: number;
   name: string;
   image_path: Record<string, unknown>;
-  config_path: string;
+  config_path?: string | null;
   nv_runtime: boolean;
   carla_runtime: boolean;
   ros_runtime: boolean;
+  config_sha256?: string | null;
 }
 
 export interface SimulatorResponse {
   id: number;
   name: string;
   image_path: Record<string, unknown>;
-  config_path: string;
+  config_path?: string | null;
   nv_runtime: boolean;
   carla_runtime: boolean;
   ros_runtime: boolean;
+  config_sha256?: string | null;
 }
 
 export interface SamplerResponse {
   id: number;
   name: string;
-  config_path: string | null;
+  config_path?: string | null;
   module_path: string;
+  config_sha256?: string | null;
 }
 
 export interface MapResponse {
   id: number;
   name: string;
-  xodr_path: string | null;
-  osm_path: string | null;
+  xodr_path?: string | null;
+  osm_path?: string | null;
 }
 
 export interface ScenarioResponse {
   id: number;
   scenario_format: ScenarioFormat;
   title: string | null;
-  scenario_path: string;
+  scenario_path?: string;
   goal_config: unknown;
 }
+
+export interface MapFileMeta {
+  id: number;
+  map_id: number;
+  relative_path: string;
+  content_sha256: string;
+  size: number;
+}
+
+export interface ScenarioFileMeta {
+  id: number;
+  scenario_id: number;
+  relative_path: string;
+  content_sha256: string;
+  size: number;
+}
+
+export type ConfigEntity = "av" | "simulator" | "sampler";
 
 export interface PlanResponse {
   id: number;

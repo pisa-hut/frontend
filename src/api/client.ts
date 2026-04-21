@@ -8,6 +8,9 @@ import type {
   TaskResponse,
   TaskRunResponse,
   ExecutorResponse,
+  MapFileMeta,
+  ScenarioFileMeta,
+  ConfigEntity,
 } from "./types";
 
 const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
@@ -111,6 +114,30 @@ async function managerPost<T>(path: string, data?: unknown): Promise<T> {
   return res.json();
 }
 
+async function managerGetJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${MANAGER_URL}${path}`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function managerPutBytes(path: string, body: Blob | ArrayBuffer | Uint8Array): Promise<void> {
+  const res = await fetch(`${MANAGER_URL}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: body as BodyInit,
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+async function managerDelete(path: string): Promise<void> {
+  const res = await fetch(`${MANAGER_URL}${path}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+function managerFileUrl(path: string): string {
+  return `${MANAGER_URL}${path}`;
+}
+
 export const api = {
   // --- CRUD via PostgREST ---
 
@@ -208,4 +235,31 @@ export const api = {
     managerPost("/task/invalid", data),
   taskSucceeded: (data: { task_id: number }) =>
     managerPost("/task/succeeded", data),
+
+  // --- Byte-level file access via Manager API ---
+
+  listMapFiles: (mapId: number) =>
+    managerGetJson<MapFileMeta[]>(`/map/${mapId}/file`),
+  mapFileUrl: (mapId: number, relPath: string) =>
+    managerFileUrl(`/map/${mapId}/file/${relPath}`),
+  uploadMapFile: (mapId: number, relPath: string, content: Blob) =>
+    managerPutBytes(`/map/${mapId}/file/${relPath}`, content),
+  deleteMapFile: (mapId: number, relPath: string) =>
+    managerDelete(`/map/${mapId}/file/${relPath}`),
+
+  listScenarioFiles: (scenarioId: number) =>
+    managerGetJson<ScenarioFileMeta[]>(`/scenario/${scenarioId}/file`),
+  scenarioFileUrl: (scenarioId: number, relPath: string) =>
+    managerFileUrl(`/scenario/${scenarioId}/file/${relPath}`),
+  uploadScenarioFile: (scenarioId: number, relPath: string, content: Blob) =>
+    managerPutBytes(`/scenario/${scenarioId}/file/${relPath}`, content),
+  deleteScenarioFile: (scenarioId: number, relPath: string) =>
+    managerDelete(`/scenario/${scenarioId}/file/${relPath}`),
+
+  configUrl: (entity: ConfigEntity, id: number) =>
+    managerFileUrl(`/${entity}/${id}/config`),
+  uploadConfig: (entity: ConfigEntity, id: number, content: Blob) =>
+    managerPutBytes(`/${entity}/${id}/config`, content),
+  deleteConfig: (entity: ConfigEntity, id: number) =>
+    managerDelete(`/${entity}/${id}/config`),
 };
