@@ -115,26 +115,24 @@ export default function TaskRunsPanel({ taskId, autoRefresh }: { taskId: number;
         const exec = executors.get(run.executor_id);
         const isExpanded = expanded.has(run.id);
         const dur = formatDuration(run.started_at, run.finished_at);
-        const canShowDetails = !!run.error_message || run.task_run_status !== "running";
 
         const summary = (
           <div
-            onClick={() => canShowDetails && toggle(run.id)}
+            onClick={() => toggle(run.id)}
             style={{
               display: "flex",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 8,
-              cursor: canShowDetails ? "pointer" : "default",
+              cursor: "pointer",
               userSelect: "none",
             }}
           >
-            {canShowDetails &&
-              (isExpanded ? (
-                <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-              ) : (
-                <RightOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-              ))}
+            {isExpanded ? (
+              <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
+            ) : (
+              <RightOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
+            )}
             <Typography.Text strong>Attempt #{run.attempt}</Typography.Text>
             <Tag
               color={
