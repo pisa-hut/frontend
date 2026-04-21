@@ -7,7 +7,6 @@ import {
   ProjectOutlined,
   AppstoreOutlined,
   ClusterOutlined,
-  ThunderboltOutlined,
   CloudUploadOutlined,
   MenuOutlined,
   MenuFoldOutlined,
@@ -29,7 +28,6 @@ const mainItems = [
 
 const utilItems = [
   { key: "/upload", icon: <CloudUploadOutlined />, label: "Upload" },
-  { key: "/init", icon: <ThunderboltOutlined />, label: "Init" },
 ];
 
 const allItems = [...mainItems, ...utilItems];
