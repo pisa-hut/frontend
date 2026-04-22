@@ -196,56 +196,67 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
         const isExpanded = expanded.has(run.id);
         const dur = formatDuration(run.started_at, run.finished_at);
 
+        // The Log button lives in its own fixed-width column on the right
+        // so the summary row's content can flow and wrap (error preview
+        // showing/hiding, etc.) without nudging the button. The summary is
+        // the click target for expand/collapse.
         const summary = (
-          <div
-            onClick={() => toggle(run.id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-          >
-            {isExpanded ? (
-              <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-            ) : (
-              <RightOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-            )}
-            <Typography.Text strong>Attempt #{run.attempt}</Typography.Text>
-            <Tag
-              color={
-                run.task_run_status === "completed"
-                  ? "success"
-                  : run.task_run_status === "failed"
-                    ? "error"
-                    : run.task_run_status === "running"
-                      ? "processing"
-                      : "default"
-              }
-              style={{ marginInline: 0 }}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div
+              onClick={() => toggle(run.id)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
+                cursor: "pointer",
+                userSelect: "none",
+                // Match the button's height so the click target stays
+                // the same size whether or not the content wraps.
+                minHeight: 24,
+              }}
             >
-              {run.task_run_status}
-            </Tag>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {timeAgo(run.started_at)}
-              {dur ? ` · ${dur}` : ""}
-              {exec ? ` · ${exec.hostname}` : ""}
-            </Typography.Text>
-            {run.error_message && !isExpanded && (
-              <Typography.Text
-                type="danger"
-                ellipsis={{ tooltip: run.error_message }}
-                style={{ fontSize: 12, maxWidth: 360 }}
+              {isExpanded ? (
+                <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
+              ) : (
+                <RightOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
+              )}
+              <Typography.Text strong>Attempt #{run.attempt}</Typography.Text>
+              <Tag
+                color={
+                  run.task_run_status === "completed"
+                    ? "success"
+                    : run.task_run_status === "failed"
+                      ? "error"
+                      : run.task_run_status === "running"
+                        ? "processing"
+                        : "default"
+                }
+                style={{ marginInline: 0 }}
               >
-                {run.error_message}
+                {run.task_run_status}
+              </Tag>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {timeAgo(run.started_at)}
+                {dur ? ` · ${dur}` : ""}
+                {exec ? ` · ${exec.hostname}` : ""}
               </Typography.Text>
-            )}
-            <span style={{ flex: 1 }} />
+              {run.error_message && !isExpanded && (
+                <Typography.Text
+                  type="danger"
+                  ellipsis={{ tooltip: run.error_message }}
+                  style={{ fontSize: 12, maxWidth: 360 }}
+                >
+                  {run.error_message}
+                </Typography.Text>
+              )}
+            </div>
             <Button
               size="small"
               icon={<FileTextOutlined />}
+              style={{ flexShrink: 0 }}
               onClick={(e) => {
                 e.stopPropagation();
                 openLog(run);
