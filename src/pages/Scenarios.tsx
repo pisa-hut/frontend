@@ -91,20 +91,17 @@ export default function Scenarios() {
   const RENDERER_URL = "/renderer";
 
   const openVideo = async (r: ScenarioResponse) => {
-    const name = r.title ?? (r.scenario_path ? r.scenario_path.split("/").pop() : null) ?? `scenario-${r.id}`;
+    const name = r.title ?? `scenario-${r.id}`;
     setVideoTitle(name);
     setVideoUrl("");
     setVideoError("");
     setVideoLoading(true);
     setVideoOpen(true);
     try {
-      if (!r.scenario_path) {
-        throw new Error("Video preview is not supported for scenarios without a filesystem path");
-      }
       const res = await fetch(`${RENDERER_URL}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario_path: r.scenario_path }),
+        body: JSON.stringify({ scenario_id: r.id }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
