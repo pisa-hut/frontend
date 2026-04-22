@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Card, Col, Row, Statistic, Spin } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Card, Col, Row, Statistic, Spin, Typography } from "antd";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -7,10 +7,12 @@ import {
   ClockCircleOutlined,
   PlusCircleOutlined,
   WarningOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
+import { usePisaEvents } from "../api/events";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
 const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; label: string }> = {
@@ -22,17 +24,58 @@ const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; l
   invalid: { color: "#d9d9d9", icon: <WarningOutlined />, label: "Invalid" },
 };
 
+interface AbortedStats {
+  total: number;
+  last24h: number;
+}
+
+async function fetchAbortedStats(): Promise<AbortedStats> {
+  const POSTGREST = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const [total, recent] = await Promise.all([
+    fetch(`${POSTGREST}/task_run?task_run_status=eq.aborted&select=id`, {
+      headers: { Accept: "application/json" },
+    }).then((r) => r.json()),
+    fetch(
+      `${POSTGREST}/task_run?task_run_status=eq.aborted&finished_at=gte.${encodeURIComponent(cutoff)}&select=id`,
+      { headers: { Accept: "application/json" } },
+    ).then((r) => r.json()),
+  ]);
+  return {
+    total: Array.isArray(total) ? total.length : 0,
+    last24h: Array.isArray(recent) ? recent.length : 0,
+  };
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
+  const [aborted, setAborted] = useState<AbortedStats>({ total: 0, last24h: 0 });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = () => api.listTasks().then(setTasks).finally(() => setLoading(false));
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
+  const load = useCallback(() => {
+    return Promise.all([api.listTasks(), fetchAbortedStats()]).then(([t, a]) => {
+      setTasks(t);
+      setAborted(a);
+    });
   }, []);
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, [load]);
+
+  // SSE: debounced refetch on any task / task_run change.
+  usePisaEvents(
+    useCallback(
+      (ev) => {
+        if (ev.kind !== "row") return;
+        if (ev.row.table === "task" || ev.row.table === "task_run") {
+          load();
+        }
+      },
+      [load],
+    ),
+  );
 
   if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
 
@@ -62,9 +105,32 @@ export default function Dashboard() {
           </Col>
         ))}
       </Row>
-      <Card size="small" style={{ marginTop: 12 }} styles={{ body: { padding: "12px 16px" } }}>
-        <Statistic title="Total Tasks" value={tasks.length} />
-      </Card>
+      <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+        <Col xs={24} md={12}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic title="Total Tasks" value={tasks.length} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={
+                <span>
+                  <StopOutlined style={{ marginRight: 4 }} />
+                  Aborted runs (last 24 h)
+                </span>
+              }
+              value={aborted.last24h}
+              suffix={
+                <Typography.Text type="secondary" style={{ fontSize: 13, marginLeft: 8 }}>
+                  / {aborted.total} total
+                </Typography.Text>
+              }
+              valueStyle={{ color: aborted.last24h > 0 ? "#ff7875" : undefined, fontSize: 22 }}
+            />
+          </Card>
+        </Col>
+      </Row>
     </>
   );
 }
