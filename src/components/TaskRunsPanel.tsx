@@ -5,11 +5,7 @@ import {
   Button,
   Timeline,
   Tag,
-  Drawer,
-  Spin,
   message,
-  Empty,
-  Tooltip,
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -17,10 +13,7 @@ import {
   SyncOutlined,
   StopOutlined,
   ExclamationCircleOutlined,
-  FileTextOutlined,
   CopyOutlined,
-  DownloadOutlined,
-  RightOutlined,
 } from "@ant-design/icons";
 import type React from "react";
 import { api } from "../api/client";
@@ -60,26 +53,23 @@ function timeAgo(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-interface LogDrawerState {
-  run: TaskRunResponse;
-  executor?: ExecutorResponse;
-  loading: boolean;
-  content: string | null;
-  error?: string;
-}
-
 const INITIAL_LIMIT = 5;
 const PAGE_SIZE = 20;
 
-export default function TaskRunsPanel({ taskId }: { taskId: number }) {
+interface Props {
+  taskId: number;
+  /** Parent holds the log drawer so it can be opened from the task row's
+   *  action button too, not just from inside this panel. */
+  onOpenLog: (run: TaskRunResponse, executor?: ExecutorResponse) => void;
+}
+
+export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
   const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
   const [limit, setLimit] = useState(INITIAL_LIMIT);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [log, setLog] = useState<LogDrawerState | null>(null);
 
   const load = useCallback(() => {
     return api.listTaskRuns(taskId, limit).then((rows) => {
@@ -93,28 +83,14 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
     load().finally(() => setLoading(false));
   }, [load]);
 
-  // SSE: refetch this task's runs on row events for our taskId, and
-  // append streamed log chunks to the open Drawer (if any).
+  // SSE: refetch on row changes for this task/its runs. (Log chunks are
+  // handled by LogDrawer — we don't care about them here.)
   const refetchTimer = useRef<number | null>(null);
   const knownRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
-  const openLogRunId = log?.run.id;
   usePisaEvents(
     useCallback(
       (ev) => {
-        if (ev.kind === "log") {
-          if (openLogRunId !== undefined && ev.task_run_id === openLogRunId) {
-            setLog((prev) => {
-              if (!prev || prev.run.id !== ev.task_run_id) return prev;
-              // Drop chunks that arrive while the initial snapshot fetch is
-              // still in flight — the fetch's result is authoritative for
-              // everything up to that moment, and we don't want a double
-              // copy when the fetch lands.
-              if (prev.loading) return prev;
-              return { ...prev, content: (prev.content ?? "") + ev.chunk };
-            });
-          }
-          return;
-        }
+        if (ev.kind !== "row") return;
         const row = ev.row;
         const concerns =
           (row.table === "task" && row.id === taskId) ||
@@ -127,9 +103,15 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
           load();
         }, 250);
       },
-      [taskId, knownRunIds, load, openLogRunId],
+      [taskId, knownRunIds, load],
     ),
   );
+
+  useEffect(() => {
+    const needed = [...new Set(runs.map((r) => r.executor_id))].filter((id) => !executors.has(id));
+    if (needed.length === 0) return;
+    api.listExecutors().then((all) => setExecutors(new Map(all.map((e) => [e.id, e]))));
+  }, [runs]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -162,71 +144,42 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
     }
   };
 
-  useEffect(() => {
-    const needed = [...new Set(runs.map((r) => r.executor_id))].filter((id) => !executors.has(id));
-    if (needed.length === 0) return;
-    api.listExecutors().then((all) => setExecutors(new Map(all.map((e) => [e.id, e]))));
-  }, [runs]);
-
-  const toggle = (id: number) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const openLog = async (run: TaskRunResponse) => {
-    const exec = executors.get(run.executor_id);
-    setLog({ run, executor: exec, loading: true, content: null });
-    try {
-      const content = await api.getTaskRunLog(run.id);
-      setLog({ run, executor: exec, loading: false, content });
-    } catch (e) {
-      setLog({ run, executor: exec, loading: false, content: null, error: String(e) });
-    }
-  };
-
   const items = useMemo(
     () =>
       runs.map((run) => {
         const exec = executors.get(run.executor_id);
-        const isExpanded = expanded.has(run.id);
         const dur = formatDuration(run.started_at, run.finished_at);
 
-        // Keep the summary row structurally identical whether expanded or
-        // not so the Log button doesn't jitter when clicked:
-        //   - Chevron: single RightOutlined glyph rotated 90 deg on
-        //     expand (no icon swap, no width change).
-        //   - Error preview: always rendered on the summary row if
-        //     `error_message` exists; details section adds Copy + full
-        //     text below but doesn't remove the preview.
-        //   - Left column flexes, right column (Log button) is fixed.
-        const summary = (
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        // Whole row is a click target that opens the log drawer.
+        // Metadata is one flex line that wraps gracefully; the row has
+        // a consistent hover background so it reads as a link.
+        return {
+          key: run.id,
+          dot: statusIcon(run.task_run_status),
+          color: "transparent",
+          children: (
             <div
-              onClick={() => toggle(run.id)}
+              onClick={() => onOpenLog(run, exec)}
               style={{
-                flex: 1,
-                minWidth: 0,
                 display: "flex",
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: 8,
+                padding: "2px 8px",
+                marginLeft: -8,
                 cursor: "pointer",
+                borderRadius: 4,
                 userSelect: "none",
-                minHeight: 24,
+                transition: "background 120ms",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background =
+                  "var(--ant-color-bg-text-hover, rgba(0,0,0,0.04))";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background = "transparent";
               }}
             >
-              <RightOutlined
-                style={{
-                  fontSize: 10,
-                  color: "#8c8c8c",
-                  transform: isExpanded ? "rotate(90deg)" : "none",
-                  transition: "transform 120ms ease",
-                }}
-              />
               <Typography.Text strong>Attempt #{run.attempt}</Typography.Text>
               <Tag
                 color={
@@ -248,116 +201,40 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
                 {exec ? ` · ${exec.hostname}` : ""}
               </Typography.Text>
               {run.error_message && (
-                <Typography.Text
-                  type="danger"
-                  ellipsis={{ tooltip: run.error_message }}
-                  style={{ fontSize: 12, maxWidth: 360 }}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    flex: "1 1 auto",
+                    minWidth: 0,
+                  }}
                 >
-                  {run.error_message}
-                </Typography.Text>
-              )}
-            </div>
-            <Button
-              size="small"
-              icon={<FileTextOutlined />}
-              style={{ flexShrink: 0 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                openLog(run);
-              }}
-            >
-              Log
-            </Button>
-          </div>
-        );
-
-        const details = isExpanded ? (
-          <div style={{ marginTop: 6, paddingLeft: 20, fontSize: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 8, rowGap: 2 }}>
-              <Typography.Text type="secondary">Started:</Typography.Text>
-              <span>{run.started_at ? new Date(run.started_at).toLocaleString() : "—"}</span>
-              <Typography.Text type="secondary">Finished:</Typography.Text>
-              <span>{run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}</span>
-              {exec && (
-                <>
-                  <Typography.Text type="secondary">Executor:</Typography.Text>
-                  <span>
-                    {exec.hostname}{" "}
-                    <Typography.Text type="secondary">
-                      (job {exec.slurm_job_id}, node {exec.slurm_node_list})
-                    </Typography.Text>
-                  </span>
-                </>
-              )}
-            </div>
-            {run.error_message && (
-              <div style={{ marginTop: 6 }}>
-                <Space align="start" size="small" style={{ width: "100%" }}>
-                  <Typography.Text type="danger" style={{ flex: 1, whiteSpace: "pre-wrap" }}>
+                  <Typography.Text
+                    type="danger"
+                    ellipsis={{ tooltip: run.error_message }}
+                    style={{ fontSize: 12, flex: 1, minWidth: 0 }}
+                  >
                     {run.error_message}
                   </Typography.Text>
-                  <Tooltip title="Copy error">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<CopyOutlined />}
-                      onClick={() => {
-                        navigator.clipboard.writeText(run.error_message ?? "");
-                        message.success("Copied");
-                      }}
-                    />
-                  </Tooltip>
-                </Space>
-              </div>
-            )}
-          </div>
-        ) : null;
-
-        return {
-          key: run.id,
-          dot: statusIcon(run.task_run_status),
-          color: "transparent",
-          children: (
-            <div>
-              {summary}
-              {details}
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CopyOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(run.error_message ?? "");
+                      message.success("Copied");
+                    }}
+                  />
+                </div>
+              )}
             </div>
           ),
         };
       }),
-    [runs, executors, expanded],
+    [runs, executors, onOpenLog],
   );
-
-  const drawerTitle = (() => {
-    if (!log) return null;
-    const exec = log.executor;
-    const isLive = log.run.task_run_status === "running";
-    return (
-      <Space>
-        <span>
-          Attempt #{log.run.attempt} · {exec?.hostname ?? "executor"}
-        </span>
-        {isLive && (
-          <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
-            live
-          </Tag>
-        )}
-      </Space>
-    );
-  })();
-
-  // Auto-scroll the log pane to the bottom whenever content grows — lets
-  // users watch the tail without manually scrolling. `logPaneRef` is set
-  // by the <pre> below; content length in the deps list is enough because
-  // append mutates the string identity.
-  const logPaneRef = useRef<HTMLPreElement | null>(null);
-  useEffect(() => {
-    const el = logPaneRef.current;
-    if (!el) return;
-    // If the user has scrolled up, don't yank them back down.
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [log?.content]);
 
   return (
     <div style={{ padding: "4px 8px" }}>
@@ -400,89 +277,6 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
           )}
         </>
       )}
-
-      <Drawer
-        title={drawerTitle}
-        placement="right"
-        width={720}
-        open={log !== null}
-        onClose={() => setLog(null)}
-        bodyStyle={{ padding: 0, display: "flex", flexDirection: "column" }}
-        extra={
-          log?.content && !log.loading ? (
-            <Space>
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                {(log.content.length / 1024).toFixed(1)} KB
-              </Typography.Text>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => {
-                  navigator.clipboard.writeText(log.content ?? "");
-                  message.success("Copied");
-                }}
-              >
-                Copy
-              </Button>
-              <Button
-                size="small"
-                icon={<DownloadOutlined />}
-                onClick={() => {
-                  const blob = new Blob([log.content ?? ""], { type: "text/plain" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `task-run-${log.run.id}.log`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                Download
-              </Button>
-            </Space>
-          ) : null
-        }
-      >
-        {log?.loading ? (
-          <div style={{ textAlign: "center", padding: 48 }}>
-            <Spin />
-          </div>
-        ) : log?.error ? (
-          <div style={{ padding: 24 }}>
-            <Empty description={`Failed to load log: ${log.error}`} />
-          </div>
-        ) : log?.content ? (
-          <pre
-            ref={logPaneRef}
-            style={{
-              flex: 1,
-              margin: 0,
-              padding: 16,
-              overflow: "auto",
-              background: "#0f0f10",
-              color: "#e5e5e5",
-              fontSize: 11,
-              lineHeight: 1.45,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-              fontFamily:
-                "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-            }}
-          >
-            {log.content}
-          </pre>
-        ) : log ? (
-          <div style={{ padding: 24 }}>
-            <Empty
-              description={
-                log.run.task_run_status === "running"
-                  ? "Waiting for the executor to stream its first chunk…"
-                  : "No log captured for this run."
-              }
-            />
-          </div>
-        ) : null}
-      </Drawer>
     </div>
   );
 }

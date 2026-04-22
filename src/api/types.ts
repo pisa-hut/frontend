@@ -80,7 +80,8 @@ export interface TaskResponse {
   task_status: TaskStatus;
   created_at: string;
   retry_count: number;
-  task_run?: { started_at: string | null }[];
+  /** The most recent attempt; populated by listTasks via a nested select. */
+  task_run?: TaskRunResponse[];
 }
 
 export interface TaskRunResponse {

@@ -2,20 +2,22 @@ import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Tag, Button, Modal, Form, Select, message, Typography, Space,
-  Progress, Alert, Statistic, Card, Row, Col, Input, Checkbox, Table, Popconfirm,
+  Progress, Alert, Statistic, Card, Row, Col, Input, Checkbox, Table, Popconfirm, Tooltip,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
-  TaskResponse, TaskStatus, PlanResponse,
-  AvResponse, SimulatorResponse, SamplerResponse,
+  TaskResponse, TaskStatus, TaskRunResponse, PlanResponse,
+  AvResponse, SimulatorResponse, SamplerResponse, ExecutorResponse,
 } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
@@ -41,6 +43,17 @@ export default function Tasks() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+
+  // Log drawer: owned at the page level so both the row action button and
+  // the timeline in TaskRunsPanel can open it, sharing one drawer.
+  const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
+  const [logExecutor, setLogExecutor] = useState<ExecutorResponse | undefined>();
+  const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
+
+  const openLog = useCallback((run: TaskRunResponse, executor?: ExecutorResponse) => {
+    setLogRun(run);
+    setLogExecutor(executor ?? executorsById.get(run.executor_id));
+  }, [executorsById]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -88,6 +101,13 @@ export default function Tasks() {
       .then(([p, a, s, sa]) => { setPlans(p); setAvs(a); setSimulators(s); setSamplers(sa); });
 
   useEffect(() => { fetchResources(); }, []);
+
+  // One-shot executor cache for the log drawer title (hostname).
+  useEffect(() => {
+    api.listExecutors().then((all) => {
+      setExecutorsById(new Map(all.map((e) => [e.id, e])));
+    });
+  }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
@@ -221,39 +241,56 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "", key: "actions", width: 110, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 148, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
       const canStop = ["pending", "running"].includes(record.task_status);
       const isPinned = pinnedIds.has(record.id);
-      // Swallow row-level clicks so any action button (pin / run / stop /
-      // delete / its Popconfirm popup) doesn't also trigger the row's
-      // expandRowByClick handler.
+      const latestRun = record.task_run?.[0];
+      // Swallow row-level clicks so any action button (log / pin / run /
+      // stop / delete / its Popconfirm popup) doesn't also trigger the
+      // row's expandRowByClick handler.
       return (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
-          <Button
-            size="small"
-            type={isPinned ? "primary" : "default"}
-            icon={<PushpinOutlined />}
-            onClick={() => {
-              setPinnedIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(record.id)) next.delete(record.id);
-                else next.add(record.id);
-                return next;
-              });
-            }}
-          />
+          <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              disabled={!latestRun}
+              onClick={() => latestRun && openLog(latestRun)}
+            />
+          </Tooltip>
+          <Tooltip title={isPinned ? "Unpin" : "Pin"}>
+            <Button
+              size="small"
+              type={isPinned ? "primary" : "default"}
+              icon={<PushpinOutlined />}
+              onClick={() => {
+                setPinnedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(record.id)) next.delete(record.id);
+                  else next.add(record.id);
+                  return next;
+                });
+              }}
+            />
+          </Tooltip>
           {canStop ? (
             <Popconfirm title="Stop?" onConfirm={() => handleStop(record.id)}>
-              <Button size="small" icon={<StopOutlined />} />
+              <Tooltip title="Stop">
+                <Button size="small" icon={<StopOutlined />} />
+              </Tooltip>
             </Popconfirm>
           ) : (
             <Popconfirm title="Run?" onConfirm={() => handleRun(record.id)} disabled={!canRun}>
-              <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun} />
+              <Tooltip title={canRun ? "Run" : "Not runnable in this state"}>
+                <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun} />
+              </Tooltip>
             </Popconfirm>
           )}
           <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Tooltip title="Delete">
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       );
@@ -309,7 +346,7 @@ export default function Tasks() {
           pagination={false}
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
           expandable={{
-            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} />,
+            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
             expandedRowKeys: expandedRows,
             showExpandColumn: false,
             expandRowByClick: true,
@@ -329,7 +366,7 @@ export default function Tasks() {
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         expandable={{
-          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} />,
+          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
           expandRowByClick: true,
@@ -406,6 +443,12 @@ export default function Tasks() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <LogDrawer
+        run={logRun}
+        executor={logExecutor}
+        onClose={() => setLogRun(null)}
+      />
     </>
   );
 }

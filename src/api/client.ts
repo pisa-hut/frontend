@@ -209,7 +209,13 @@ export const api = {
   deletePlan: (id: number) => pgDelete("plan", id),
 
   // Tasks
-  listTasks: () => pgList<TaskResponse>("task?select=*,task_run(started_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc"),
+  // Latest task_run fields are embedded so the row-level Log button can
+  // open the drawer without another round-trip. `log` is intentionally
+  // excluded — it's pulled lazily by the drawer via getTaskRunLog().
+  listTasks: () =>
+    pgList<TaskResponse>(
+      "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
+    ),
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   stopTask: async (id: number) => {
