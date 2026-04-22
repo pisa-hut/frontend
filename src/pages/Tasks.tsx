@@ -225,14 +225,16 @@ export default function Tasks() {
       const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
       const canStop = ["pending", "running"].includes(record.task_status);
       const isPinned = pinnedIds.has(record.id);
+      // Swallow row-level clicks so any action button (pin / run / stop /
+      // delete / its Popconfirm popup) doesn't also trigger the row's
+      // expandRowByClick handler.
       return (
-        <Space size={2}>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Button
             size="small"
             type={isPinned ? "primary" : "default"}
             icon={<PushpinOutlined />}
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={() => {
               setPinnedIds((prev) => {
                 const next = new Set(prev);
                 if (next.has(record.id)) next.delete(record.id);

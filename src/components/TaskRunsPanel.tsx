@@ -20,7 +20,6 @@ import {
   FileTextOutlined,
   CopyOutlined,
   DownloadOutlined,
-  DownOutlined,
   RightOutlined,
 } from "@ant-design/icons";
 import type React from "react";
@@ -196,10 +195,14 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
         const isExpanded = expanded.has(run.id);
         const dur = formatDuration(run.started_at, run.finished_at);
 
-        // The Log button lives in its own fixed-width column on the right
-        // so the summary row's content can flow and wrap (error preview
-        // showing/hiding, etc.) without nudging the button. The summary is
-        // the click target for expand/collapse.
+        // Keep the summary row structurally identical whether expanded or
+        // not so the Log button doesn't jitter when clicked:
+        //   - Chevron: single RightOutlined glyph rotated 90 deg on
+        //     expand (no icon swap, no width change).
+        //   - Error preview: always rendered on the summary row if
+        //     `error_message` exists; details section adds Copy + full
+        //     text below but doesn't remove the preview.
+        //   - Left column flexes, right column (Log button) is fixed.
         const summary = (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <div
@@ -213,16 +216,17 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
                 gap: 8,
                 cursor: "pointer",
                 userSelect: "none",
-                // Match the button's height so the click target stays
-                // the same size whether or not the content wraps.
                 minHeight: 24,
               }}
             >
-              {isExpanded ? (
-                <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-              ) : (
-                <RightOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
-              )}
+              <RightOutlined
+                style={{
+                  fontSize: 10,
+                  color: "#8c8c8c",
+                  transform: isExpanded ? "rotate(90deg)" : "none",
+                  transition: "transform 120ms ease",
+                }}
+              />
               <Typography.Text strong>Attempt #{run.attempt}</Typography.Text>
               <Tag
                 color={
@@ -243,7 +247,7 @@ export default function TaskRunsPanel({ taskId }: { taskId: number }) {
                 {dur ? ` · ${dur}` : ""}
                 {exec ? ` · ${exec.hostname}` : ""}
               </Typography.Text>
-              {run.error_message && !isExpanded && (
+              {run.error_message && (
                 <Typography.Text
                   type="danger"
                   ellipsis={{ tooltip: run.error_message }}
