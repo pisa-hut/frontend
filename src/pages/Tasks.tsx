@@ -7,8 +7,9 @@ import {
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
-  FileTextOutlined,
+  FileTextOutlined, ClearOutlined,
 } from "@ant-design/icons";
+import type { FilterValue } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
@@ -43,6 +44,17 @@ export default function Tasks() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+
+  // Controlled filter state so one "Clear Filters" button can reset every
+  // column at once (including the URL-driven default status filter).
+  const [filteredInfo, setFilteredInfo] = useState<Record<string, FilterValue | null>>(
+    () => ({ task_status: defaultStatusFilter ?? null }),
+  );
+  const hasActiveFilters = useMemo(
+    () => Object.values(filteredInfo).some((v) => v != null && v.length > 0),
+    [filteredInfo],
+  );
+  const clearFilters = useCallback(() => setFilteredInfo({}), []);
 
   // Log drawer: owned at the page level so both the row action button and
   // the timeline in TaskRunsPanel can open it, sharing one drawer.
@@ -213,22 +225,26 @@ export default function Tasks() {
       sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
     { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
+      filteredValue: filteredInfo.plan_id ?? null,
       ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
     { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true,
       render: (id: number) => avMap.get(id) ?? `#${id}`,
       filters: avs.map((a) => ({ text: a.name, value: a.id })),
+      filteredValue: filteredInfo.av_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.av_id === value },
     { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true,
       render: (id: number) => simMap.get(id) ?? `#${id}`,
       filters: simulators.map((s) => ({ text: s.name, value: s.id })),
+      filteredValue: filteredInfo.simulator_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.simulator_id === value },
     { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true,
       render: (id: number) => samplerMap.get(id) ?? `#${id}`,
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
+      filteredValue: filteredInfo.sampler_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
     { title: "Status", dataIndex: "task_status", key: "task_status", width: 100,
       filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
-      defaultFilteredValue: defaultStatusFilter,
+      filteredValue: filteredInfo.task_status ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (
         <Tag color={statusColors[status]} icon={status === "running" ? <SyncOutlined spin /> : undefined}>
@@ -331,6 +347,7 @@ export default function Tasks() {
       <PageHeader title="Tasks">
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { fetchResources().then(() => setModalOpen(true)); }}>Create</Button>
         <Button icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Bulk Create</Button>
+        <Button icon={<ClearOutlined />} onClick={clearFilters} disabled={!hasActiveFilters}>Clear Filters</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
 
@@ -345,6 +362,7 @@ export default function Tasks() {
           scroll={{ x: "max-content" }}
           pagination={false}
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
+          onChange={(_p, filters) => setFilteredInfo(filters)}
           expandable={{
             expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
             expandedRowKeys: expandedRows,
@@ -365,6 +383,7 @@ export default function Tasks() {
         scroll={{ x: "max-content" }}
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
+        onChange={(_p, filters) => setFilteredInfo(filters)}
         expandable={{
           expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
           expandedRowKeys: expandedRows,
