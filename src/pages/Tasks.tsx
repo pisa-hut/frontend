@@ -13,7 +13,7 @@ import type { FilterValue } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
-import TaskRunsPanel from "../components/TaskRunsPanel";
+import TaskRunsPanel, { clearTaskRunsCache } from "../components/TaskRunsPanel";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -66,6 +66,20 @@ export default function Tasks() {
     setLogRun(run);
     setLogExecutor(executor ?? executorsById.get(run.executor_id));
   }, [executorsById]);
+
+  // Collapsing a task row is the signal to reset that task's cached runs
+  // timeline so a subsequent expand starts fresh. Re-expand without prior
+  // collapse reuses the cache (instant, no loading flash).
+  const handleExpandedChange = useCallback((keys: React.Key[]) => {
+    const next = new Set(keys.map(Number));
+    setExpandedRows((prev) => {
+      for (const k of prev) {
+        const n = Number(k);
+        if (!next.has(n)) clearTaskRunsCache(n);
+      }
+      return keys;
+    });
+  }, []);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -368,7 +382,7 @@ export default function Tasks() {
             expandedRowKeys: expandedRows,
             showExpandColumn: false,
             expandRowByClick: true,
-            onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+            onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
           }}
           style={{ marginBottom: 8 }}
         />
@@ -389,7 +403,7 @@ export default function Tasks() {
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
           expandRowByClick: true,
-          onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+          onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
         }}
       />
 

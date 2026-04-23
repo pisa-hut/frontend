@@ -56,6 +56,22 @@ function timeAgo(iso: string | null): string {
 const INITIAL_LIMIT = 5;
 const PAGE_SIZE = 20;
 
+// Module-level cache so a task row that's re-expanded within the same page
+// session shows its runs instantly — no loading flash and no refetch.
+// The parent (Tasks.tsx) calls `clearTaskRunsCache(taskId)` when a row is
+// explicitly collapsed, so the next expand of that task starts fresh.
+type CachedState = {
+  runs: TaskRunResponse[];
+  executors: Map<number, ExecutorResponse>;
+  limit: number;
+  reachedEnd: boolean;
+};
+const cache = new Map<number, CachedState>();
+
+export function clearTaskRunsCache(taskId: number): void {
+  cache.delete(taskId);
+}
+
 interface Props {
   taskId: number;
   /** Parent holds the log drawer so it can be opened from the task row's
@@ -64,12 +80,15 @@ interface Props {
 }
 
 export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
-  const [runs, setRuns] = useState<TaskRunResponse[]>([]);
-  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const cached = cache.get(taskId);
+  const [runs, setRuns] = useState<TaskRunResponse[]>(cached?.runs ?? []);
+  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(
+    cached?.executors ?? new Map(),
+  );
+  const [loading, setLoading] = useState(cached == null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(false);
-  const [limit, setLimit] = useState(INITIAL_LIMIT);
+  const [reachedEnd, setReachedEnd] = useState(cached?.reachedEnd ?? false);
+  const [limit, setLimit] = useState(cached?.limit ?? INITIAL_LIMIT);
 
   const load = useCallback(() => {
     return api.listTaskRuns(taskId, limit).then((rows) => {
@@ -79,9 +98,16 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
   }, [taskId, limit]);
 
   useEffect(() => {
+    // Skip the initial fetch+loading flash when we already have a cached
+    // view for this task. SSE will still keep it fresh.
+    if (cache.has(taskId)) return;
     setLoading(true);
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load, taskId]);
+
+  useEffect(() => {
+    cache.set(taskId, { runs, executors, limit, reachedEnd });
+  }, [taskId, runs, executors, limit, reachedEnd]);
 
   // SSE: refetch on row changes for this task/its runs. (Log chunks are
   // handled by LogDrawer — we don't care about them here.)
