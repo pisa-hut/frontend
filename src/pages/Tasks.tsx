@@ -67,6 +67,27 @@ export default function Tasks() {
     setLogExecutor(executor ?? executorsById.get(run.executor_id));
   }, [executorsById]);
 
+  // Increment a per-task counter on every expand so we can key the
+  // TaskRunsPanel by it, forcing a real remount each time. Without this
+  // AntD can preserve the panel instance across collapse+expand, which
+  // breaks the "re-expand shows just latest" logic that relies on the
+  // component's useState initializer re-running.
+  const [expansionCounts, setExpansionCounts] = useState<Map<number, number>>(new Map());
+  const handleExpandedChange = useCallback((keys: React.Key[]) => {
+    setExpandedRows((prev) => {
+      const prevSet = new Set(prev.map(Number));
+      const added = keys.map(Number).filter((k) => !prevSet.has(k));
+      if (added.length > 0) {
+        setExpansionCounts((counts) => {
+          const next = new Map(counts);
+          for (const k of added) next.set(k, (next.get(k) ?? 0) + 1);
+          return next;
+        });
+      }
+      return keys;
+    });
+  }, []);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -364,11 +385,17 @@ export default function Tasks() {
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
           onChange={(_p, filters) => setFilteredInfo(filters)}
           expandable={{
-            expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
+            expandedRowRender: (r: TaskResponse) => (
+              <TaskRunsPanel
+                key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+                taskId={r.id}
+                onOpenLog={openLog}
+              />
+            ),
             expandedRowKeys: expandedRows,
             showExpandColumn: false,
             expandRowByClick: true,
-            onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+            onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
           }}
           style={{ marginBottom: 8 }}
         />
@@ -389,7 +416,7 @@ export default function Tasks() {
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
           expandRowByClick: true,
-          onExpandedRowsChange: (keys) => setExpandedRows(keys as React.Key[]),
+          onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
         }}
       />
 
