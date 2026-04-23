@@ -417,7 +417,13 @@ export default function Tasks() {
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         onChange={(_p, filters) => setFilteredInfo(filters)}
         expandable={{
-          expandedRowRender: (r: TaskResponse) => <TaskRunsPanel taskId={r.id} onOpenLog={openLog} />,
+          expandedRowRender: (r: TaskResponse) => (
+            <TaskRunsPanel
+              key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+              taskId={r.id}
+              onOpenLog={openLog}
+            />
+          ),
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
           expandRowByClick: true,
