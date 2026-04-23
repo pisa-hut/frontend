@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer, Space, Button, Tag, Typography, Spin, Empty, Popconfirm, message } from "antd";
 import {
+  CaretRightOutlined,
   CopyOutlined,
   DownloadOutlined,
   StopOutlined,
@@ -66,6 +67,13 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
   }, [content]);
 
   const isLive = run?.task_run_status === "running";
+  // Re-running a finished attempt just re-queues the parent task; the
+  // executor will create a fresh task_run on next claim.
+  const canRun =
+    run != null &&
+    (run.task_run_status === "completed" ||
+      run.task_run_status === "failed" ||
+      run.task_run_status === "aborted");
   const title = run ? (
     <Space>
       <span>
@@ -104,6 +112,21 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
               >
                 <Button size="small" danger icon={<StopOutlined />}>
                   Stop
+                </Button>
+              </Popconfirm>
+            )}
+            {canRun && (
+              <Popconfirm
+                title="Re-run this task?"
+                onConfirm={() => {
+                  api
+                    .updateTask(run.task_id, { task_status: "pending" })
+                    .then(() => message.success(`Task #${run.task_id} queued`))
+                    .catch((e) => message.error(String(e)));
+                }}
+              >
+                <Button size="small" type="primary" icon={<CaretRightOutlined />}>
+                  Run
                 </Button>
               </Popconfirm>
             )}
