@@ -69,23 +69,28 @@ export default function Tasks() {
 
   // Increment a per-task counter on every expand so we can key the
   // TaskRunsPanel by it, forcing a real remount each time. Without this
-  // AntD can preserve the panel instance across collapse+expand, which
-  // breaks the "re-expand shows just latest" logic that relies on the
-  // component's useState initializer re-running.
+  // AntD can preserve the panel's React instance across collapse+expand,
+  // which lets stale state (e.g. a limit grown by "Show older") leak
+  // into the next expand. We diff against a ref instead of nesting one
+  // setState inside another's updater — that nested pattern is
+  // unreliable under React 18's double-invocation.
+  const prevExpandedRef = useRef<Set<number>>(new Set());
   const [expansionCounts, setExpansionCounts] = useState<Map<number, number>>(new Map());
   const handleExpandedChange = useCallback((keys: React.Key[]) => {
-    setExpandedRows((prev) => {
-      const prevSet = new Set(prev.map(Number));
-      const added = keys.map(Number).filter((k) => !prevSet.has(k));
-      if (added.length > 0) {
-        setExpansionCounts((counts) => {
-          const next = new Map(counts);
-          for (const k of added) next.set(k, (next.get(k) ?? 0) + 1);
-          return next;
-        });
-      }
-      return keys;
-    });
+    const next = new Set(keys.map(Number));
+    const added: number[] = [];
+    for (const k of next) {
+      if (!prevExpandedRef.current.has(k)) added.push(k);
+    }
+    prevExpandedRef.current = next;
+    if (added.length > 0) {
+      setExpansionCounts((counts) => {
+        const out = new Map(counts);
+        for (const k of added) out.set(k, (out.get(k) ?? 0) + 1);
+        return out;
+      });
+    }
+    setExpandedRows(keys);
   }, []);
 
   const [modalOpen, setModalOpen] = useState(false);

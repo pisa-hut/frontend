@@ -53,15 +53,8 @@ function timeAgo(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const FIRST_EXPAND_LIMIT = 5;
-const RE_EXPAND_LIMIT = 1;
+const INITIAL_LIMIT = 5;
 const PAGE_SIZE = 20;
-
-// Remembers which tasks have been expanded at least once this session.
-// Next expand of a remembered task starts with just the latest attempt;
-// the user can click "Show older" to page back through history. This
-// keeps the timeline tidy on re-expand without hiding the older runs.
-const everExpanded = new Set<number>();
 
 interface Props {
   taskId: number;
@@ -71,13 +64,12 @@ interface Props {
 }
 
 export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
-  const initialLimit = everExpanded.has(taskId) ? RE_EXPAND_LIMIT : FIRST_EXPAND_LIMIT;
   const [runs, setRuns] = useState<TaskRunResponse[]>([]);
   const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
-  const [limit, setLimit] = useState(initialLimit);
+  const [limit, setLimit] = useState(INITIAL_LIMIT);
 
   const load = useCallback(() => {
     return api.listTaskRuns(taskId, limit).then((rows) => {
@@ -87,10 +79,9 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
   }, [taskId, limit]);
 
   useEffect(() => {
-    everExpanded.add(taskId);
     setLoading(true);
     load().finally(() => setLoading(false));
-  }, [load, taskId]);
+  }, [load]);
 
   // SSE: refetch on row changes for this task/its runs. (Log chunks are
   // handled by LogDrawer — we don't care about them here.)
@@ -279,7 +270,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
               </Button>
             </Space>
           )}
-          {reachedEnd && runs.length > FIRST_EXPAND_LIMIT && (
+          {reachedEnd && runs.length > INITIAL_LIMIT && (
             <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
               {runs.length} attempts — end of history
             </Typography.Text>
