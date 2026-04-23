@@ -53,24 +53,15 @@ function timeAgo(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const INITIAL_LIMIT = 5;
+const FIRST_EXPAND_LIMIT = 5;
+const RE_EXPAND_LIMIT = 1;
 const PAGE_SIZE = 20;
 
-// Module-level cache so a task row that's re-expanded within the same page
-// session shows its runs instantly — no loading flash and no refetch.
-// The parent (Tasks.tsx) calls `clearTaskRunsCache(taskId)` when a row is
-// explicitly collapsed, so the next expand of that task starts fresh.
-type CachedState = {
-  runs: TaskRunResponse[];
-  executors: Map<number, ExecutorResponse>;
-  limit: number;
-  reachedEnd: boolean;
-};
-const cache = new Map<number, CachedState>();
-
-export function clearTaskRunsCache(taskId: number): void {
-  cache.delete(taskId);
-}
+// Remembers which tasks have been expanded at least once this session.
+// Next expand of a remembered task starts with just the latest attempt;
+// the user can click "Show older" to page back through history. This
+// keeps the timeline tidy on re-expand without hiding the older runs.
+const everExpanded = new Set<number>();
 
 interface Props {
   taskId: number;
@@ -80,15 +71,13 @@ interface Props {
 }
 
 export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
-  const cached = cache.get(taskId);
-  const [runs, setRuns] = useState<TaskRunResponse[]>(cached?.runs ?? []);
-  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(
-    cached?.executors ?? new Map(),
-  );
-  const [loading, setLoading] = useState(cached == null);
+  const initialLimit = everExpanded.has(taskId) ? RE_EXPAND_LIMIT : FIRST_EXPAND_LIMIT;
+  const [runs, setRuns] = useState<TaskRunResponse[]>([]);
+  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(cached?.reachedEnd ?? false);
-  const [limit, setLimit] = useState(cached?.limit ?? INITIAL_LIMIT);
+  const [reachedEnd, setReachedEnd] = useState(false);
+  const [limit, setLimit] = useState(initialLimit);
 
   const load = useCallback(() => {
     return api.listTaskRuns(taskId, limit).then((rows) => {
@@ -98,16 +87,10 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
   }, [taskId, limit]);
 
   useEffect(() => {
-    // Skip the initial fetch+loading flash when we already have a cached
-    // view for this task. SSE will still keep it fresh.
-    if (cache.has(taskId)) return;
+    everExpanded.add(taskId);
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load, taskId]);
-
-  useEffect(() => {
-    cache.set(taskId, { runs, executors, limit, reachedEnd });
-  }, [taskId, runs, executors, limit, reachedEnd]);
 
   // SSE: refetch on row changes for this task/its runs. (Log chunks are
   // handled by LogDrawer — we don't care about them here.)
@@ -296,7 +279,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
               </Button>
             </Space>
           )}
-          {reachedEnd && runs.length > INITIAL_LIMIT && (
+          {reachedEnd && runs.length > FIRST_EXPAND_LIMIT && (
             <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
               {runs.length} attempts — end of history
             </Typography.Text>
