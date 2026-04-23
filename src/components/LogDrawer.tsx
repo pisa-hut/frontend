@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Drawer, Space, Button, Tag, Typography, Spin, Empty, message } from "antd";
+import { Drawer, Space, Button, Tag, Typography, Spin, Empty, Popconfirm, message } from "antd";
 import {
   CopyOutlined,
   DownloadOutlined,
+  StopOutlined,
   SyncOutlined,
 } from "@ant-design/icons";
 import { api } from "../api/client";
@@ -89,36 +90,55 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
       onClose={onClose}
       styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
       extra={
-        content && !loading ? (
+        run ? (
           <Space>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              {(content.length / 1024).toFixed(1)} KB
-            </Typography.Text>
-            <Button
-              size="small"
-              icon={<CopyOutlined />}
-              onClick={() => {
-                navigator.clipboard.writeText(content);
-                message.success("Copied");
-              }}
-            >
-              Copy
-            </Button>
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              onClick={() => {
-                const blob = new Blob([content], { type: "text/plain" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `task-run-${run?.id}.log`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Download
-            </Button>
+            {isLive && (
+              <Popconfirm
+                title="Stop this task?"
+                onConfirm={() => {
+                  api
+                    .stopTask(run.task_id)
+                    .then(() => message.success(`Task #${run.task_id} stopped`))
+                    .catch((e) => message.error(String(e)));
+                }}
+              >
+                <Button size="small" danger icon={<StopOutlined />}>
+                  Stop
+                </Button>
+              </Popconfirm>
+            )}
+            {content && !loading && (
+              <>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  {(content.length / 1024).toFixed(1)} KB
+                </Typography.Text>
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={() => {
+                    navigator.clipboard.writeText(content);
+                    message.success("Copied");
+                  }}
+                >
+                  Copy
+                </Button>
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => {
+                    const blob = new Blob([content], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `task-run-${run.id}.log`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Download
+                </Button>
+              </>
+            )}
           </Space>
         ) : null
       }

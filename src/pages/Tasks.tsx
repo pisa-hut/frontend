@@ -164,11 +164,6 @@ export default function Tasks() {
     catch (e) { message.error(String(e)); }
   };
 
-  const handleDelete = async (id: number) => {
-    try { await api.deleteTask(id); message.success(`Task #${id} deleted`); load(); }
-    catch (e) { message.error(String(e)); }
-  };
-
   const handleBulkRun = async () => {
     const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && ["created", "failed", "invalid", "completed"].includes(t.task_status)).map((t) => t.id);
     try { await api.batchRunTasks(ids); message.success(`Queued ${ids.length} tasks`); }
@@ -283,14 +278,14 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "", key: "actions", width: 148, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 116, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
       const canStop = ["pending", "running"].includes(record.task_status);
       const isPinned = pinnedIds.has(record.id);
       const latestRun = record.task_run?.[0];
       // Swallow row-level clicks so any action button (log / pin / run /
-      // stop / delete / its Popconfirm popup) doesn't also trigger the
-      // row's expandRowByClick handler.
+      // stop / its Popconfirm popup) doesn't also trigger the row's
+      // expandRowByClick handler.
       return (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
@@ -329,11 +324,6 @@ export default function Tasks() {
               </Tooltip>
             </Popconfirm>
           )}
-          <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
-            <Tooltip title="Delete">
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
         </Space>
       );
     }},
