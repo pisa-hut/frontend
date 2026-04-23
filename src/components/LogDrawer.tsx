@@ -23,6 +23,11 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const paneRef = useRef<HTMLPreElement | null>(null);
+  // Tracks whether we've already done the "jump to bottom on first paint"
+  // for the current run; reset when the run changes. Without this, long
+  // logs stay scrolled at the top on open because the nearBottom check
+  // (below) only auto-scrolls when the user is already near the bottom.
+  const didInitialScroll = useRef(false);
 
   useEffect(() => {
     if (!run) {
@@ -30,6 +35,7 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
       setError(undefined);
       return;
     }
+    didInitialScroll.current = false;
     setLoading(true);
     setContent(null);
     setError(undefined);
@@ -55,10 +61,17 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
     ),
   );
 
-  // Auto-scroll to bottom on new content, but pause if the user scrolled up.
+  // On first paint for a given run, jump straight to the bottom — users
+  // almost always want to see the most recent output. On subsequent
+  // updates (live chunks), only follow along if they haven't scrolled up.
   useEffect(() => {
     const el = paneRef.current;
-    if (!el) return;
+    if (!el || content == null) return;
+    if (!didInitialScroll.current) {
+      el.scrollTop = el.scrollHeight;
+      didInitialScroll.current = true;
+      return;
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [content]);
