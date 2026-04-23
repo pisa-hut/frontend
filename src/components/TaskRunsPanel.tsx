@@ -69,19 +69,23 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
-  const [limit, setLimit] = useState(INITIAL_LIMIT);
+  // Current effective page size lives in a ref, not state. Putting it in
+  // state would change `load`'s identity on every limit bump, making the
+  // mount-time effect refire and double-fetch right after Show All.
+  const limitRef = useRef(INITIAL_LIMIT);
 
-  const load = useCallback(() => {
-    return api.listTaskRuns(taskId, limit).then((rows) => {
+  const refetch = useCallback(() => {
+    return api.listTaskRuns(taskId, limitRef.current).then((rows) => {
       setRuns(rows);
-      setReachedEnd(rows.length < limit);
+      setReachedEnd(rows.length < limitRef.current);
     });
-  }, [taskId, limit]);
+  }, [taskId]);
 
   useEffect(() => {
+    limitRef.current = INITIAL_LIMIT;
     setLoading(true);
-    load().finally(() => setLoading(false));
-  }, [load]);
+    refetch().finally(() => setLoading(false));
+  }, [refetch]);
 
   // SSE: refetch on row changes for this task/its runs. (Log chunks are
   // handled by LogDrawer — we don't care about them here.)
@@ -100,10 +104,10 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
         if (refetchTimer.current !== null) return;
         refetchTimer.current = window.setTimeout(() => {
           refetchTimer.current = null;
-          load();
+          refetch();
         }, 250);
       },
-      [taskId, knownRunIds, load],
+      [taskId, knownRunIds, refetch],
     ),
   );
 
@@ -124,7 +128,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
           const seen = new Set(prev.map((r) => r.id));
           return [...prev, ...older.filter((r) => !seen.has(r.id))];
         });
-        setLimit(runs.length + older.length);
+        limitRef.current = runs.length + older.length;
         if (older.length < PAGE_SIZE) setReachedEnd(true);
       }
     } finally {
@@ -137,7 +141,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
     try {
       const all = await api.listTaskRuns(taskId, 10000);
       setRuns(all);
-      setLimit(all.length);
+      limitRef.current = all.length;
       setReachedEnd(true);
     } finally {
       setLoadingMore(false);
