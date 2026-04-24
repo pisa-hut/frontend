@@ -226,7 +226,7 @@ export const api = {
       body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
     });
     if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
-    await pgUpdate<TaskResponse>("task", id, { task_status: "created" });
+    await pgUpdate<TaskResponse>("task", id, { task_status: "aborted" });
   },
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
@@ -237,7 +237,7 @@ export const api = {
     onProgress?: (done: number, errors: number, total: number) => void,
   ) => pgBatchCreate<TaskResponse>("task", rows, onProgress),
   batchRunTasks: (ids: number[]) =>
-    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "pending" }),
+    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     const abortData = { task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" };
@@ -249,7 +249,7 @@ export const api = {
       });
       if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     }
-    await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "created" });
+    await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" });
   },
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;

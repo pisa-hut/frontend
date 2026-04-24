@@ -1,5 +1,17 @@
-export type TaskStatus = "created" | "pending" | "running" | "completed" | "failed" | "invalid";
-export type TaskRunStatus = "running" | "completed" | "failed" | "aborted";
+export type TaskStatus =
+  | "idle"       // not queued; brand-new or user hasn't re-Run
+  | "queued"     // waiting for an executor
+  | "running"    // exactly one task_run is active
+  | "completed"  // finished successfully
+  | "exhausted"  // 10 consecutive useless task_runs — permanent fail
+  | "invalid"    // scenario/config rejected — don't retry
+  | "aborted";   // user Stop or scancel — needs manual Run to resume
+export type TaskRunStatus =
+  | "running"
+  | "completed"
+  | "failed"    // transient per-run crash (retryable)
+  | "aborted"   // cancelled mid-run
+  | "invalid";  // rejected by executor on bad config
 export type ScenarioFormat = "open_scenario1" | "open_scenario2" | "carla_lb_route";
 
 export interface AvResponse {
@@ -79,7 +91,7 @@ export interface TaskResponse {
   sampler_id: number;
   task_status: TaskStatus;
   created_at: string;
-  retry_count: number;
+  attempt_count: number;
   /** The most recent attempt; populated by listTasks via a nested select. */
   task_run?: TaskRunResponse[];
 }

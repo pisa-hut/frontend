@@ -16,12 +16,13 @@ import { usePisaEvents } from "../api/events";
 import type { TaskResponse, TaskStatus } from "../api/types";
 
 const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  created: { color: "#8c8c8c", icon: <PlusCircleOutlined />, label: "Created" },
-  pending: { color: "#faad14", icon: <ClockCircleOutlined />, label: "Pending" },
+  idle: { color: "#8c8c8c", icon: <PlusCircleOutlined />, label: "Idle" },
+  queued: { color: "#faad14", icon: <ClockCircleOutlined />, label: "Queued" },
   running: { color: "#1890ff", icon: <SyncOutlined spin />, label: "Running" },
   completed: { color: "#52c41a", icon: <CheckCircleOutlined />, label: "Completed" },
-  failed: { color: "#ff4d4f", icon: <CloseCircleOutlined />, label: "Failed" },
+  exhausted: { color: "#ff4d4f", icon: <CloseCircleOutlined />, label: "Exhausted" },
   invalid: { color: "#d9d9d9", icon: <WarningOutlined />, label: "Invalid" },
+  aborted: { color: "#ff7875", icon: <StopOutlined />, label: "Aborted" },
 };
 
 interface AbortedStats {
@@ -79,7 +80,9 @@ export default function Dashboard() {
 
   if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
 
-  const counts: Record<TaskStatus, number> = { created: 0, pending: 0, running: 0, completed: 0, failed: 0, invalid: 0 };
+  const counts: Record<TaskStatus, number> = {
+    idle: 0, queued: 0, running: 0, completed: 0, exhausted: 0, invalid: 0, aborted: 0,
+  };
   for (const t of tasks) counts[t.task_status]++;
 
   return (

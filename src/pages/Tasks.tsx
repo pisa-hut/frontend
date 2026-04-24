@@ -22,13 +22,18 @@ import type {
 } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
-  created: "default",
-  pending: "warning",
+  idle: "default",
+  queued: "warning",
   running: "processing",
   completed: "success",
-  failed: "error",
+  exhausted: "error",
   invalid: "default",
+  aborted: "default",
 };
+
+// Everything that isn't currently queued or running is re-runnable.
+const RUNNABLE_STATUSES: TaskStatus[] = ["idle", "completed", "exhausted", "invalid", "aborted"];
+const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
@@ -155,7 +160,7 @@ export default function Tasks() {
   // --- Actions ---
 
   const handleRun = async (id: number) => {
-    try { await api.updateTask(id, { task_status: "pending" }); message.success(`Task #${id} queued`); load(); }
+    try { await api.updateTask(id, { task_status: "queued" }); message.success(`Task #${id} queued`); load(); }
     catch (e) { message.error(String(e)); }
   };
 
@@ -165,14 +170,14 @@ export default function Tasks() {
   };
 
   const handleBulkRun = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && ["created", "failed", "invalid", "completed"].includes(t.task_status)).map((t) => t.id);
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && RUNNABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
     try { await api.batchRunTasks(ids); message.success(`Queued ${ids.length} tasks`); }
     catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]); load();
   };
 
   const handleBulkStop = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && ["pending", "running"].includes(t.task_status)).map((t) => t.id);
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && STOPPABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
     try { await api.batchStopTasks(ids); message.success(`Stopped ${ids.length} tasks`); }
     catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]); load();
@@ -189,7 +194,7 @@ export default function Tasks() {
   const handleCreate = async (values: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }) => {
     setCreating(true);
     try {
-      await api.createTask({ ...values, task_status: "created" });
+      await api.createTask({ ...values, task_status: "idle" });
       message.success("Task created"); setModalOpen(false); form.resetFields(); load();
     } catch (e) { message.error(String(e)); } finally { setCreating(false); }
   };
@@ -204,7 +209,7 @@ export default function Tasks() {
       for (const simulator_id of values.simulator_ids)
         for (const sampler_id of values.sampler_ids)
           for (const plan_id of selectedPlans)
-            combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "created" });
+            combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "idle" });
     if (!combos.length) { message.warning("No combinations"); return; }
     setCreating(true); setBulkProgress({ total: combos.length, done: 0, errors: 0 });
     try {
@@ -263,8 +268,8 @@ export default function Tasks() {
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.sampler_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
-    { title: "Status", dataIndex: "task_status", key: "task_status", width: 100,
-      filters: (["created", "pending", "running", "completed", "failed", "invalid"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
+    { title: "Status", dataIndex: "task_status", key: "task_status", width: 110,
+      filters: (["idle", "queued", "running", "completed", "exhausted", "invalid", "aborted"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
       filteredValue: filteredInfo.task_status ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (
@@ -272,15 +277,15 @@ export default function Tasks() {
           {status.toUpperCase()}
         </Tag>
       ) },
-    { title: "Retries", dataIndex: "retry_count", key: "retry_count", width: 60,
-      sorter: (a: TaskResponse, b: TaskResponse) => a.retry_count - b.retry_count },
+    { title: "Attempts", dataIndex: "attempt_count", key: "attempt_count", width: 70,
+      sorter: (a: TaskResponse, b: TaskResponse) => a.attempt_count - b.attempt_count },
     { title: "Last Run", key: "last_run", width: 170,
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
     { title: "", key: "actions", width: 116, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
-      const canRun = ["created", "failed", "invalid", "completed"].includes(record.task_status);
-      const canStop = ["pending", "running"].includes(record.task_status);
+      const canRun = RUNNABLE_STATUSES.includes(record.task_status);
+      const canStop = STOPPABLE_STATUSES.includes(record.task_status);
       const isPinned = pinnedIds.has(record.id);
       const latestRun = record.task_run?.[0];
       // Swallow row-level clicks so any action button (log / pin / run /
@@ -334,8 +339,8 @@ export default function Tasks() {
   const selectionBar = selectedRowKeys.length > 0 && (() => {
     const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
     const allSelected = selectedRowKeys.length === tasks.length;
-    const runnableCount = selected.filter((t) => ["created", "failed", "invalid", "completed"].includes(t.task_status)).length;
-    const stoppableCount = selected.filter((t) => ["pending", "running"].includes(t.task_status)).length;
+    const runnableCount = selected.filter((t) => RUNNABLE_STATUSES.includes(t.task_status)).length;
+    const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
     return (
       <Alert type="info" showIcon={false} style={{ marginBottom: 8, padding: "6px 12px" }} message={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>

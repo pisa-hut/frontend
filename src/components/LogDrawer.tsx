@@ -120,7 +120,7 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
                 title="Re-run this task?"
                 onConfirm={() => {
                   api
-                    .updateTask(run.task_id, { task_status: "pending" })
+                    .updateTask(run.task_id, { task_status: "queued" })
                     .then(() => message.success(`Task #${run.task_id} queued`))
                     .catch((e) => message.error(String(e)));
                 }}
