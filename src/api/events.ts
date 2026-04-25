@@ -15,6 +15,10 @@ export type PisaEvent =
       kind: "log";
       task_run_id: number;
       chunk: string;
+      /** UTF-8 byte offset of `task_run.log` *after* this chunk was
+       *  appended. Used by LogDrawer to dedupe chunks that overlap with
+       *  its initial snapshot fetch. */
+      end_offset: number;
     };
 
 // Single shared EventSource across the whole app. Every hook registers

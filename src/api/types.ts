@@ -15,6 +15,18 @@ export type TaskRunStatus =
   | "aborted";   // cancelled (SIGTERM / scancel / user Stop)
 export type ScenarioFormat = "open_scenario1" | "open_scenario2" | "carla_lb_route";
 
+/** Task states the user can re-Run from. Anything not in this set is
+ *  either already in flight (queued/running) or, well, idle/aborted/etc.
+ *  Used by the Tasks page action column AND the LogDrawer's Run button —
+ *  the drawer needs the same gate so opening an old completed attempt
+ *  on a task that's currently running can't re-queue it under itself. */
+export const RUNNABLE_TASK_STATUSES: readonly TaskStatus[] = [
+  "idle",
+  "completed",
+  "invalid",
+  "aborted",
+] as const;
+
 export interface AvResponse {
   id: number;
   name: string;

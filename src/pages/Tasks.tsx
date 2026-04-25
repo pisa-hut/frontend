@@ -21,6 +21,7 @@ import type {
   TaskResponse, TaskStatus, TaskRunResponse, PlanResponse,
   AvResponse, SimulatorResponse, SamplerResponse, ExecutorResponse,
 } from "../api/types";
+import { RUNNABLE_TASK_STATUSES } from "../api/types";
 
 const statusColors: Record<TaskStatus, string> = {
   idle: "default",
@@ -32,7 +33,9 @@ const statusColors: Record<TaskStatus, string> = {
 };
 
 // Everything that isn't currently queued or running is re-runnable.
-const RUNNABLE_STATUSES: TaskStatus[] = ["idle", "completed", "invalid", "aborted"];
+// Shared with LogDrawer via api/types so a Run from a historical
+// attempt can't bypass the same gate the row action uses.
+const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 export default function Tasks() {

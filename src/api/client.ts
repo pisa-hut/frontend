@@ -162,11 +162,29 @@ async function managerPutBytes(path: string, body: Blob | ArrayBuffer | Uint8Arr
 
 async function managerDelete(path: string): Promise<void> {
   const res = await fetch(`${MANAGER_URL}${path}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new Error(`${res.status}: ${await res.text()}`);
+  // 404 is NOT silently OK — file paths are caller-supplied and an
+  // encoding bug would let "I deleted X" report success while
+  // hitting a different URL than the one that actually exists.
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
 function managerFileUrl(path: string): string {
   return `${MANAGER_URL}${path}`;
+}
+
+/** Encode a `relative_path` such as `xodr/foo bar.xodr` or
+ *  `weird/file?name#1.xosc` for safe interpolation into a manager URL.
+ *  Each segment is encoded with encodeURIComponent so reserved chars
+ *  (`#`, `?`, `%`, ` `, `+`, etc.) round-trip to the byte-identical
+ *  string the server stored in `relative_path`. The path separator
+ *  stays unencoded. Empty/.. segments would already have been rejected
+ *  on upload by manager's reject_traversal — defensively skip them. */
+function encodeRelPath(relPath: string): string {
+  return relPath
+    .split("/")
+    .filter((seg) => seg !== "" && seg !== "." && seg !== "..")
+    .map(encodeURIComponent)
+    .join("/");
 }
 
 export const api = {
@@ -298,20 +316,20 @@ export const api = {
   listMapFiles: (mapId: number) =>
     managerGetJson<MapFileMeta[]>(`/map/${mapId}/file`),
   mapFileUrl: (mapId: number, relPath: string) =>
-    managerFileUrl(`/map/${mapId}/file/${relPath}`),
+    managerFileUrl(`/map/${mapId}/file/${encodeRelPath(relPath)}`),
   uploadMapFile: (mapId: number, relPath: string, content: Blob) =>
-    managerPutBytes(`/map/${mapId}/file/${relPath}`, content),
+    managerPutBytes(`/map/${mapId}/file/${encodeRelPath(relPath)}`, content),
   deleteMapFile: (mapId: number, relPath: string) =>
-    managerDelete(`/map/${mapId}/file/${relPath}`),
+    managerDelete(`/map/${mapId}/file/${encodeRelPath(relPath)}`),
 
   listScenarioFiles: (scenarioId: number) =>
     managerGetJson<ScenarioFileMeta[]>(`/scenario/${scenarioId}/file`),
   scenarioFileUrl: (scenarioId: number, relPath: string) =>
-    managerFileUrl(`/scenario/${scenarioId}/file/${relPath}`),
+    managerFileUrl(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`),
   uploadScenarioFile: (scenarioId: number, relPath: string, content: Blob) =>
-    managerPutBytes(`/scenario/${scenarioId}/file/${relPath}`, content),
+    managerPutBytes(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`, content),
   deleteScenarioFile: (scenarioId: number, relPath: string) =>
-    managerDelete(`/scenario/${scenarioId}/file/${relPath}`),
+    managerDelete(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`),
 
   configUrl: (entity: ConfigEntity, id: number) =>
     managerFileUrl(`/${entity}/${id}/config`),

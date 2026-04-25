@@ -11,6 +11,7 @@ import {
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type { TaskResponse, TaskRunResponse, TaskStatus, ExecutorResponse } from "../api/types";
+import { RUNNABLE_TASK_STATUSES } from "../api/types";
 
 const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
   idle: "default",
@@ -47,6 +48,22 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
   const [error, setError] = useState<string | undefined>(undefined);
   const paneRef = useRef<HTMLPreElement | null>(null);
 
+  // Lossless snapshot ↔ SSE handoff (Codex review):
+  //   - cursorRef tracks the UTF-8 byte offset of the currently-shown log
+  //     content. After the snapshot lands it equals byteLength(snapshot);
+  //     after each appended SSE chunk it advances to that chunk's
+  //     end_offset.
+  //   - bufferRef collects SSE chunks that arrive while the snapshot is
+  //     in flight. When the snapshot resolves we drop any chunk whose
+  //     end_offset is already covered by the snapshot, trim the prefix
+  //     of any partially-overlapping chunk, then append the rest.
+  // This replaces the old "drop SSE while loading" path which silently
+  // truncated the live tail of any run that emitted output during the
+  // ~50–200 ms snapshot round-trip.
+  const cursorRef = useRef<number>(0);
+  const bufferRef = useRef<Array<{ chunk: string; end_offset: number }>>([]);
+  const utf8 = useMemo(() => new TextEncoder(), []);
+
   useEffect(() => {
     if (!run) {
       setContent(null);
@@ -56,12 +73,39 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     setLoading(true);
     setContent(null);
     setError(undefined);
+    cursorRef.current = 0;
+    bufferRef.current = [];
     api
       .getTaskRunLog(run.id)
-      .then((c) => setContent(c))
+      .then((snapshot) => {
+        const snap = snapshot ?? "";
+        cursorRef.current = utf8.encode(snap).length;
+        // Drain anything that arrived during the fetch. Each chunk's
+        // start_offset = end_offset - byteLength(chunk).
+        let merged = snap;
+        for (const ev of bufferRef.current) {
+          const chunkBytes = utf8.encode(ev.chunk).length;
+          const startOffset = ev.end_offset - chunkBytes;
+          if (ev.end_offset <= cursorRef.current) {
+            continue; // entirely covered by snapshot
+          }
+          if (startOffset >= cursorRef.current) {
+            merged += ev.chunk;
+          } else {
+            // straddling: the first (cursor - start) bytes are already
+            // in the snapshot. Trim the prefix on a UTF-8 byte boundary.
+            const skipBytes = cursorRef.current - startOffset;
+            const tail = utf8.encode(ev.chunk).slice(skipBytes);
+            merged += new TextDecoder("utf-8").decode(tail);
+          }
+          cursorRef.current = ev.end_offset;
+        }
+        bufferRef.current = [];
+        setContent(merged);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [run?.id]);
+  }, [run?.id, utf8]);
 
   usePisaEvents(
     useCallback(
@@ -69,12 +113,25 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
         if (!run) return;
         if (ev.kind !== "log") return;
         if (ev.task_run_id !== run.id) return;
-        // Drop chunks that arrive while the initial snapshot fetch is in
-        // flight — the fetch is authoritative up to that moment.
-        if (loading) return;
-        setContent((prev) => (prev ?? "") + ev.chunk);
+        if (loading) {
+          // Snapshot still in flight — buffer. We'll dedupe by offset
+          // when the fetch resolves.
+          bufferRef.current.push({ chunk: ev.chunk, end_offset: ev.end_offset });
+          return;
+        }
+        // Same dedupe rule as the post-snapshot drain.
+        if (ev.end_offset <= cursorRef.current) return;
+        const chunkBytes = utf8.encode(ev.chunk).length;
+        const startOffset = ev.end_offset - chunkBytes;
+        let toAppend = ev.chunk;
+        if (startOffset < cursorRef.current) {
+          const skipBytes = cursorRef.current - startOffset;
+          toAppend = new TextDecoder("utf-8").decode(utf8.encode(ev.chunk).slice(skipBytes));
+        }
+        cursorRef.current = ev.end_offset;
+        setContent((prev) => (prev ?? "") + toAppend);
       },
-      [run?.id, loading],
+      [run?.id, loading, utf8],
     ),
   );
 
@@ -88,13 +145,19 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
   }, [content]);
 
   const isLive = run?.task_run_status === "running";
-  // Re-running a finished attempt just re-queues the parent task; the
-  // executor will create a fresh task_run on next claim.
-  const canRun =
+  // Re-running a finished attempt re-queues the parent task. Two gates
+  // (Codex review #3): the viewed run must be terminal AND the task's
+  // *current* status must be one we're allowed to re-Run from. Without
+  // the second gate, opening an old completed/failed attempt on a task
+  // that's currently queued or running would let the user re-queue an
+  // already-active task and risk duplicate dispatch.
+  const runIsTerminal =
     run != null &&
     (run.task_run_status === "completed" ||
       run.task_run_status === "failed" ||
       run.task_run_status === "aborted");
+  const canRun =
+    runIsTerminal && task != null && RUNNABLE_TASK_STATUSES.includes(task.task_status);
   // Mirror the per-row Archive trigger: only meaningful for invalid
   // tasks the user hasn't already triaged.
   const canArchive = task != null && task.task_status === "invalid" && !task.archived;
