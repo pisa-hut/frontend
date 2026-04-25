@@ -11,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import type { FilterValue } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
 import TaskRunsPanel from "../components/TaskRunsPanel";
@@ -341,24 +342,32 @@ export default function Tasks() {
             />
           </Tooltip>
           {canStop ? (
-            <Popconfirm title="Stop?" onConfirm={() => handleStop(record.id)}>
-              <Tooltip title="Stop">
-                <Button size="small" icon={<StopOutlined />} />
-              </Tooltip>
-            </Popconfirm>
+            <ConfirmIconButton
+              size="small"
+              icon={<StopOutlined />}
+              tooltip="Stop"
+              confirmTitle="Stop?"
+              onConfirm={() => handleStop(record.id)}
+            />
           ) : (
-            <Popconfirm title="Run?" onConfirm={() => handleRun(record.id)} disabled={!canRun}>
-              <Tooltip title={canRun ? "Run" : "Not runnable in this state"}>
-                <Button size="small" type="primary" icon={<CaretRightOutlined />} disabled={!canRun} />
-              </Tooltip>
-            </Popconfirm>
+            <ConfirmIconButton
+              size="small"
+              type="primary"
+              icon={<CaretRightOutlined />}
+              disabled={!canRun}
+              tooltip={canRun ? "Run" : "Not runnable in this state"}
+              confirmTitle="Run?"
+              onConfirm={() => handleRun(record.id)}
+            />
           )}
           {canArchive && (
-            <Popconfirm title="Archive this invalid task?" onConfirm={() => handleArchive(record.id)}>
-              <Tooltip title="Not our problem — archive (hides from default view)">
-                <Button size="small" icon={<InboxOutlined />} />
-              </Tooltip>
-            </Popconfirm>
+            <ConfirmIconButton
+              size="small"
+              icon={<InboxOutlined />}
+              tooltip="Not our problem — archive (hides from default view)"
+              confirmTitle="Archive this invalid task?"
+              onConfirm={() => handleArchive(record.id)}
+            />
           )}
           {record.archived && (
             <Tooltip title="Unarchive (return to default view)">
