@@ -706,7 +706,15 @@ export default function Tasks() {
           columns={columns}
           rowKey="id"
           size="small"
-          scroll={{ x: "max-content" }}
+          // Fixed column widths from the column defs — this is what
+          // stops the parent row from "shrinking" when an expanded
+          // panel below has wider intrinsic content. With max-content
+          // the table re-fits to the widest row (including the
+          // expanded TD) and the data columns visually compress to
+          // make room. tableLayout: fixed ignores content and uses the
+          // declared widths.
+          scroll={{ x: 1100 }}
+          tableLayout="fixed"
           pagination={false}
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
           onChange={(_p, filters, sorter) => {
