@@ -10,7 +10,7 @@ import {
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
   FileTextOutlined, ClearOutlined, InboxOutlined, UndoOutlined,
 } from "@ant-design/icons";
-import type { FilterValue } from "antd/es/table/interface";
+import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
@@ -94,6 +94,13 @@ export default function Tasks() {
   const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
     "tasks.filteredInfo",
     { task_status: defaultStatusFilter ?? null },
+  );
+  // Mirror the table's sort so j/k keyboard nav walks rows in the order
+  // the user actually sees them. Default matches the column's
+  // defaultSortOrder for "Last Run" descend so first-render is in sync.
+  const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: string; order?: SortOrder }>(
+    "tasks.sortedInfo",
+    { key: "last_run", order: "descend" },
   );
   const hasActiveFilters = useMemo(
     () => Object.values(filteredInfo).some((v) => v != null && v.length > 0),
@@ -237,9 +244,10 @@ export default function Tasks() {
     [logTask, planMap],
   );
 
-  // Visible main-table list under all current filters. Used by the
-  // keyboard handler to walk j/k. Pinned rows live in their own table
-  // and are intentionally excluded from cursor navigation.
+  // Visible main-table list under all current filters AND sort. Used
+  // by the keyboard handler to walk j/k in the order the user sees
+  // them. Pinned rows live in their own table and are intentionally
+  // excluded from cursor navigation.
   const visibleMainTasks = useMemo(() => {
     const archivedFilter = (t: TaskResponse) => showArchived || !t.archived;
     const colFilters = (t: TaskResponse) => {
@@ -250,8 +258,30 @@ export default function Tasks() {
       }
       return true;
     };
-    return tasks.filter((t) => !pinnedIds.has(t.id) && archivedFilter(t) && colFilters(t));
-  }, [tasks, pinnedIds, showArchived, filteredInfo]);
+    const filtered = tasks.filter(
+      (t) => !pinnedIds.has(t.id) && archivedFilter(t) && colFilters(t),
+    );
+    const { key, order } = sortedInfo;
+    if (!key || !order) return filtered;
+    const dir = order === "ascend" ? 1 : -1;
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      switch (key) {
+        case "id":
+          return (a.id - b.id) * dir;
+        case "attempt_count":
+          return (a.attempt_count - b.attempt_count) * dir;
+        case "last_run": {
+          const ta = a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0;
+          const tb = b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0;
+          return (ta - tb) * dir;
+        }
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [tasks, pinnedIds, showArchived, filteredInfo, sortedInfo]);
 
   const [cursorId, setCursorId] = useState<number | null>(null);
   // Bring the cursor row into view when it changes.
@@ -679,7 +709,17 @@ export default function Tasks() {
           scroll={{ x: "max-content" }}
           pagination={false}
           rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-          onChange={(_p, filters) => setFilteredInfo(filters)}
+          onChange={(_p, filters, sorter) => {
+            setFilteredInfo(filters);
+            // Single-column sort only — `sorter` is an array if the
+            // table has multiple sorted columns; we don't.
+            if (!Array.isArray(sorter)) {
+              setSortedInfo({
+                key: sorter.columnKey ? String(sorter.columnKey) : undefined,
+                order: sorter.order ?? undefined,
+              });
+            }
+          }}
           expandable={{
             expandedRowRender: (r: TaskResponse) => (
               // The expanded TD spans every column. Without an explicit
