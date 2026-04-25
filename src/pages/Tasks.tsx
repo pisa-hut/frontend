@@ -533,7 +533,7 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "", key: "actions", width: 144, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 144, render: (_: unknown, record: TaskResponse) => {
       const canRun = RUNNABLE_STATUSES.includes(record.task_status);
       const canStop = STOPPABLE_STATUSES.includes(record.task_status);
       // Archive button is only the triage outcome for invalid tasks; if a row
@@ -713,10 +713,11 @@ export default function Tasks() {
         size="small"
         // Fixed column widths from the column defs — keeps row widths
         // stable across pinned/non-pinned rows, expanded rows, and
-        // SSE refreshes. With auto+max-content the table re-fits to
-        // the widest row (including expanded TDs) and the data
-        // columns visually compress.
-        scroll={{ x: 1100 }}
+        // SSE refreshes. scroll.x matches the actual column sum so
+        // there's no blank space to the right of the action column.
+        // (Selection col ≈ 32 + cols total: 1024 compact / 1084
+        // expanded.)
+        scroll={{ x: compactView ? 1060 : 1120 }}
         tableLayout="fixed"
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
