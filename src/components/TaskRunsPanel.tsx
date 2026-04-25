@@ -165,12 +165,18 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
             <div
               onClick={() => onOpenLog(run, exec)}
               style={{
+                // Stay inside the parent column. `min-width: 0` is the
+                // standard fix that lets a flex child actually shrink
+                // (otherwise `min-width: auto` keeps the row at the
+                // intrinsic content width and the parent table widens).
                 display: "flex",
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: 8,
                 padding: "2px 8px",
                 marginLeft: -8,
+                width: "100%",
+                minWidth: 0,
                 cursor: "pointer",
                 borderRadius: 4,
                 userSelect: "none",

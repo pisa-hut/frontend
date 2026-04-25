@@ -682,11 +682,19 @@ export default function Tasks() {
           onChange={(_p, filters) => setFilteredInfo(filters)}
           expandable={{
             expandedRowRender: (r: TaskResponse) => (
-              <TaskRunsPanel
-                key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-                taskId={r.id}
-                onOpenLog={openLog}
-              />
+              // The expanded TD spans every column. Without an explicit
+              // width cap, a wide attempt row (long error text) makes the
+              // outer Table recompute scroll={{x:"max-content"}}, which
+              // visually shrinks the parent row's columns. The wrapper
+              // pins the panel to whatever the visible viewport width is
+              // so the data row above stays stable.
+              <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+                <TaskRunsPanel
+                  key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+                  taskId={r.id}
+                  onOpenLog={openLog}
+                />
+              </div>
             ),
             expandedRowKeys: expandedRows,
             showExpandColumn: false,
