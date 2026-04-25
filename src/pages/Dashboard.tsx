@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, Col, Row, Statistic, Spin, Typography } from "antd";
 import {
   CheckCircleOutlined,
-  CloseCircleOutlined,
   SyncOutlined,
   ClockCircleOutlined,
   PlusCircleOutlined,
@@ -20,8 +19,7 @@ const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; l
   queued: { color: "#faad14", icon: <ClockCircleOutlined />, label: "Queued" },
   running: { color: "#1890ff", icon: <SyncOutlined spin />, label: "Running" },
   completed: { color: "#52c41a", icon: <CheckCircleOutlined />, label: "Completed" },
-  exhausted: { color: "#ff4d4f", icon: <CloseCircleOutlined />, label: "Exhausted" },
-  invalid: { color: "#d9d9d9", icon: <WarningOutlined />, label: "Invalid" },
+  invalid: { color: "#ff4d4f", icon: <WarningOutlined />, label: "Invalid" },
   aborted: { color: "#ff7875", icon: <StopOutlined />, label: "Aborted" },
 };
 
@@ -81,7 +79,7 @@ export default function Dashboard() {
   if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
 
   const counts: Record<TaskStatus, number> = {
-    idle: 0, queued: 0, running: 0, completed: 0, exhausted: 0, invalid: 0, aborted: 0,
+    idle: 0, queued: 0, running: 0, completed: 0, invalid: 0, aborted: 0,
   };
   for (const t of tasks) counts[t.task_status]++;
 

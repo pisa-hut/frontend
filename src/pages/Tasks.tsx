@@ -26,13 +26,12 @@ const statusColors: Record<TaskStatus, string> = {
   queued: "warning",
   running: "processing",
   completed: "success",
-  exhausted: "error",
-  invalid: "default",
+  invalid: "error",
   aborted: "default",
 };
 
 // Everything that isn't currently queued or running is re-runnable.
-const RUNNABLE_STATUSES: TaskStatus[] = ["idle", "completed", "exhausted", "invalid", "aborted"];
+const RUNNABLE_STATUSES: TaskStatus[] = ["idle", "completed", "invalid", "aborted"];
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 export default function Tasks() {
@@ -269,7 +268,7 @@ export default function Tasks() {
       filteredValue: filteredInfo.sampler_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
     { title: "Status", dataIndex: "task_status", key: "task_status", width: 110,
-      filters: (["idle", "queued", "running", "completed", "exhausted", "invalid", "aborted"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
+      filters: (["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
       filteredValue: filteredInfo.task_status ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (

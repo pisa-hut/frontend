@@ -3,15 +3,16 @@ export type TaskStatus =
   | "queued"     // waiting for an executor
   | "running"    // exactly one task_run is active
   | "completed"  // finished successfully
-  | "exhausted"  // 10 consecutive useless task_runs — permanent fail
-  | "invalid"    // scenario/config rejected — don't retry
+  | "invalid"    // permanent fail: USELESS_STREAK_LIMIT consecutive runs finished zero concretes
   | "aborted";   // user Stop or scancel — needs manual Run to resume
+// task_run_status is "did engine.exec() return cleanly?" — orthogonal
+// to concrete_scenarios_executed, which tracks how much useful work the
+// run produced. A run can legitimately be `failed` with concrete > 0.
 export type TaskRunStatus =
   | "running"
-  | "completed"
-  | "failed"    // transient per-run crash (retryable)
-  | "aborted"   // cancelled mid-run
-  | "invalid";  // rejected by executor on bad config
+  | "completed"  // exec() returned without raising
+  | "failed"     // exec() raised
+  | "aborted";   // cancelled (SIGTERM / scancel / user Stop)
 export type ScenarioFormat = "open_scenario1" | "open_scenario2" | "carla_lb_route";
 
 export interface AvResponse {
