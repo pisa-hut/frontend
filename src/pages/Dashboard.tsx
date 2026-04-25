@@ -76,18 +76,26 @@ export default function Dashboard() {
     ),
   );
 
-  if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
-
-  const counts: Record<TaskStatus, number> = {
-    idle: 0, queued: 0, running: 0, completed: 0, invalid: 0, aborted: 0,
-  };
-  for (const t of tasks) counts[t.task_status]++;
+  // ALL hooks must be called before any early return, or React detects
+  // a hook-count mismatch the first time `loading` flips false. The
+  // earlier version put useMemo *after* the loading guard and broke
+  // the page on first SSE refresh.
+  const counts: Record<TaskStatus, number> = useMemo(() => {
+    const c: Record<TaskStatus, number> = {
+      idle: 0, queued: 0, running: 0, completed: 0, invalid: 0, aborted: 0,
+    };
+    for (const t of tasks) c[t.task_status]++;
+    return c;
+  }, [tasks]);
 
   // "Needs your attention" surface: pulls users into the right view
   // instead of leaving them to count tiles. Triage = invalid+!archived
   // (matches the chip on the Tasks page). Stuck = currently running
   // for over 2h, often a SLURM job that never reached the executor.
-  const triageCount = tasks.filter((t) => t.task_status === "invalid" && !t.archived).length;
+  const triageCount = useMemo(
+    () => tasks.filter((t) => t.task_status === "invalid" && !t.archived).length,
+    [tasks],
+  );
   const stuckCount = useMemo(() => {
     const cutoff = Date.now() - 2 * 3600 * 1000;
     return tasks.filter((t) => {
@@ -97,6 +105,8 @@ export default function Dashboard() {
       return new Date(startedAt).getTime() < cutoff;
     }).length;
   }, [tasks]);
+
+  if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
 
   return (
     <>
