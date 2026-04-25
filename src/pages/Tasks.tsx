@@ -244,10 +244,11 @@ export default function Tasks() {
     [logTask, planMap],
   );
 
-  // Visible main-table list under all current filters AND sort. Used
-  // by the keyboard handler to walk j/k in the order the user sees
-  // them. Pinned rows live in their own table and are intentionally
-  // excluded from cursor navigation.
+  // Single dataSource for the only Table on the page — pinned rows
+  // float to the top within whatever sort the user picked. Earlier
+  // versions used two separate <Table> instances and AntD sized each
+  // one independently, so the pinned table's columns never aligned
+  // with the main table's. One table = guaranteed alignment.
   const visibleMainTasks = useMemo(() => {
     const archivedFilter = (t: TaskResponse) => showArchived || !t.archived;
     const colFilters = (t: TaskResponse) => {
@@ -258,14 +259,11 @@ export default function Tasks() {
       }
       return true;
     };
-    const filtered = tasks.filter(
-      (t) => !pinnedIds.has(t.id) && archivedFilter(t) && colFilters(t),
-    );
+    const filtered = tasks.filter((t) => archivedFilter(t) && colFilters(t));
     const { key, order } = sortedInfo;
-    if (!key || !order) return filtered;
-    const dir = order === "ascend" ? 1 : -1;
-    const arr = [...filtered];
-    arr.sort((a, b) => {
+    const dir = !order ? 0 : order === "ascend" ? 1 : -1;
+    const cmp = (a: TaskResponse, b: TaskResponse): number => {
+      if (!dir || !key) return 0;
       switch (key) {
         case "id":
           return (a.id - b.id) * dir;
@@ -279,8 +277,15 @@ export default function Tasks() {
         default:
           return 0;
       }
+    };
+    return [...filtered].sort((a, b) => {
+      // Pinned always wins. Within each pinned/non-pinned group apply
+      // the user's sort.
+      const ap = pinnedIds.has(a.id);
+      const bp = pinnedIds.has(b.id);
+      if (ap !== bp) return ap ? -1 : 1;
+      return cmp(a, b);
     });
-    return arr;
   }, [tasks, pinnedIds, showArchived, filteredInfo, sortedInfo]);
 
   const [cursorId, setCursorId] = useState<number | null>(null);
@@ -700,81 +705,51 @@ export default function Tasks() {
 
       {selectionBar}
 
-      {pinnedIds.size > 0 && (
-        <Table
-          dataSource={tasks.filter((t) => pinnedIds.has(t.id) && (showArchived || !t.archived))}
-          columns={columns}
-          rowKey="id"
-          size="small"
-          // Fixed column widths from the column defs — this is what
-          // stops the parent row from "shrinking" when an expanded
-          // panel below has wider intrinsic content. With max-content
-          // the table re-fits to the widest row (including the
-          // expanded TD) and the data columns visually compress to
-          // make room. tableLayout: fixed ignores content and uses the
-          // declared widths.
-          scroll={{ x: 1100 }}
-          tableLayout="fixed"
-          pagination={false}
-          rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-          onChange={(_p, filters, sorter) => {
-            setFilteredInfo(filters);
-            // Single-column sort only — `sorter` is an array if the
-            // table has multiple sorted columns; we don't.
-            if (!Array.isArray(sorter)) {
-              setSortedInfo({
-                key: sorter.columnKey ? String(sorter.columnKey) : undefined,
-                order: sorter.order ?? undefined,
-              });
-            }
-          }}
-          expandable={{
-            expandedRowRender: (r: TaskResponse) => (
-              // The expanded TD spans every column. Without an explicit
-              // width cap, a wide attempt row (long error text) makes the
-              // outer Table recompute scroll={{x:"max-content"}}, which
-              // visually shrinks the parent row's columns. The wrapper
-              // pins the panel to whatever the visible viewport width is
-              // so the data row above stays stable.
-              <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
-                <TaskRunsPanel
-                  key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-                  taskId={r.id}
-                  onOpenLog={openLog}
-                />
-              </div>
-            ),
-            expandedRowKeys: expandedRows,
-            showExpandColumn: false,
-            expandRowByClick: true,
-            onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
-          }}
-          style={{ marginBottom: 8 }}
-        />
-      )}
-
       <Table
-        dataSource={tasks.filter((t) => !pinnedIds.has(t.id) && (showArchived || !t.archived))}
+        dataSource={visibleMainTasks}
         columns={columns}
         rowKey="id"
         loading={loading}
         size="small"
-        scroll={{ x: "max-content" }}
+        // Fixed column widths from the column defs — keeps row widths
+        // stable across pinned/non-pinned rows, expanded rows, and
+        // SSE refreshes. With auto+max-content the table re-fits to
+        // the widest row (including expanded TDs) and the data
+        // columns visually compress.
+        scroll={{ x: 1100 }}
+        tableLayout="fixed"
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-        onChange={(_p, filters) => setFilteredInfo(filters)}
-        rowClassName={(r) => r.id === cursorId ? "tasks-row-cursor" : ""}
+        onChange={(_p, filters, sorter) => {
+          setFilteredInfo(filters);
+          if (!Array.isArray(sorter)) {
+            setSortedInfo({
+              key: sorter.columnKey ? String(sorter.columnKey) : undefined,
+              order: sorter.order ?? undefined,
+            });
+          }
+        }}
+        rowClassName={(r) => {
+          const cls: string[] = [];
+          if (pinnedIds.has(r.id)) cls.push("tasks-row-pinned");
+          if (r.id === cursorId) cls.push("tasks-row-cursor");
+          return cls.join(" ");
+        }}
         onRow={(r) => ({
           style: r.archived ? { opacity: 0.55 } : undefined,
           onMouseDown: () => setCursorId(r.id),
         })}
         expandable={{
           expandedRowRender: (r: TaskResponse) => (
-            <TaskRunsPanel
-              key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-              taskId={r.id}
-              onOpenLog={openLog}
-            />
+            // Wrap the panel with a width cap so a long-error attempt
+            // row can't widen the expanded TD beyond the data columns.
+            <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+              <TaskRunsPanel
+                key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+                taskId={r.id}
+                onOpenLog={openLog}
+              />
+            </div>
           ),
           expandedRowKeys: expandedRows,
           showExpandColumn: false,
@@ -850,6 +825,15 @@ export default function Tasks() {
         .tasks-row-cursor > td {
           background: var(--ant-color-primary-bg, #e6f4ff) !important;
           box-shadow: inset 2px 0 0 var(--ant-color-primary, #1677ff);
+        }
+        .tasks-row-pinned > td {
+          background: var(--ant-color-warning-bg, #fffbe6);
+        }
+        /* Mark the boundary between pinned and non-pinned rows so users
+           see "stuff above the line is sticky-of-interest" without
+           needing two separate tables. */
+        .tasks-row-pinned + tr:not(.tasks-row-pinned):not(.ant-table-expanded-row) > td {
+          border-top: 2px solid var(--ant-color-warning-border, #ffe58f);
         }
       `}</style>
     </>
