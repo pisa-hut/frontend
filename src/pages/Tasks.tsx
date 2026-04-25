@@ -7,7 +7,7 @@ import {
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
-  FileTextOutlined, ClearOutlined,
+  FileTextOutlined, ClearOutlined, IssuesCloseOutlined,
 } from "@ant-design/icons";
 import type { FilterValue } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -168,6 +168,15 @@ export default function Tasks() {
     catch (e) { message.error(String(e)); }
   };
 
+  // Triage action for `invalid` tasks. The 10-useless streak says the
+  // system gave up; this action says the *user* gave up too — it's not
+  // ours to fix, dismiss to `aborted` so the row drops out of the
+  // "needs investigation" filter.
+  const handleDismissInvalid = async (id: number) => {
+    try { await api.dismissInvalid(id); message.success(`Task #${id} dismissed`); load(); }
+    catch (e) { message.error(String(e)); }
+  };
+
   const handleBulkRun = async () => {
     const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && RUNNABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
     try { await api.batchRunTasks(ids); message.success(`Queued ${ids.length} tasks`); }
@@ -178,6 +187,13 @@ export default function Tasks() {
   const handleBulkStop = async () => {
     const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && STOPPABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
     try { await api.batchStopTasks(ids); message.success(`Stopped ${ids.length} tasks`); }
+    catch (e) { message.error(String(e)); }
+    setSelectedRowKeys([]); load();
+  };
+
+  const handleBulkDismissInvalid = async () => {
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && t.task_status === "invalid").map((t) => t.id);
+    try { await api.batchDismissInvalid(ids); message.success(`Dismissed ${ids.length} invalid tasks`); }
     catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]); load();
   };
@@ -282,9 +298,10 @@ export default function Tasks() {
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
       sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
       defaultSortOrder: "descend" as const },
-    { title: "", key: "actions", width: 116, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
+    { title: "", key: "actions", width: 144, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = RUNNABLE_STATUSES.includes(record.task_status);
       const canStop = STOPPABLE_STATUSES.includes(record.task_status);
+      const canDismiss = record.task_status === "invalid";
       const isPinned = pinnedIds.has(record.id);
       const latestRun = record.task_run?.[0];
       // Swallow row-level clicks so any action button (log / pin / run /
@@ -328,6 +345,13 @@ export default function Tasks() {
               </Tooltip>
             </Popconfirm>
           )}
+          {canDismiss && (
+            <Popconfirm title="Dismiss this invalid task?" onConfirm={() => handleDismissInvalid(record.id)}>
+              <Tooltip title="Not our problem — dismiss to aborted">
+                <Button size="small" icon={<IssuesCloseOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       );
     }},
@@ -340,6 +364,7 @@ export default function Tasks() {
     const allSelected = selectedRowKeys.length === tasks.length;
     const runnableCount = selected.filter((t) => RUNNABLE_STATUSES.includes(t.task_status)).length;
     const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
+    const dismissibleCount = selected.filter((t) => t.task_status === "invalid").length;
     return (
       <Alert type="info" showIcon={false} style={{ marginBottom: 8, padding: "6px 12px" }} message={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -354,6 +379,7 @@ export default function Tasks() {
           <Space>
             {runnableCount > 0 && <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}><Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button></Popconfirm>}
             {stoppableCount > 0 && <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}><Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button></Popconfirm>}
+            {dismissibleCount > 0 && <Popconfirm title={`Dismiss ${dismissibleCount} invalid?`} onConfirm={handleBulkDismissInvalid}><Button size="small" icon={<IssuesCloseOutlined />}>Dismiss {dismissibleCount}</Button></Popconfirm>}
             <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}><Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button></Popconfirm>
             <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
           </Space>

@@ -228,6 +228,11 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     await pgUpdate<TaskResponse>("task", id, { task_status: "aborted" });
   },
+  // Triage helper for `invalid` tasks: user reviewed it, decided the
+  // failure isn't ours to fix, dismisses to `aborted` so the row stops
+  // showing up in the "needs investigation" filter. No task_run side-
+  // effects — invalid tasks already have no running run.
+  dismissInvalid: (id: number) => pgUpdate<TaskResponse>("task", id, { task_status: "aborted" }),
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
@@ -251,6 +256,8 @@ export const api = {
     }
     await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" });
   },
+  batchDismissInvalid: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" }),
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
