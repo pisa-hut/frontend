@@ -78,12 +78,13 @@ export default function Tasks() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
   const [loading, setLoading] = useState(true);
-  // Triaged-away tasks are hidden unless the user opts in via either the
-  // showArchived toggle (legacy single-axis control) or the Archived
-  // chip below. Both write the same flag so they stay coherent.
-  const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
   // Compact view collapses AV / Sim / Sampler into one Setup column.
   const [compactView, setCompactView] = useLocalStorageState("tasks.compactView", true);
+  // Quick filter is the source of truth for archived visibility now —
+  // "archived" chip shows ONLY archived rows; every other chip shows
+  // ONLY non-archived rows. (No more orthogonal "show archived"
+  // toggle — that double-axis was the source of "Archived chip shows
+  // non-archived tasks".)
   const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
@@ -112,31 +113,48 @@ export default function Tasks() {
     setSearchParams({});
   }, [setFilteredInfo, setQuickFilterRaw, setSearchParams]);
 
-  // Apply a chip click: rewrites task_status filter + showArchived flag
-  // + URL so the view, the column dropdown, and the bookmark are all
-  // coherent. Other column filters (AV, plan, etc.) are preserved.
+  // Apply a chip click: rewrites task_status filter + URL so the view,
+  // the column dropdown, and the bookmark are all coherent. Archived
+  // visibility is derived from quickFilter alone in visibleMainTasks
+  // (archived only when q === "archived").
   const setQuickFilter = useCallback((q: QuickFilter) => {
     setQuickFilterRaw(q);
     setFilteredInfo((prev) => {
       const next = { ...prev };
-      if (q === "all") {
+      if (q === "all" || q === "archived") {
         next.task_status = null;
       } else if (q === "triage") {
         next.task_status = ["invalid"];
-      } else if (q === "archived") {
-        next.task_status = null;
       } else {
         next.task_status = [q];
       }
       return next;
     });
-    setShowArchived(q === "archived");
     // URL: ?triage=1 for the triage scope, ?status=<x> for a single
-    // status, nothing for "all". Bookmark-friendly.
+    // status, ?archived=1 for the Archived chip, nothing for "all".
     if (q === "triage") setSearchParams({ triage: "1" });
-    else if (q === "all" || q === "archived") setSearchParams({});
+    else if (q === "archived") setSearchParams({ archived: "1" });
+    else if (q === "all") setSearchParams({});
     else setSearchParams({ status: q });
-  }, [setQuickFilterRaw, setFilteredInfo, setShowArchived, setSearchParams]);
+  }, [setQuickFilterRaw, setFilteredInfo, setSearchParams]);
+
+  // URL → state sync. The localStorage hook overrides the initial
+  // useMemo on mount (because it reads its persisted value), so a
+  // dashboard link like /tasks?triage=1 was getting clobbered. This
+  // effect re-applies whenever the URL params change after mount.
+  useEffect(() => {
+    let next: QuickFilter | null = null;
+    if (searchParams.get("triage") === "1") next = "triage";
+    else if (searchParams.get("archived") === "1") next = "archived";
+    else {
+      const s = searchParams.get("status");
+      if (s && QUICK_FILTERS.some((q) => q.value === s)) next = s as QuickFilter;
+    }
+    if (next != null && next !== quickFilter) setQuickFilter(next);
+    // Intentionally only re-fire on URL changes; don't chase quickFilter
+    // changes back into the effect (they're outbound from setQuickFilter).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Log drawer: owned at the page level so both the row action button and
   // the timeline in TaskRunsPanel can open it, sharing one drawer.
@@ -250,7 +268,10 @@ export default function Tasks() {
   // one independently, so the pinned table's columns never aligned
   // with the main table's. One table = guaranteed alignment.
   const visibleMainTasks = useMemo(() => {
-    const archivedFilter = (t: TaskResponse) => showArchived || !t.archived;
+    // Archived axis is driven by the chip: only "Archived" shows
+    // archived rows, every other chip excludes them.
+    const archivedFilter = (t: TaskResponse) =>
+      quickFilter === "archived" ? t.archived : !t.archived;
     const colFilters = (t: TaskResponse) => {
       for (const [key, vals] of Object.entries(filteredInfo)) {
         if (!vals || vals.length === 0) continue;
@@ -286,7 +307,7 @@ export default function Tasks() {
       if (ap !== bp) return ap ? -1 : 1;
       return cmp(a, b);
     });
-  }, [tasks, pinnedIds, showArchived, filteredInfo, sortedInfo]);
+  }, [tasks, pinnedIds, quickFilter, filteredInfo, sortedInfo]);
 
   const [cursorId, setCursorId] = useState<number | null>(null);
   // Bring the cursor row into view when it changes.
