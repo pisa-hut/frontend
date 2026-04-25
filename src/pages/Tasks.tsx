@@ -3,9 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import {
   Tag, Button, Modal, Form, Select, message, Typography, Space,
   Progress, Alert, Statistic, Card, Row, Col, Input, Checkbox, Table, Popconfirm, Tooltip,
+  Affix, Badge,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined, ThunderboltOutlined,
+  ReloadOutlined, ThunderboltOutlined,
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
   FileTextOutlined, ClearOutlined, InboxOutlined, UndoOutlined,
 } from "@ant-design/icons";
@@ -15,6 +16,7 @@ import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
 import TaskRunsPanel from "../components/TaskRunsPanel";
+import { useLocalStorageSet, useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -38,33 +40,96 @@ const statusColors: Record<TaskStatus, string> = {
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
+// Quick-filter chips. `triage` is a virtual scope: invalid + !archived.
+// Anything else either picks a single task_status or "all" (no filter).
+type QuickFilter = "all" | "triage" | "archived" | TaskStatus;
+const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "triage", label: "Triage" },
+  { value: "running", label: "Running" },
+  { value: "queued", label: "Queued" },
+  { value: "completed", label: "Completed" },
+  { value: "invalid", label: "Invalid" },
+  { value: "aborted", label: "Aborted" },
+  { value: "archived", label: "Archived" },
+];
+
 export default function Tasks() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const defaultStatusFilter = useMemo(() => {
     const s = searchParams.get("status");
     return s ? [s] : undefined;
   }, []);
+  // The url ?triage=1 shortcut wins over ?status=
+  const defaultQuickFilter: QuickFilter = useMemo(() => {
+    if (searchParams.get("triage") === "1") return "triage";
+    const s = searchParams.get("status");
+    if (s && QUICK_FILTERS.some((q) => q.value === s)) return s as QuickFilter;
+    return "all";
+  }, []);
 
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [pinnedIds, setPinnedIds] = useState<Set<number>>(new Set());
+  // View state persisted per browser via localStorage so filters,
+  // pinned rows, page size and the compact/archive toggles survive
+  // a refresh. Selection itself stays ephemeral on purpose.
+  const [pinnedIds, setPinnedIds] = useLocalStorageSet("tasks.pinned");
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
   const [loading, setLoading] = useState(true);
-  // Triaged-away tasks are hidden unless the user opts in.
-  const [showArchived, setShowArchived] = useState(false);
+  // Triaged-away tasks are hidden unless the user opts in via either the
+  // showArchived toggle (legacy single-axis control) or the Archived
+  // chip below. Both write the same flag so they stay coherent.
+  const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
+  // Compact view collapses AV / Sim / Sampler into one Setup column.
+  const [compactView, setCompactView] = useLocalStorageState("tasks.compactView", true);
+  const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
+    "tasks.quickFilter",
+    defaultQuickFilter,
+  );
 
   // Controlled filter state so one "Clear Filters" button can reset every
   // column at once (including the URL-driven default status filter).
-  const [filteredInfo, setFilteredInfo] = useState<Record<string, FilterValue | null>>(
-    () => ({ task_status: defaultStatusFilter ?? null }),
+  const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
+    "tasks.filteredInfo",
+    { task_status: defaultStatusFilter ?? null },
   );
   const hasActiveFilters = useMemo(
     () => Object.values(filteredInfo).some((v) => v != null && v.length > 0),
     [filteredInfo],
   );
-  const clearFilters = useCallback(() => setFilteredInfo({}), []);
+  const clearFilters = useCallback(() => {
+    setFilteredInfo({});
+    setQuickFilterRaw("all");
+    setSearchParams({});
+  }, [setFilteredInfo, setQuickFilterRaw, setSearchParams]);
+
+  // Apply a chip click: rewrites task_status filter + showArchived flag
+  // + URL so the view, the column dropdown, and the bookmark are all
+  // coherent. Other column filters (AV, plan, etc.) are preserved.
+  const setQuickFilter = useCallback((q: QuickFilter) => {
+    setQuickFilterRaw(q);
+    setFilteredInfo((prev) => {
+      const next = { ...prev };
+      if (q === "all") {
+        next.task_status = null;
+      } else if (q === "triage") {
+        next.task_status = ["invalid"];
+      } else if (q === "archived") {
+        next.task_status = null;
+      } else {
+        next.task_status = [q];
+      }
+      return next;
+    });
+    setShowArchived(q === "archived");
+    // URL: ?triage=1 for the triage scope, ?status=<x> for a single
+    // status, nothing for "all". Bookmark-friendly.
+    if (q === "triage") setSearchParams({ triage: "1" });
+    else if (q === "all" || q === "archived") setSearchParams({});
+    else setSearchParams({ status: q });
+  }, [setQuickFilterRaw, setFilteredInfo, setShowArchived, setSearchParams]);
 
   // Log drawer: owned at the page level so both the row action button and
   // the timeline in TaskRunsPanel can open it, sharing one drawer.
@@ -106,10 +171,8 @@ export default function Tasks() {
     setExpandedRows(keys);
   }, []);
 
-  const [modalOpen, setModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form] = Form.useForm();
   const [bulkForm] = Form.useForm();
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
@@ -174,6 +237,103 @@ export default function Tasks() {
     [logTask, planMap],
   );
 
+  // Visible main-table list under all current filters. Used by the
+  // keyboard handler to walk j/k. Pinned rows live in their own table
+  // and are intentionally excluded from cursor navigation.
+  const visibleMainTasks = useMemo(() => {
+    const archivedFilter = (t: TaskResponse) => showArchived || !t.archived;
+    const colFilters = (t: TaskResponse) => {
+      for (const [key, vals] of Object.entries(filteredInfo)) {
+        if (!vals || vals.length === 0) continue;
+        const v = (t as unknown as Record<string, unknown>)[key];
+        if (!vals.includes(v as never)) return false;
+      }
+      return true;
+    };
+    return tasks.filter((t) => !pinnedIds.has(t.id) && archivedFilter(t) && colFilters(t));
+  }, [tasks, pinnedIds, showArchived, filteredInfo]);
+
+  const [cursorId, setCursorId] = useState<number | null>(null);
+  // Bring the cursor row into view when it changes.
+  useEffect(() => {
+    if (cursorId == null) return;
+    const node = document.querySelector(`tr[data-row-key="${cursorId}"]`);
+    if (node) (node as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [cursorId]);
+
+  // Keyboard nav. Skip when the user is typing into an input/textarea
+  // or interacting with an open Modal/Popconfirm/Drawer.
+  useEffect(() => {
+    const isTypingTarget = (el: EventTarget | null): boolean => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (el.isContentEditable) return true;
+      // Don't hijack while AntD popovers/modals are open.
+      if (document.querySelector(".ant-modal-mask, .ant-popover-open")) return true;
+      return false;
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (isTypingTarget(ev.target)) return;
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const list = visibleMainTasks;
+      if (list.length === 0) return;
+      const curIdx = cursorId == null ? -1 : list.findIndex((t) => t.id === cursorId);
+      switch (ev.key) {
+        case "j":
+        case "ArrowDown": {
+          ev.preventDefault();
+          const next = list[Math.min(list.length - 1, curIdx + 1)] ?? list[0];
+          setCursorId(next.id);
+          break;
+        }
+        case "k":
+        case "ArrowUp": {
+          ev.preventDefault();
+          const next = list[Math.max(0, curIdx - 1)] ?? list[0];
+          setCursorId(next.id);
+          break;
+        }
+        case " ":
+        case "Spacebar": {
+          if (curIdx < 0) return;
+          ev.preventDefault();
+          const id = list[curIdx].id;
+          const isOpen = expandedRows.includes(id);
+          handleExpandedChange(isOpen ? expandedRows.filter((k) => k !== id) : [...expandedRows, id]);
+          break;
+        }
+        case "Enter": {
+          if (curIdx < 0) return;
+          ev.preventDefault();
+          const t = list[curIdx];
+          const latest = t.task_run?.[0];
+          if (latest) openLog(latest);
+          break;
+        }
+        case "?": {
+          ev.preventDefault();
+          Modal.info({
+            title: "Keyboard shortcuts",
+            content: (
+              <ul style={{ paddingLeft: 16 }}>
+                <li><kbd>j</kbd> / <kbd>↓</kbd>  — next row</li>
+                <li><kbd>k</kbd> / <kbd>↑</kbd>  — previous row</li>
+                <li><kbd>Space</kbd> — expand / collapse current row</li>
+                <li><kbd>Enter</kbd> — open log for current row's latest attempt</li>
+                <li><kbd>?</kbd> — this cheat sheet</li>
+              </ul>
+            ),
+            okText: "Close",
+          });
+          break;
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [visibleMainTasks, cursorId, expandedRows, handleExpandedChange, openLog]);
+
   // --- Actions ---
 
   const handleRun = async (id: number) => {
@@ -227,14 +387,9 @@ export default function Tasks() {
   };
 
   // --- Create ---
-
-  const handleCreate = async (values: { plan_id: number; av_id: number; simulator_id: number; sampler_id: number }) => {
-    setCreating(true);
-    try {
-      await api.createTask({ ...values, task_status: "idle" });
-      message.success("Task created"); setModalOpen(false); form.resetFields(); load();
-    } catch (e) { message.error(String(e)); } finally { setCreating(false); }
-  };
+  // (Single-task create is the N=1 case of bulk create; no separate
+  //  handler. Bulk modal renders Selects in `mode="multiple"` so the
+  //  user can pick exactly one of each AV/Sim/Sampler/Plan.)
 
   // --- Bulk create ---
 
@@ -283,13 +438,26 @@ export default function Tasks() {
 
   // --- Columns ---
 
-  const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60, ellipsis: true,
-      sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
-      render: (id: number) => planMap.get(id) ?? `#${id}`,
-      filteredValue: filteredInfo.plan_id ?? null,
-      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
+  const setupColumn = {
+    title: "Setup",
+    key: "setup",
+    width: 220,
+    ellipsis: true,
+    // Setup column packs AV / Sim / Sampler. The compact toggle keeps
+    // the three filter dropdowns reachable via a single Popover; for
+    // most rows the user just glances at "av · sim · sampler".
+    render: (_: unknown, r: TaskResponse) => (
+      <Typography.Text style={{ fontSize: 12 }} ellipsis>
+        {avMap.get(r.av_id) ?? `#${r.av_id}`}
+        <Typography.Text type="secondary"> · </Typography.Text>
+        {simMap.get(r.simulator_id) ?? `#${r.simulator_id}`}
+        <Typography.Text type="secondary"> · </Typography.Text>
+        {samplerMap.get(r.sampler_id) ?? `#${r.sampler_id}`}
+      </Typography.Text>
+    ),
+  };
+
+  const expandedColumns = [
     { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true,
       render: (id: number) => avMap.get(id) ?? `#${id}`,
       filters: avs.map((a) => ({ text: a.name, value: a.id })),
@@ -305,6 +473,16 @@ export default function Tasks() {
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.sampler_id ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
+  ];
+
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", width: 60, ellipsis: true,
+      sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
+    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
+      render: (id: number) => planMap.get(id) ?? `#${id}`,
+      filteredValue: filteredInfo.plan_id ?? null,
+      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
+    ...(compactView ? [setupColumn] : expandedColumns),
     { title: "Status", dataIndex: "task_status", key: "task_status", width: 110,
       filters: (["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
       filteredValue: filteredInfo.task_status ?? null,
@@ -396,6 +574,9 @@ export default function Tasks() {
 
   // --- Selection bar ---
 
+  // Selection bar floats at the bottom of the viewport via Affix so the
+  // user can scroll the table without losing track of what they've
+  // selected. Renders nothing when nothing is selected.
   const selectionBar = selectedRowKeys.length > 0 && (() => {
     const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
     const allSelected = selectedRowKeys.length === tasks.length;
@@ -403,8 +584,22 @@ export default function Tasks() {
     const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
     const archivableCount = selected.filter((t) => !t.archived).length;
     return (
-      <Alert type="info" showIcon={false} style={{ marginBottom: 8, padding: "6px 12px" }} message={
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+      <Affix offsetBottom={12} style={{ position: "fixed", left: 16, right: 16, bottom: 12, zIndex: 50 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 8,
+            padding: "8px 14px",
+            borderRadius: 8,
+            background: "var(--ant-color-bg-elevated, rgba(255,255,255,0.97))",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+            border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
+            backdropFilter: "blur(6px)",
+          }}
+        >
           <Space>
             <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
             {!allSelected ? (
@@ -421,21 +616,57 @@ export default function Tasks() {
             <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
           </Space>
         </div>
-      } />
+      </Affix>
     );
   })();
 
   return (
     <>
       <PageHeader title="Tasks">
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { fetchResources().then(() => setModalOpen(true)); }}>Create</Button>
-        <Button icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Bulk Create</Button>
-        <Button icon={<ClearOutlined />} onClick={clearFilters} disabled={!hasActiveFilters}>Clear Filters</Button>
-        <Checkbox checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} style={{ marginLeft: 4 }}>
-          Show archived ({tasks.filter((t) => t.archived).length})
+        <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Create</Button>
+        <Button icon={<ClearOutlined />} onClick={clearFilters} disabled={!hasActiveFilters && quickFilter === "all"}>Clear Filters</Button>
+        <Checkbox checked={compactView} onChange={(e) => setCompactView(e.target.checked)} style={{ marginLeft: 4 }}>
+          Compact
         </Checkbox>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
+
+      {/* Quick-filter chips: replace the dropdown discovery problem.
+          Counts are live (re-derived on every render) so the user can
+          see triage backlog at a glance. */}
+      <div style={{ marginBottom: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {QUICK_FILTERS.map((q) => {
+          const count =
+            q.value === "all"
+              ? tasks.filter((t) => !t.archived).length
+              : q.value === "triage"
+                ? tasks.filter((t) => t.task_status === "invalid" && !t.archived).length
+                : q.value === "archived"
+                  ? tasks.filter((t) => t.archived).length
+                  : tasks.filter((t) => t.task_status === q.value && !t.archived).length;
+          const active = quickFilter === q.value;
+          return (
+            <Button
+              key={q.value}
+              size="small"
+              type={active ? "primary" : "default"}
+              onClick={() => setQuickFilter(q.value)}
+            >
+              {q.label}
+              <Badge
+                count={count}
+                showZero
+                color={active ? "#fff" : undefined}
+                style={{
+                  marginLeft: 6,
+                  backgroundColor: active ? "rgba(255,255,255,0.18)" : undefined,
+                  color: active ? "#fff" : undefined,
+                }}
+              />
+            </Button>
+          );
+        })}
+      </div>
 
       {selectionBar}
 
@@ -476,7 +707,11 @@ export default function Tasks() {
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         onChange={(_p, filters) => setFilteredInfo(filters)}
-        onRow={(r) => (r.archived ? { style: { opacity: 0.55 } } : {})}
+        rowClassName={(r) => r.id === cursorId ? "tasks-row-cursor" : ""}
+        onRow={(r) => ({
+          style: r.archived ? { opacity: 0.55 } : undefined,
+          onMouseDown: () => setCursorId(r.id),
+        })}
         expandable={{
           expandedRowRender: (r: TaskResponse) => (
             <TaskRunsPanel
@@ -492,25 +727,10 @@ export default function Tasks() {
         }}
       />
 
-      {/* Single create */}
-      <Modal title="Create Task" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null}>
-        <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="plan_id" label="Plan" rules={[{ required: true }]}>
-            <Select options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))} showSearch optionFilterProp="label" />
-          </Form.Item>
-          <Form.Item name="av_id" label="AV" rules={[{ required: true }]}>
-            <Select options={avs.map((a) => ({ label: `${a.name} (#${a.id})`, value: a.id }))} showSearch optionFilterProp="label" />
-          </Form.Item>
-          <Form.Item name="simulator_id" label="Simulator" rules={[{ required: true }]}>
-            <Select options={simulators.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))} showSearch optionFilterProp="label" />
-          </Form.Item>
-          <Form.Item name="sampler_id" label="Sampler" rules={[{ required: true }]}>
-            <Select options={samplers.map((s) => ({ label: `${s.name} (#${s.id})`, value: s.id }))} showSearch optionFilterProp="label" />
-          </Form.Item>
-          <Form.Item><Button type="primary" htmlType="submit" loading={creating} block>Create</Button></Form.Item>
-        </Form>
-      </Modal>
-
+      {/* Single Create + Bulk Create are one and the same — Bulk just
+          handles the N=1 case naturally. The standalone Create modal +
+          handleCreate path were dropped to remove the "two ways to do
+          one job" problem. */}
       {/* Bulk create */}
       <Modal title="Bulk Create Tasks" open={bulkModalOpen} onCancel={() => { if (!creating) { setBulkModalOpen(false); setBulkProgress(null); } }} footer={null} width={640}>
         <Typography.Paragraph type="secondary">Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.</Typography.Paragraph>
@@ -569,6 +789,13 @@ export default function Tasks() {
         executor={logExecutor}
         onClose={() => setLogRun(null)}
       />
+
+      <style>{`
+        .tasks-row-cursor > td {
+          background: var(--ant-color-primary-bg, #e6f4ff) !important;
+          box-shadow: inset 2px 0 0 var(--ant-color-primary, #1677ff);
+        }
+      `}</style>
     </>
   );
 }
