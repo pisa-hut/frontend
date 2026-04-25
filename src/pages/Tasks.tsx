@@ -623,7 +623,13 @@ export default function Tasks() {
   // selected. Renders nothing when nothing is selected.
   const selectionBar = selectedRowKeys.length > 0 && (() => {
     const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-    const allSelected = selectedRowKeys.length === tasks.length;
+    // "Select all" operates on the *filtered* list, not the global
+    // tasks array — pre-page-aware so the user doesn't have to walk
+    // the pagination to bulk-act on a filtered scope (e.g. all
+    // invalid + !archived after picking the Triage chip).
+    const visibleIds = visibleMainTasks.map((t) => t.id);
+    const allVisibleSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedRowKeys.includes(id));
     const runnableCount = selected.filter((t) => RUNNABLE_STATUSES.includes(t.task_status)).length;
     const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
     const archivableCount = selected.filter((t) => !t.archived).length;
@@ -646,10 +652,24 @@ export default function Tasks() {
         >
           <Space>
             <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
-            {!allSelected ? (
-              <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys(tasks.map((t) => t.id))}>Select all {tasks.length}</Button>
+            {!allVisibleSelected ? (
+              <Button
+                size="small"
+                type="link"
+                style={{ padding: 0 }}
+                onClick={() => setSelectedRowKeys(visibleIds)}
+              >
+                Select all {visibleIds.length} filtered
+              </Button>
             ) : (
-              <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setSelectedRowKeys([])}>Deselect all</Button>
+              <Button
+                size="small"
+                type="link"
+                style={{ padding: 0 }}
+                onClick={() => setSelectedRowKeys([])}
+              >
+                Deselect all
+              </Button>
             )}
           </Space>
           <Space>
