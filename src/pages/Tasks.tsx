@@ -510,9 +510,19 @@ export default function Tasks() {
       onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
   ];
 
+  // Sort is fully controlled — visibleMainTasks pre-sorts (with pinned
+  // first within each sort key), so each column reports `sortOrder`
+  // matching sortedInfo and sets `sorter: true` so the header clicks
+  // through ordered cycles without AntD trying to re-sort the data
+  // itself. Without this AntD applies the column's own comparator on
+  // top of my pre-sort and the on-screen order diverged from the
+  // keyboard nav order.
+  const orderFor = (key: string): SortOrder | null =>
+    sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
+
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 60, ellipsis: true,
-      sorter: (a: TaskResponse, b: TaskResponse) => a.id - b.id },
+      sorter: true, sortOrder: orderFor("id") },
     { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
       filteredValue: filteredInfo.plan_id ?? null,
@@ -528,11 +538,10 @@ export default function Tasks() {
         </Tag>
       ) },
     { title: "Attempts", dataIndex: "attempt_count", key: "attempt_count", width: 70,
-      sorter: (a: TaskResponse, b: TaskResponse) => a.attempt_count - b.attempt_count },
+      sorter: true, sortOrder: orderFor("attempt_count") },
     { title: "Last Run", key: "last_run", width: 170,
       render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
-      sorter: (a: TaskResponse, b: TaskResponse) => (a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0) - (b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0),
-      defaultSortOrder: "descend" as const },
+      sorter: true, sortOrder: orderFor("last_run") },
     { title: "", key: "actions", width: 144, render: (_: unknown, record: TaskResponse) => {
       const canRun = RUNNABLE_STATUSES.includes(record.task_status);
       const canStop = STOPPABLE_STATUSES.includes(record.task_status);
