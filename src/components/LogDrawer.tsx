@@ -1,26 +1,47 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer, Space, Button, Tag, Typography, Spin, Empty, Popconfirm, message } from "antd";
 import {
   CaretRightOutlined,
   CopyOutlined,
   DownloadOutlined,
+  InboxOutlined,
   StopOutlined,
   SyncOutlined,
 } from "@ant-design/icons";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
-import type { TaskRunResponse, ExecutorResponse } from "../api/types";
+import type { TaskResponse, TaskRunResponse, TaskStatus, ExecutorResponse } from "../api/types";
+
+const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
+  idle: "default",
+  queued: "warning",
+  running: "processing",
+  completed: "success",
+  invalid: "error",
+  aborted: "default",
+};
 
 interface Props {
   run: TaskRunResponse | null;
+  /** Parent task — used so the header shows task identity (#id, status,
+   *  plan label) right when the drawer slides in, not after the user
+   *  scrolls through the log trying to figure out where they are. */
+  task?: TaskResponse;
+  /** Human-readable label for the task (typically the plan name). */
+  taskLabel?: string;
   executor?: ExecutorResponse;
   onClose: () => void;
 }
 
 /** Full-height right-side drawer that shows the captured log of one
  *  task_run. Loads the DB snapshot on open, then subscribes to live
- *  SSE `log` events for chunk appends while the run is still running. */
-export default function LogDrawer({ run, executor, onClose }: Props) {
+ *  SSE `log` events for chunk appends while the run is still running.
+ *
+ *  Triage actions live in the header: Stop (live), Run (re-queue),
+ *  Archive (dismiss invalid). All three close the drawer on success so
+ *  the user can flow straight to the next task without manually
+ *  closing + re-clicking. */
+export default function LogDrawer({ run, task, taskLabel, executor, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -74,26 +95,74 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
     (run.task_run_status === "completed" ||
       run.task_run_status === "failed" ||
       run.task_run_status === "aborted");
-  const title = run ? (
-    <Space>
-      <span>
-        Attempt #{run.attempt} · {executor?.hostname ?? "executor"}
-      </span>
-      {isLive && (
-        <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
-          live
-        </Tag>
-      )}
-    </Space>
-  ) : (
-    null
-  );
+  // Mirror the per-row Archive trigger: only meaningful for invalid
+  // tasks the user hasn't already triaged.
+  const canArchive = task != null && task.task_status === "invalid" && !task.archived;
+
+  const doStop = useCallback(() => {
+    if (!run) return;
+    api
+      .stopTask(run.task_id)
+      .then(() => { message.success(`Task #${run.task_id} stopped`); onClose(); })
+      .catch((e) => message.error(String(e)));
+  }, [run, onClose]);
+
+  const doRun = useCallback(() => {
+    if (!run) return;
+    api
+      .updateTask(run.task_id, { task_status: "queued" })
+      .then(() => { message.success(`Task #${run.task_id} queued`); onClose(); })
+      .catch((e) => message.error(String(e)));
+  }, [run, onClose]);
+
+  const doArchive = useCallback(() => {
+    if (!task) return;
+    api
+      .archiveTask(task.id)
+      .then(() => { message.success(`Task #${task.id} archived`); onClose(); })
+      .catch((e) => message.error(String(e)));
+  }, [task, onClose]);
+
+  // Title is computed eagerly so it's visible the instant the drawer
+  // animates in — no waiting for the log fetch to populate context.
+  const title = useMemo(() => {
+    if (!run) return null;
+    return (
+      <Space size={6} wrap>
+        {task && (
+          <>
+            <Typography.Text strong>Task #{task.id}</Typography.Text>
+            <Tag color={TASK_STATUS_COLOR[task.task_status]} style={{ marginInline: 0 }}>
+              {task.task_status}
+            </Tag>
+            {task.archived && (
+              <Tag color="default" style={{ marginInline: 0 }}>archived</Tag>
+            )}
+          </>
+        )}
+        {taskLabel && (
+          <Typography.Text type="secondary" ellipsis style={{ maxWidth: 240 }}>
+            {taskLabel}
+          </Typography.Text>
+        )}
+        <Typography.Text type="secondary">·</Typography.Text>
+        <Typography.Text>
+          Attempt #{run.attempt} · {executor?.hostname ?? "executor"}
+        </Typography.Text>
+        {isLive && (
+          <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
+            live
+          </Tag>
+        )}
+      </Space>
+    );
+  }, [run, task, taskLabel, executor, isLive]);
 
   return (
     <Drawer
       title={title}
       placement="right"
-      width={720}
+      width={760}
       open={run !== null}
       onClose={onClose}
       styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
@@ -101,33 +170,18 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
         run ? (
           <Space>
             {isLive && (
-              <Popconfirm
-                title="Stop this task?"
-                onConfirm={() => {
-                  api
-                    .stopTask(run.task_id)
-                    .then(() => message.success(`Task #${run.task_id} stopped`))
-                    .catch((e) => message.error(String(e)));
-                }}
-              >
-                <Button size="small" danger icon={<StopOutlined />}>
-                  Stop
-                </Button>
+              <Popconfirm title="Stop this task?" onConfirm={doStop}>
+                <Button size="small" danger icon={<StopOutlined />}>Stop</Button>
               </Popconfirm>
             )}
             {canRun && (
-              <Popconfirm
-                title="Re-run this task?"
-                onConfirm={() => {
-                  api
-                    .updateTask(run.task_id, { task_status: "queued" })
-                    .then(() => message.success(`Task #${run.task_id} queued`))
-                    .catch((e) => message.error(String(e)));
-                }}
-              >
-                <Button size="small" type="primary" icon={<CaretRightOutlined />}>
-                  Run
-                </Button>
+              <Popconfirm title="Re-run this task?" onConfirm={doRun}>
+                <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run</Button>
+              </Popconfirm>
+            )}
+            {canArchive && (
+              <Popconfirm title="Archive this invalid task?" onConfirm={doArchive}>
+                <Button size="small" icon={<InboxOutlined />}>Archive</Button>
               </Popconfirm>
             )}
             {content && !loading && (
@@ -142,9 +196,7 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
                     navigator.clipboard.writeText(content);
                     message.success("Copied");
                   }}
-                >
-                  Copy
-                </Button>
+                />
                 <Button
                   size="small"
                   icon={<DownloadOutlined />}
@@ -157,9 +209,7 @@ export default function LogDrawer({ run, executor, onClose }: Props) {
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                >
-                  Download
-                </Button>
+                />
               </>
             )}
           </Space>

@@ -68,6 +68,9 @@ export default function Tasks() {
   const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
   const [logExecutor, setLogExecutor] = useState<ExecutorResponse | undefined>();
   const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
+  // Drawer takes (run, task, label) — task and label are derived from
+  // current state so they refresh after SSE updates (e.g. task_status
+  // flipping from invalid → archived without closing the drawer).
 
   const openLog = useCallback((run: TaskRunResponse, executor?: ExecutorResponse) => {
     setLogRun(run);
@@ -158,6 +161,15 @@ export default function Tasks() {
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
+
+  const logTask = useMemo(
+    () => (logRun ? tasks.find((t) => t.id === logRun.task_id) : undefined),
+    [logRun, tasks],
+  );
+  const logTaskLabel = useMemo(
+    () => (logTask ? planMap.get(logTask.plan_id) : undefined),
+    [logTask, planMap],
+  );
 
   // --- Actions ---
 
@@ -549,6 +561,8 @@ export default function Tasks() {
 
       <LogDrawer
         run={logRun}
+        task={logTask}
+        taskLabel={logTaskLabel}
         executor={logExecutor}
         onClose={() => setLogRun(null)}
       />
