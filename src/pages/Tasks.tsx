@@ -7,7 +7,7 @@ import {
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined,
   CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
-  FileTextOutlined, ClearOutlined, IssuesCloseOutlined,
+  FileTextOutlined, ClearOutlined, InboxOutlined, UndoOutlined,
 } from "@ant-design/icons";
 import type { FilterValue } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -48,6 +48,8 @@ export default function Tasks() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  // Triaged-away tasks are hidden unless the user opts in.
+  const [showArchived, setShowArchived] = useState(false);
 
   // Controlled filter state so one "Clear Filters" button can reset every
   // column at once (including the URL-driven default status filter).
@@ -168,12 +170,16 @@ export default function Tasks() {
     catch (e) { message.error(String(e)); }
   };
 
-  // Triage action for `invalid` tasks. The 10-useless streak says the
-  // system gave up; this action says the *user* gave up too — it's not
-  // ours to fix, dismiss to `aborted` so the row drops out of the
-  // "needs investigation" filter.
-  const handleDismissInvalid = async (id: number) => {
-    try { await api.dismissInvalid(id); message.success(`Task #${id} dismissed`); load(); }
+  // Triage action for `invalid` tasks. Archives instead of mutating
+  // task_status — keeps the state machine pure and the row + history
+  // intact. The default Tasks view hides archived rows; the toggle in
+  // the header reveals them.
+  const handleArchive = async (id: number) => {
+    try { await api.archiveTask(id); message.success(`Task #${id} archived`); load(); }
+    catch (e) { message.error(String(e)); }
+  };
+  const handleUnarchive = async (id: number) => {
+    try { await api.unarchiveTask(id); message.success(`Task #${id} unarchived`); load(); }
     catch (e) { message.error(String(e)); }
   };
 
@@ -191,9 +197,9 @@ export default function Tasks() {
     setSelectedRowKeys([]); load();
   };
 
-  const handleBulkDismissInvalid = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && t.task_status === "invalid").map((t) => t.id);
-    try { await api.batchDismissInvalid(ids); message.success(`Dismissed ${ids.length} invalid tasks`); }
+  const handleBulkArchive = async () => {
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && !t.archived).map((t) => t.id);
+    try { await api.batchArchiveTasks(ids); message.success(`Archived ${ids.length} tasks`); }
     catch (e) { message.error(String(e)); }
     setSelectedRowKeys([]); load();
   };
@@ -301,7 +307,9 @@ export default function Tasks() {
     { title: "", key: "actions", width: 144, fixed: "right" as const, render: (_: unknown, record: TaskResponse) => {
       const canRun = RUNNABLE_STATUSES.includes(record.task_status);
       const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-      const canDismiss = record.task_status === "invalid";
+      // Archive button is only the triage outcome for invalid tasks; if a row
+      // is already archived (visible only with the toggle on), offer Unarchive.
+      const canArchive = record.task_status === "invalid" && !record.archived;
       const isPinned = pinnedIds.has(record.id);
       const latestRun = record.task_run?.[0];
       // Swallow row-level clicks so any action button (log / pin / run /
@@ -345,12 +353,17 @@ export default function Tasks() {
               </Tooltip>
             </Popconfirm>
           )}
-          {canDismiss && (
-            <Popconfirm title="Dismiss this invalid task?" onConfirm={() => handleDismissInvalid(record.id)}>
-              <Tooltip title="Not our problem — dismiss to aborted">
-                <Button size="small" icon={<IssuesCloseOutlined />} />
+          {canArchive && (
+            <Popconfirm title="Archive this invalid task?" onConfirm={() => handleArchive(record.id)}>
+              <Tooltip title="Not our problem — archive (hides from default view)">
+                <Button size="small" icon={<InboxOutlined />} />
               </Tooltip>
             </Popconfirm>
+          )}
+          {record.archived && (
+            <Tooltip title="Unarchive (return to default view)">
+              <Button size="small" icon={<UndoOutlined />} onClick={() => handleUnarchive(record.id)} />
+            </Tooltip>
           )}
         </Space>
       );
@@ -364,7 +377,7 @@ export default function Tasks() {
     const allSelected = selectedRowKeys.length === tasks.length;
     const runnableCount = selected.filter((t) => RUNNABLE_STATUSES.includes(t.task_status)).length;
     const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
-    const dismissibleCount = selected.filter((t) => t.task_status === "invalid").length;
+    const archivableCount = selected.filter((t) => !t.archived).length;
     return (
       <Alert type="info" showIcon={false} style={{ marginBottom: 8, padding: "6px 12px" }} message={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -379,7 +392,7 @@ export default function Tasks() {
           <Space>
             {runnableCount > 0 && <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}><Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button></Popconfirm>}
             {stoppableCount > 0 && <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}><Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button></Popconfirm>}
-            {dismissibleCount > 0 && <Popconfirm title={`Dismiss ${dismissibleCount} invalid?`} onConfirm={handleBulkDismissInvalid}><Button size="small" icon={<IssuesCloseOutlined />}>Dismiss {dismissibleCount}</Button></Popconfirm>}
+            {archivableCount > 0 && <Popconfirm title={`Archive ${archivableCount}?`} onConfirm={handleBulkArchive}><Button size="small" icon={<InboxOutlined />}>Archive {archivableCount}</Button></Popconfirm>}
             <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}><Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button></Popconfirm>
             <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
           </Space>
@@ -394,6 +407,9 @@ export default function Tasks() {
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { fetchResources().then(() => setModalOpen(true)); }}>Create</Button>
         <Button icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Bulk Create</Button>
         <Button icon={<ClearOutlined />} onClick={clearFilters} disabled={!hasActiveFilters}>Clear Filters</Button>
+        <Checkbox checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} style={{ marginLeft: 4 }}>
+          Show archived ({tasks.filter((t) => t.archived).length})
+        </Checkbox>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </PageHeader>
 
@@ -401,7 +417,7 @@ export default function Tasks() {
 
       {pinnedIds.size > 0 && (
         <Table
-          dataSource={tasks.filter((t) => pinnedIds.has(t.id))}
+          dataSource={tasks.filter((t) => pinnedIds.has(t.id) && (showArchived || !t.archived))}
           columns={columns}
           rowKey="id"
           size="small"
@@ -427,7 +443,7 @@ export default function Tasks() {
       )}
 
       <Table
-        dataSource={tasks.filter((t) => !pinnedIds.has(t.id))}
+        dataSource={tasks.filter((t) => !pinnedIds.has(t.id) && (showArchived || !t.archived))}
         columns={columns}
         rowKey="id"
         loading={loading}
@@ -436,6 +452,7 @@ export default function Tasks() {
         pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         onChange={(_p, filters) => setFilteredInfo(filters)}
+        onRow={(r) => (r.archived ? { style: { opacity: 0.55 } } : {})}
         expandable={{
           expandedRowRender: (r: TaskResponse) => (
             <TaskRunsPanel

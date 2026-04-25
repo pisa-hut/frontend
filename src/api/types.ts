@@ -93,6 +93,10 @@ export interface TaskResponse {
   task_status: TaskStatus;
   created_at: string;
   attempt_count: number;
+  /** Soft-hide flag, orthogonal to task_status. Triage of an `invalid`
+   *  task that the user decided isn't theirs to fix flips this to true
+   *  so the row drops out of the default Tasks view. */
+  archived: boolean;
   /** The most recent attempt; populated by listTasks via a nested select. */
   task_run?: TaskRunResponse[];
 }
