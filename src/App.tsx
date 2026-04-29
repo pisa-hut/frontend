@@ -8,7 +8,6 @@ import Scenarios from "./pages/Scenarios";
 import Plans from "./pages/Plans";
 import Resources from "./pages/Resources";
 import Executors from "./pages/Executors";
-import Init from "./pages/Init";
 import Upload from "./pages/Upload";
 
 function AppInner() {
@@ -29,7 +28,6 @@ function AppInner() {
             <Route path="/resources" element={<Resources />} />
             <Route path="/executors" element={<Executors />} />
             <Route path="/upload" element={<Upload />} />
-            <Route path="/init" element={<Init />} />
           </Route>
         </Routes>
       </BrowserRouter>

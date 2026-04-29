@@ -8,6 +8,9 @@ import type {
   TaskResponse,
   TaskRunResponse,
   ExecutorResponse,
+  MapFileMeta,
+  ScenarioFileMeta,
+  ConfigEntity,
 } from "./types";
 
 const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
@@ -99,6 +102,37 @@ async function pgBatchDelete(table: string, ids: number[]): Promise<void> {
   }
 }
 
+/** Bulk-insert rows via PostgREST array body. Sends up to `chunkSize` rows
+ * per request and calls `onProgress` after each chunk so callers can render
+ * progress during long runs. Uses Prefer: return=minimal to skip sending
+ * the full inserted rows back over the wire. */
+async function pgBatchCreate<T>(
+  table: string,
+  rows: Partial<T>[],
+  onProgress?: (done: number, errors: number, total: number) => void,
+  chunkSize = 500,
+): Promise<{ done: number; errors: number }> {
+  let done = 0;
+  let errors = 0;
+  if (rows.length === 0) return { done, errors };
+  for (const batch of chunk(rows, chunkSize)) {
+    try {
+      const res = await fetch(`${POSTGREST_URL}/${table}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(batch),
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      done += batch.length;
+    } catch (e) {
+      errors += batch.length;
+      console.error(`pgBatchCreate(${table}) chunk failed`, e);
+    }
+    onProgress?.(done, errors, rows.length);
+  }
+  return { done, errors };
+}
+
 // Manager API helpers (business logic only)
 
 async function managerPost<T>(path: string, data?: unknown): Promise<T> {
@@ -109,6 +143,48 @@ async function managerPost<T>(path: string, data?: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+async function managerGetJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${MANAGER_URL}${path}`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function managerPutBytes(path: string, body: Blob | ArrayBuffer | Uint8Array): Promise<void> {
+  const res = await fetch(`${MANAGER_URL}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: body as BodyInit,
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+async function managerDelete(path: string): Promise<void> {
+  const res = await fetch(`${MANAGER_URL}${path}`, { method: "DELETE" });
+  // 404 is NOT silently OK — file paths are caller-supplied and an
+  // encoding bug would let "I deleted X" report success while
+  // hitting a different URL than the one that actually exists.
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+function managerFileUrl(path: string): string {
+  return `${MANAGER_URL}${path}`;
+}
+
+/** Encode a `relative_path` such as `xodr/foo bar.xodr` or
+ *  `weird/file?name#1.xosc` for safe interpolation into a manager URL.
+ *  Each segment is encoded with encodeURIComponent so reserved chars
+ *  (`#`, `?`, `%`, ` `, `+`, etc.) round-trip to the byte-identical
+ *  string the server stored in `relative_path`. The path separator
+ *  stays unencoded. Empty/.. segments would already have been rejected
+ *  on upload by manager's reject_traversal — defensively skip them. */
+function encodeRelPath(relPath: string): string {
+  return relPath
+    .split("/")
+    .filter((seg) => seg !== "" && seg !== "." && seg !== "..")
+    .map(encodeURIComponent)
+    .join("/");
 }
 
 export const api = {
@@ -151,7 +227,13 @@ export const api = {
   deletePlan: (id: number) => pgDelete("plan", id),
 
   // Tasks
-  listTasks: () => pgList<TaskResponse>("task?select=*,task_run(started_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc"),
+  // Latest task_run fields are embedded so the row-level Log button can
+  // open the drawer without another round-trip. `log` is intentionally
+  // excluded — it's pulled lazily by the drawer via getTaskRunLog().
+  listTasks: () =>
+    pgList<TaskResponse>(
+      "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
+    ),
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   stopTask: async (id: number) => {
@@ -162,14 +244,23 @@ export const api = {
       body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
     });
     if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
-    await pgUpdate<TaskResponse>("task", id, { task_status: "created" });
+    await pgUpdate<TaskResponse>("task", id, { task_status: "aborted" });
   },
+  // Soft-hide / unhide. Triage flow for `invalid` tasks the user has
+  // decided aren't theirs to fix: archive=true keeps the row + history
+  // but drops it from the default Tasks view.
+  archiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: true }),
+  unarchiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: false }),
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
   },
+  batchCreateTasks: (
+    rows: Partial<TaskResponse>[],
+    onProgress?: (done: number, errors: number, total: number) => void,
+  ) => pgBatchCreate<TaskResponse>("task", rows, onProgress),
   batchRunTasks: (ids: number[]) =>
-    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "pending" }),
+    pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     const abortData = { task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" };
@@ -181,8 +272,10 @@ export const api = {
       });
       if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     }
-    await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "created" });
+    await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" });
   },
+  batchArchiveTasks: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
@@ -191,9 +284,18 @@ export const api = {
     await pgBatchDelete("task", ids);
   },
 
-  // Task Runs
-  listTaskRuns: (taskId: number) =>
-    pgList<TaskRunResponse>(`task_run?task_id=eq.${taskId}&order=attempt.desc&limit=5`),
+  // Task Runs — listing intentionally excludes the `log` column so expanding
+  // a task row doesn't pull down hundreds of KB of captured output.
+  listTaskRuns: (taskId: number, limit = 5, offset = 0) =>
+    pgList<TaskRunResponse>(
+      `task_run?task_id=eq.${taskId}&order=attempt.desc&limit=${limit}&offset=${offset}&select=id,task_id,executor_id,attempt,run_time_env,task_run_status,started_at,finished_at,error_message`,
+    ),
+  getTaskRunLog: async (runId: number): Promise<string | null> => {
+    const rows = await pgList<{ log: string | null }>(
+      `task_run?id=eq.${runId}&select=log`,
+    );
+    return rows[0]?.log ?? null;
+  },
 
   // Executors
   listExecutors: () => pgList<ExecutorResponse>("executor"),
@@ -208,4 +310,31 @@ export const api = {
     managerPost("/task/invalid", data),
   taskSucceeded: (data: { task_id: number }) =>
     managerPost("/task/succeeded", data),
+
+  // --- Byte-level file access via Manager API ---
+
+  listMapFiles: (mapId: number) =>
+    managerGetJson<MapFileMeta[]>(`/map/${mapId}/file`),
+  mapFileUrl: (mapId: number, relPath: string) =>
+    managerFileUrl(`/map/${mapId}/file/${encodeRelPath(relPath)}`),
+  uploadMapFile: (mapId: number, relPath: string, content: Blob) =>
+    managerPutBytes(`/map/${mapId}/file/${encodeRelPath(relPath)}`, content),
+  deleteMapFile: (mapId: number, relPath: string) =>
+    managerDelete(`/map/${mapId}/file/${encodeRelPath(relPath)}`),
+
+  listScenarioFiles: (scenarioId: number) =>
+    managerGetJson<ScenarioFileMeta[]>(`/scenario/${scenarioId}/file`),
+  scenarioFileUrl: (scenarioId: number, relPath: string) =>
+    managerFileUrl(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`),
+  uploadScenarioFile: (scenarioId: number, relPath: string, content: Blob) =>
+    managerPutBytes(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`, content),
+  deleteScenarioFile: (scenarioId: number, relPath: string) =>
+    managerDelete(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`),
+
+  configUrl: (entity: ConfigEntity, id: number) =>
+    managerFileUrl(`/${entity}/${id}/config`),
+  uploadConfig: (entity: ConfigEntity, id: number, content: Blob) =>
+    managerPutBytes(`/${entity}/${id}/config`, content),
+  deleteConfig: (entity: ConfigEntity, id: number) =>
+    managerDelete(`/${entity}/${id}/config`),
 };

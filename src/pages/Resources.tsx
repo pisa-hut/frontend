@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, Button, Modal, Form, Input, Switch, message, Space, Table, Dropdown } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import ConfigUpload from "../components/ConfigUpload";
+import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, SamplerResponse, MapResponse } from "../api/types";
@@ -18,11 +20,11 @@ function useResource<T extends { id: number }>(listFn: () => Promise<T[]>) {
   return { data, loading, modalOpen, setModalOpen, editing, setEditing, load };
 }
 
-// --- Shared image_path columns for AV/Simulator ---
+// --- Shared columns for AV/Simulator (image + runtimes). Config upload is a
+//     row-level action rendered by each tab so it can call `load()` on change.
 
 const imageColumns = [
   { title: "Image", dataIndex: "image_path", key: "image_path", width: 200, ellipsis: true, render: (v: Record<string, unknown>) => JSON.stringify(v) },
-  { title: "Config", dataIndex: "config_path", key: "config_path", width: 180, ellipsis: true },
   { title: "NV", dataIndex: "nv_runtime", key: "nv_runtime", width: 50, render: (v: boolean) => v ? "Y" : "" },
   { title: "CARLA", dataIndex: "carla_runtime", key: "carla_runtime", width: 55, render: (v: boolean) => v ? "Y" : "" },
   { title: "ROS", dataIndex: "ros_runtime", key: "ros_runtime", width: 50, render: (v: boolean) => v ? "Y" : "" },
@@ -36,11 +38,12 @@ function ImageForm({ saving, onFinish, form, editing }: { saving: boolean; onFin
         { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
         <Input.TextArea rows={2} placeholder='{"docker": "ghcr.io/..."}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />
       </Form.Item>
-      <Form.Item name="config_path" label="Config Path" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item name="nv_runtime" label="NV Runtime" valuePropName="checked"><Switch /></Form.Item>
       <Form.Item name="carla_runtime" label="CARLA Runtime" valuePropName="checked"><Switch /></Form.Item>
       <Form.Item name="ros_runtime" label="ROS Runtime" valuePropName="checked"><Switch /></Form.Item>
-      <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
+      <Form.Item>
+        <Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button>
+      </Form.Item>
     </Form>
   );
 }
@@ -71,6 +74,9 @@ function AvsTab() {
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     ...imageColumns,
+    { title: "Config", key: "config", width: 240, render: (_: unknown, r: AvResponse) => (
+      <ConfigUpload entity="av" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+    )},
     { title: "", key: "actions", width: 50, render: (_: unknown, r: AvResponse) => (
       <Dropdown menu={{ items: [
         { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
@@ -122,6 +128,9 @@ function SimulatorsTab() {
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     ...imageColumns,
+    { title: "Config", key: "config", width: 240, render: (_: unknown, r: SimulatorResponse) => (
+      <ConfigUpload entity="simulator" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+    )},
     { title: "", key: "actions", width: 50, render: (_: unknown, r: SimulatorResponse) => (
       <Dropdown menu={{ items: [
         { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
@@ -172,7 +181,9 @@ function SamplersTab() {
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
     { title: "Module", dataIndex: "module_path", key: "module_path", ellipsis: true },
-    { title: "Config", dataIndex: "config_path", key: "config_path", width: 200, render: (v: string | null) => v ?? "-" },
+    { title: "Config", key: "config", width: 240, render: (_: unknown, r: SamplerResponse) => (
+      <ConfigUpload entity="sampler" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+    )},
     { title: "", key: "actions", width: 50, render: (_: unknown, r: SamplerResponse) => (
       <Dropdown menu={{ items: [
         { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
@@ -195,7 +206,6 @@ function SamplersTab() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="module_path" label="Module Path" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="config_path" label="Config Path"><Input /></Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
       </Modal>
@@ -209,11 +219,12 @@ function MapsTab() {
   const { data, loading, modalOpen, setModalOpen, editing, setEditing, load } = useResource(api.listMaps);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [filesFor, setFilesFor] = useState<MapResponse | null>(null);
 
   const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
   const openEdit = (r: MapResponse) => { setEditing(r); form.setFieldsValue(r); setModalOpen(true); };
 
-  const handleSave = async (values: { name: string; xodr_path?: string; osm_path?: string }) => {
+  const handleSave = async (values: { name: string }) => {
     setSaving(true);
     try {
       if (editing) { await api.updateMap(editing.id, values); message.success("Updated"); }
@@ -226,9 +237,10 @@ function MapsTab() {
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
-    { title: "Name", dataIndex: "name", key: "name", width: 150, ...getColumnSearchProps("name") },
-    { title: "XODR", dataIndex: "xodr_path", key: "xodr_path", ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "OSM", dataIndex: "osm_path", key: "osm_path", ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { title: "Name", dataIndex: "name", key: "name", ...getColumnSearchProps("name") },
+    { title: "Files", key: "files", width: 120, render: (_: unknown, r: MapResponse) => (
+      <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setFilesFor(r)}>Open</Button>
+    )},
     { title: "", key: "actions", width: 50, render: (_: unknown, r: MapResponse) => (
       <Dropdown menu={{ items: [
         { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
@@ -250,11 +262,19 @@ function MapsTab() {
       <Modal title={editing ? "Edit Map" : "Add Map"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="xodr_path" label="XODR Path"><Input /></Form.Item>
-          <Form.Item name="osm_path" label="OSM Path"><Input /></Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
       </Modal>
+      <FileBrowser
+        open={filesFor !== null}
+        title={filesFor ? `Files — ${filesFor.name}` : ""}
+        onClose={() => setFilesFor(null)}
+        listFiles={() => (filesFor ? api.listMapFiles(filesFor.id) : Promise.resolve([]))}
+        fileUrl={(rel) => (filesFor ? api.mapFileUrl(filesFor.id, rel) : "")}
+        uploadFile={filesFor ? (rel, data) => api.uploadMapFile(filesFor.id, rel, data) : undefined}
+        deleteFile={filesFor ? (rel) => api.deleteMapFile(filesFor.id, rel) : undefined}
+        defaultUploadPrefix="xodr/"
+      />
     </>
   );
 }
@@ -263,12 +283,14 @@ export default function Resources() {
   return (
     <>
       <PageHeader title="Resources" />
-      <Tabs items={[
-        { key: "avs", label: "AVs", children: <AvsTab /> },
-        { key: "simulators", label: "Simulators", children: <SimulatorsTab /> },
-        { key: "samplers", label: "Samplers", children: <SamplersTab /> },
-        { key: "maps", label: "Maps", children: <MapsTab /> },
-      ]} />
+      <Tabs
+        items={[
+          { key: "avs", label: "AVs", children: <AvsTab /> },
+          { key: "simulators", label: "Simulators", children: <SimulatorsTab /> },
+          { key: "samplers", label: "Samplers", children: <SamplersTab /> },
+          { key: "maps", label: "Maps", children: <MapsTab /> },
+        ]}
+      />
     </>
   );
 }

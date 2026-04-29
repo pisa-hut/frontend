@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Card, Row, Col, Typography } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Card, Row, Col, Typography, Tabs, Empty } from "antd";
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
+import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { ScenarioResponse, ScenarioFormat } from "../api/types";
-
-const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
 
 const formatOptions: { label: string; value: ScenarioFormat }[] = [
   { label: "OpenSCENARIO 1.x", value: "open_scenario1" },
@@ -23,11 +22,18 @@ export default function Scenarios() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form] = Form.useForm();
 
-  // XOSC preview state
+  // XOSC preview state — loads every *.xosc in the scenario and shows each
+  // as its own tab (typically main `<name>.xosc` with the storyboard, plus
+  // an optional `<name>_param.xosc`).
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTitle, setPreviewTitle] = useState("");
-  const [previewContent, setPreviewContent] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [previewFiles, setPreviewFiles] = useState<{ path: string; content: string }[]>([]);
+  const [previewActive, setPreviewActive] = useState<string>("");
+
+  // All-files browser state
+  const [filesFor, setFilesFor] = useState<ScenarioResponse | null>(null);
 
   // Video preview state
   const [videoOpen, setVideoOpen] = useState(false);
@@ -42,23 +48,41 @@ export default function Scenarios() {
   const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
   const openEdit = (r: ScenarioResponse) => {
     setEditing(r);
-    form.setFieldsValue({ ...r, goal_config: JSON.stringify(r.goal_config, null, 2) });
+    form.setFieldsValue(r);
     setModalOpen(true);
   };
 
   const openPreview = async (r: ScenarioResponse) => {
-    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
-    setPreviewTitle(name);
-    setPreviewContent("");
+    const fallbackName = r.title ?? `scenario-${r.id}`;
+    setPreviewTitle(fallbackName);
+    setPreviewFiles([]);
+    setPreviewActive("");
+    setPreviewError("");
     setPreviewLoading(true);
     setPreviewOpen(true);
     try {
-      const filePath = `${r.scenario_path}/${name}.xosc`;
-      const res = await fetch(`${MANAGER_URL}/scenario/file?path=${encodeURIComponent(filePath)}`);
-      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-      setPreviewContent(await res.text());
+      const files = await api.listScenarioFiles(r.id);
+      const xoscFiles = files.filter((f) => f.relative_path.endsWith(".xosc"));
+      if (!xoscFiles.length) throw new Error("No .xosc file in this scenario");
+      // Stable ordering: main (non-_param) first, then _param variants, then rest alpha.
+      xoscFiles.sort((a, b) => {
+        const aParam = a.relative_path.endsWith("_param.xosc");
+        const bParam = b.relative_path.endsWith("_param.xosc");
+        if (aParam !== bParam) return aParam ? 1 : -1;
+        return a.relative_path.localeCompare(b.relative_path);
+      });
+      const loaded = await Promise.all(
+        xoscFiles.map(async (f) => {
+          const res = await fetch(api.scenarioFileUrl(r.id, f.relative_path));
+          if (!res.ok) throw new Error(`${f.relative_path}: ${res.status} ${await res.text()}`);
+          return { path: f.relative_path, content: await res.text() };
+        }),
+      );
+      setPreviewFiles(loaded);
+      setPreviewActive(loaded[0]?.path ?? "");
+      setPreviewTitle(r.title ?? loaded[0]?.path.replace(/\.xosc$/, "") ?? fallbackName);
     } catch (e) {
-      setPreviewContent(`Error loading file: ${e}`);
+      setPreviewError(String(e));
     } finally {
       setPreviewLoading(false);
     }
@@ -67,7 +91,7 @@ export default function Scenarios() {
   const RENDERER_URL = "/renderer";
 
   const openVideo = async (r: ScenarioResponse) => {
-    const name = r.title ?? r.scenario_path.split("/").pop() ?? "unknown";
+    const name = r.title ?? `scenario-${r.id}`;
     setVideoTitle(name);
     setVideoUrl("");
     setVideoError("");
@@ -77,7 +101,7 @@ export default function Scenarios() {
       const res = await fetch(`${RENDERER_URL}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario_path: r.scenario_path }),
+        body: JSON.stringify({ scenario_id: r.id }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -92,10 +116,10 @@ export default function Scenarios() {
     }
   };
 
-  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string; scenario_path: string; goal_config: string }) => {
+  const handleSave = async (values: { scenario_format: ScenarioFormat; title?: string }) => {
     setSaving(true);
     try {
-      const payload = { ...values, goal_config: JSON.parse(values.goal_config), title: values.title || null };
+      const payload = { ...values, title: values.title || null };
       if (editing) { await api.updateScenario(editing.id, payload); message.success("Updated"); }
       else { await api.createScenario(payload); message.success("Created"); }
       setModalOpen(false); form.resetFields(); setEditing(null); load();
@@ -113,8 +137,6 @@ export default function Scenarios() {
     { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 140,
       filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
-    { title: "Path", dataIndex: "scenario_path", key: "scenario_path", ellipsis: true,
-      ...getColumnSearchProps<ScenarioResponse>("scenario_path") },
   ];
 
   return (
@@ -139,21 +161,21 @@ export default function Scenarios() {
           return (
             <Col xs={24} lg={10}>
               <Card size="small"
-                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? r.scenario_path}</Typography.Text>}
+                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? `scenario-${r.id}`}</Typography.Text>}
                 extra={<Button size="small" type="text" onClick={() => setSelectedId(null)}>x</Button>}
               >
                 <div style={{ marginBottom: 12, fontSize: 13 }}>
                   <div><Typography.Text type="secondary">Format: </Typography.Text>{r.scenario_format}</div>
-                  <div style={{ marginTop: 4 }}><Typography.Text type="secondary">Path: </Typography.Text><Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text></div>
-                </div>
-                <div style={{ marginBottom: 12 }}>
-                  <Typography.Text type="secondary" style={{ display: "block", marginBottom: 4 }}>Goal Config</Typography.Text>
-                  <pre style={{ margin: 0, fontSize: 11, maxHeight: 200, overflow: "auto", background: "var(--ant-color-bg-layout, #f5f5f5)", padding: 8, borderRadius: 4 }}>
-                    {JSON.stringify(r.goal_config, null, 2)}
-                  </pre>
+                  {r.scenario_path ? (
+                    <div style={{ marginTop: 4 }}>
+                      <Typography.Text type="secondary">Path: </Typography.Text>
+                      <Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
                 <Space wrap size="small">
                   <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>XOSC</Button>
+                  <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setFilesFor(r)}>Files</Button>
                   <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Video</Button>
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
                   <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
@@ -171,61 +193,105 @@ export default function Scenarios() {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
           <Form.Item name="title" label="Title"><Input /></Form.Item>
-          <Form.Item name="scenario_path" label="Scenario Path" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="goal_config" label="Goal Config (JSON)" rules={[{ required: true },
-            { validator: (_, v) => { try { JSON.parse(v); return Promise.resolve(); } catch { return Promise.reject("Invalid JSON"); } } }]}>
-            <Input.TextArea rows={4} placeholder='{"key": "value"}' style={{ fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace", fontSize: 12 }} />
-          </Form.Item>
           <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
         </Form>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
+          Ego destination and target speed live in the scenario's <code>spec.yaml</code> file — use the <b>Files</b> button to edit it.
+        </Typography.Paragraph>
       </Modal>
 
-      {/* XOSC Preview modal */}
+      {/* XOSC Preview modal — one tab per *.xosc file in the scenario */}
       <Modal
-        title={`${previewTitle}.xosc`}
+        title={previewTitle}
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         width="80%"
-        styles={{ body: { maxHeight: "70vh", overflow: "auto", padding: 0 } }}
-        footer={
-          previewContent && !previewLoading ? (
+        styles={{ body: { padding: 0 } }}
+        footer={(() => {
+          const current = previewFiles.find((f) => f.path === previewActive);
+          if (!current || previewLoading) return null;
+          return (
             <Space>
-              <Button onClick={() => { navigator.clipboard.writeText(previewContent); message.success("Copied to clipboard"); }}>
+              <Button
+                onClick={() => {
+                  navigator.clipboard.writeText(current.content);
+                  message.success("Copied");
+                }}
+              >
                 Copy
               </Button>
-              <Button type="primary" onClick={() => {
-                const blob = new Blob([previewContent], { type: "text/xml" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${previewTitle}.xosc`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}>
+              <Button
+                type="primary"
+                onClick={() => {
+                  const blob = new Blob([current.content], { type: "text/xml" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = current.path.split("/").pop() ?? current.path;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
                 Download
               </Button>
             </Space>
-          ) : null
-        }
+          );
+        })()}
       >
         {previewLoading ? (
-          <div style={{ textAlign: "center", padding: 48 }}><Spin size="large" /></div>
+          <div style={{ textAlign: "center", padding: 48 }}>
+            <Spin size="large" />
+          </div>
+        ) : previewError ? (
+          <div style={{ padding: 24 }}>
+            <Empty description={previewError} />
+          </div>
+        ) : previewFiles.length === 0 ? (
+          <div style={{ padding: 24 }}>
+            <Empty description="No xosc files" />
+          </div>
         ) : (
-          <pre style={{
-            margin: 0,
-            padding: 16,
-            fontSize: 12,
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-            background: "var(--ant-color-bg-layout, #f5f5f5)",
-            borderRadius: 4,
-          }}>
-            {previewContent}
-          </pre>
+          <Tabs
+            activeKey={previewActive}
+            onChange={setPreviewActive}
+            tabBarStyle={{ padding: "0 16px", marginBottom: 0 }}
+            items={previewFiles.map((f) => ({
+              key: f.path,
+              label: f.path,
+              children: (
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 16,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    maxHeight: "70vh",
+                    overflow: "auto",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    fontFamily:
+                      "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+                    background: "var(--ant-color-bg-layout, #f5f5f5)",
+                  }}
+                >
+                  {f.content}
+                </pre>
+              ),
+            }))}
+          />
         )}
       </Modal>
+
+      {/* All-files browser */}
+      <FileBrowser
+        open={filesFor !== null}
+        title={filesFor ? `Files — ${filesFor.title ?? `scenario ${filesFor.id}`}` : ""}
+        onClose={() => setFilesFor(null)}
+        listFiles={() => (filesFor ? api.listScenarioFiles(filesFor.id) : Promise.resolve([]))}
+        fileUrl={(rel) => (filesFor ? api.scenarioFileUrl(filesFor.id, rel) : "")}
+        uploadFile={filesFor ? (rel, data) => api.uploadScenarioFile(filesFor.id, rel, data) : undefined}
+        deleteFile={filesFor ? (rel) => api.deleteScenarioFile(filesFor.id, rel) : undefined}
+      />
 
       {/* Video Preview modal */}
       <Modal
