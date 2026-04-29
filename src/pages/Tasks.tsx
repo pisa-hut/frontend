@@ -159,16 +159,23 @@ export default function Tasks() {
   // Log drawer: owned at the page level so both the row action button and
   // the timeline in TaskRunsPanel can open it, sharing one drawer.
   const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
-  const [logExecutor, setLogExecutor] = useState<ExecutorResponse | undefined>();
+  const [logExecutorOverride, setLogExecutorOverride] = useState<ExecutorResponse | undefined>();
   const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
   // Drawer takes (run, task, label) — task and label are derived from
   // current state so they refresh after SSE updates (e.g. task_status
   // flipping from invalid → archived without closing the drawer).
+  // logExecutor is derived so the drawer title updates once the executor
+  // cache arrives even if openLog was called before executorsById loaded.
+  const logExecutor = useMemo(() => {
+    if (logExecutorOverride) return logExecutorOverride;
+    if (!logRun) return undefined;
+    return executorsById.get(logRun.executor_id);
+  }, [executorsById, logExecutorOverride, logRun]);
 
   const openLog = useCallback((run: TaskRunResponse, executor?: ExecutorResponse) => {
     setLogRun(run);
-    setLogExecutor(executor ?? executorsById.get(run.executor_id));
-  }, [executorsById]);
+    setLogExecutorOverride(executor);
+  }, []);
 
   // Increment a per-task counter on every expand so we can key the
   // TaskRunsPanel by it, forcing a real remount each time. Without this
@@ -234,6 +241,14 @@ export default function Tasks() {
     if (ev.kind !== "row") return;
     if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
   }, [scheduleRefetch]));
+  useEffect(() => {
+    return () => {
+      if (refetchTimer.current !== null) {
+        window.clearTimeout(refetchTimer.current);
+        refetchTimer.current = null;
+      }
+    };
+  }, []);
 
   const fetchResources = () =>
     Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()])
@@ -276,7 +291,13 @@ export default function Tasks() {
       for (const [key, vals] of Object.entries(filteredInfo)) {
         if (!vals || vals.length === 0) continue;
         const v = (t as unknown as Record<string, unknown>)[key];
-        if (!vals.includes(v as never)) return false;
+        const valueText = v == null ? "" : String(v).toLowerCase();
+        const matches = vals.some((filterVal) => {
+          if (filterVal === v) return true;
+          if (filterVal == null) return false;
+          return valueText.includes(String(filterVal).toLowerCase());
+        });
+        if (!matches) return false;
       }
       return true;
     };
@@ -404,8 +425,8 @@ export default function Tasks() {
 
   // Triage action for `invalid` tasks. Archives instead of mutating
   // task_status — keeps the state machine pure and the row + history
-  // intact. The default Tasks view hides archived rows; the toggle in
-  // the header reveals them.
+  // intact. The default Tasks view hides archived rows; the quick-
+  // filter chips, including the "Archived" chip, reveal them.
   const handleArchive = async (id: number) => {
     try { await api.archiveTask(id); message.success(`Task #${id} archived`); load(); }
     catch (e) { message.error(String(e)); }

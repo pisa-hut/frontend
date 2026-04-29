@@ -99,7 +99,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
         const concerns =
           (row.table === "task" && row.id === taskId) ||
           (row.table === "task_run" && knownRunIds.has(row.id)) ||
-          row.table === "task_run"; // insert of a new run we don't yet know about
+          (row.table === "task_run" && row.op === "insert"); // new run we don't yet know about
         if (!concerns) return;
         if (refetchTimer.current !== null) return;
         refetchTimer.current = window.setTimeout(() => {
@@ -126,9 +126,11 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
       } else {
         setRuns((prev) => {
           const seen = new Set(prev.map((r) => r.id));
-          return [...prev, ...older.filter((r) => !seen.has(r.id))];
+          const appended = older.filter((r) => !seen.has(r.id));
+          const nextRuns = [...prev, ...appended];
+          limitRef.current = nextRuns.length;
+          return nextRuns;
         });
-        limitRef.current = runs.length + older.length;
         if (older.length < PAGE_SIZE) setReachedEnd(true);
       }
     } finally {

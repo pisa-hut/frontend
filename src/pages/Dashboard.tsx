@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Spin, Typography } from "antd";
 import {
   CheckCircleOutlined,
@@ -31,18 +31,40 @@ interface AbortedStats {
 async function fetchAbortedStats(): Promise<AbortedStats> {
   const POSTGREST = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
   const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const [total, recent] = await Promise.all([
-    fetch(`${POSTGREST}/task_run?task_run_status=eq.aborted&select=id`, {
-      headers: { Accept: "application/json" },
-    }).then((r) => r.json()),
-    fetch(
-      `${POSTGREST}/task_run?task_run_status=eq.aborted&finished_at=gte.${encodeURIComponent(cutoff)}&select=id`,
-      { headers: { Accept: "application/json" } },
-    ).then((r) => r.json()),
+
+  const fetchCount = async (url: string): Promise<number> => {
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: {
+        Accept: "application/json",
+        Prefer: "count=exact",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch aborted stats: ${res.status} ${res.statusText}`);
+    }
+
+    const contentRange = res.headers.get("Content-Range");
+    const match = contentRange?.match(/\/(\d+)$/);
+
+    if (!match) {
+      throw new Error("Failed to fetch aborted stats: missing or invalid Content-Range header");
+    }
+
+    return Number.parseInt(match[1], 10);
+  };
+
+  const [total, last24h] = await Promise.all([
+    fetchCount(`${POSTGREST}/task_run?task_run_status=eq.aborted`),
+    fetchCount(
+      `${POSTGREST}/task_run?task_run_status=eq.aborted&finished_at=gte.${encodeURIComponent(cutoff)}`,
+    ),
   ]);
+
   return {
-    total: Array.isArray(total) ? total.length : 0,
-    last24h: Array.isArray(recent) ? recent.length : 0,
+    total,
+    last24h,
   };
 }
 
@@ -64,17 +86,33 @@ export default function Dashboard() {
   }, [load]);
 
   // SSE: debounced refetch on any task / task_run change.
+  const refetchTimer = useRef<number | null>(null);
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimer.current !== null) return;
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = null;
+      load();
+    }, 250);
+  }, [load]);
   usePisaEvents(
     useCallback(
       (ev) => {
         if (ev.kind !== "row") return;
         if (ev.row.table === "task" || ev.row.table === "task_run") {
-          load();
+          scheduleRefetch();
         }
       },
-      [load],
+      [scheduleRefetch],
     ),
   );
+  useEffect(() => {
+    return () => {
+      if (refetchTimer.current !== null) {
+        window.clearTimeout(refetchTimer.current);
+        refetchTimer.current = null;
+      }
+    };
+  }, []);
 
   // ALL hooks must be called before any early return, or React detects
   // a hook-count mismatch the first time `loading` flips false. The
