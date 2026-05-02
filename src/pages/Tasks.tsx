@@ -18,15 +18,12 @@ import {
   Input,
   Checkbox,
   Table,
-  Popconfirm,
   Tooltip,
-  Affix,
 } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
   CaretRightOutlined,
-  DeleteOutlined,
   StopOutlined,
   PushpinOutlined,
   SyncOutlined,
@@ -57,6 +54,7 @@ import type {
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
+import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 
 // Everything that isn't currently queued or running is re-runnable.
 // Shared with LogDrawer via api/types so a Run from a historical
@@ -839,106 +837,18 @@ export default function Tasks() {
     },
   ];
 
-  // --- Selection bar ---
-
-  // Selection bar floats at the bottom of the viewport via Affix so the
-  // user can scroll the table without losing track of what they've
-  // selected. Renders nothing when nothing is selected.
-  const selectionBar =
-    selectedRowKeys.length > 0 &&
-    (() => {
-      const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-      // "Select all" operates on the *filtered* list, not the global
-      // tasks array — pre-page-aware so the user doesn't have to walk
-      // the pagination to bulk-act on a filtered scope (e.g. all
-      // invalid + !archived after picking the Triage chip).
-      const visibleIds = visibleMainTasks.map((t) => t.id);
-      const allVisibleSelected =
-        visibleIds.length > 0 && visibleIds.every((id) => selectedRowKeys.includes(id));
-      const runnableCount = selected.filter((t) =>
-        RUNNABLE_STATUSES.includes(t.task_status),
-      ).length;
-      const stoppableCount = selected.filter((t) =>
-        STOPPABLE_STATUSES.includes(t.task_status),
-      ).length;
-      const archivableCount = selected.filter((t) => !t.archived).length;
-      return (
-        <Affix
-          offsetBottom={12}
-          style={{ position: "fixed", left: 16, right: 16, bottom: 12, zIndex: 50 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-              padding: "8px 14px",
-              borderRadius: 8,
-              background: "var(--ant-color-bg-elevated, rgba(255,255,255,0.97))",
-              boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
-              border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-              backdropFilter: "blur(6px)",
-            }}
-          >
-            <Space>
-              <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
-              {!allVisibleSelected ? (
-                <Button
-                  size="small"
-                  type="link"
-                  style={{ padding: 0 }}
-                  onClick={() => setSelectedRowKeys(visibleIds)}
-                >
-                  Select all {visibleIds.length} filtered
-                </Button>
-              ) : (
-                <Button
-                  size="small"
-                  type="link"
-                  style={{ padding: 0 }}
-                  onClick={() => setSelectedRowKeys([])}
-                >
-                  Deselect all
-                </Button>
-              )}
-            </Space>
-            <Space>
-              {runnableCount > 0 && (
-                <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}>
-                  <Button size="small" type="primary" icon={<CaretRightOutlined />}>
-                    Run {runnableCount}
-                  </Button>
-                </Popconfirm>
-              )}
-              {stoppableCount > 0 && (
-                <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}>
-                  <Button size="small" icon={<StopOutlined />}>
-                    Stop {stoppableCount}
-                  </Button>
-                </Popconfirm>
-              )}
-              {archivableCount > 0 && (
-                <Popconfirm title={`Archive ${archivableCount}?`} onConfirm={handleBulkArchive}>
-                  <Button size="small" icon={<InboxOutlined />}>
-                    Archive {archivableCount}
-                  </Button>
-                </Popconfirm>
-              )}
-              <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}>
-                <Button size="small" danger icon={<DeleteOutlined />}>
-                  Delete {selectedRowKeys.length}
-                </Button>
-              </Popconfirm>
-              <Button size="small" onClick={() => setSelectedRowKeys([])}>
-                Clear
-              </Button>
-            </Space>
-          </div>
-        </Affix>
-      );
-    })();
+  const selectionBar = (
+    <TasksSelectionBar
+      tasks={tasks}
+      visibleTasks={visibleMainTasks}
+      selectedRowKeys={selectedRowKeys}
+      setSelectedRowKeys={setSelectedRowKeys}
+      onBulkRun={handleBulkRun}
+      onBulkStop={handleBulkStop}
+      onBulkArchive={handleBulkArchive}
+      onBulkDelete={handleBulkDelete}
+    />
+  );
 
   return (
     <>
