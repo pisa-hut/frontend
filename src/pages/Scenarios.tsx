@@ -189,6 +189,10 @@ export default function Scenarios() {
       dataIndex: "id",
       key: "id",
       width: 60,
+      sorter: (a: ScenarioResponse, b: ScenarioResponse) => a.id - b.id,
+      // Newest scenarios on top by default — that's the row the user
+      // most likely came here to inspect after an upload.
+      defaultSortOrder: "descend" as const,
       ...getColumnSearchProps<ScenarioResponse>("id"),
     },
     {
@@ -197,6 +201,15 @@ export default function Scenarios() {
       key: "title",
       ellipsis: true,
       render: (v: string | null) => v ?? "-",
+      // Localised compare so accented / mixed-case titles sort
+      // sensibly. Null titles always sort last regardless of order
+      // so the empty rows don't dominate the view.
+      sorter: (a: ScenarioResponse, b: ScenarioResponse) => {
+        if (a.title == null && b.title == null) return 0;
+        if (a.title == null) return 1;
+        if (b.title == null) return -1;
+        return a.title.localeCompare(b.title);
+      },
       ...getColumnSearchProps<ScenarioResponse>("title"),
     },
     {
@@ -204,6 +217,8 @@ export default function Scenarios() {
       dataIndex: "scenario_format",
       key: "scenario_format",
       width: 140,
+      sorter: (a: ScenarioResponse, b: ScenarioResponse) =>
+        a.scenario_format.localeCompare(b.scenario_format),
       filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
       onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value,
     },
