@@ -13,6 +13,7 @@ export type QuickFilter = "all" | "triage" | "archived" | TaskStatus;
 export const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "triage", label: "Triage" },
+  { value: "idle", label: "Idle" },
   { value: "running", label: "Running" },
   { value: "queued", label: "Queued" },
   { value: "completed", label: "Completed" },
