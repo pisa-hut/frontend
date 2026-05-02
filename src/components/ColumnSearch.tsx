@@ -6,15 +6,22 @@ import type { InputRef } from "antd";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getColumnSearchProps<T = any>(
   dataIndex: string,
-  renderText?: (record: T) => string
+  renderText?: (record: T) => string,
 ) {
   let searchInput: InputRef | null = null;
 
   return {
-    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
+    filterDropdown: ({
+      setSelectedKeys,
+      selectedKeys,
+      confirm,
+      clearFilters,
+    }: FilterDropdownProps) => (
       <div style={{ padding: 8 }}>
         <Input
-          ref={(node) => { searchInput = node; }}
+          ref={(node) => {
+            searchInput = node;
+          }}
           placeholder={`Search ${dataIndex}`}
           value={selectedKeys[0]}
           onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
@@ -22,10 +29,23 @@ export function getColumnSearchProps<T = any>(
           style={{ marginBottom: 8, display: "block" }}
         />
         <Space>
-          <Button type="primary" onClick={() => confirm()} icon={<SearchOutlined />} size="small" style={{ width: 90 }}>
+          <Button
+            type="primary"
+            onClick={() => confirm()}
+            icon={<SearchOutlined />}
+            size="small"
+            style={{ width: 90 }}
+          >
             Search
           </Button>
-          <Button onClick={() => { clearFilters?.(); confirm(); }} size="small" style={{ width: 90 }}>
+          <Button
+            onClick={() => {
+              clearFilters?.();
+              confirm();
+            }}
+            size="small"
+            style={{ width: 90 }}
+          >
             Reset
           </Button>
         </Space>

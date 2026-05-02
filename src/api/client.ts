@@ -198,14 +198,17 @@ export const api = {
 
   // Simulators
   listSimulators: () => pgList<SimulatorResponse>("simulator"),
-  createSimulator: (data: Partial<SimulatorResponse>) => pgCreate<SimulatorResponse>("simulator", data),
-  updateSimulator: (id: number, data: Partial<SimulatorResponse>) => pgUpdate<SimulatorResponse>("simulator", id, data),
+  createSimulator: (data: Partial<SimulatorResponse>) =>
+    pgCreate<SimulatorResponse>("simulator", data),
+  updateSimulator: (id: number, data: Partial<SimulatorResponse>) =>
+    pgUpdate<SimulatorResponse>("simulator", id, data),
   deleteSimulator: (id: number) => pgDelete("simulator", id),
 
   // Samplers
   listSamplers: () => pgList<SamplerResponse>("sampler"),
   createSampler: (data: Partial<SamplerResponse>) => pgCreate<SamplerResponse>("sampler", data),
-  updateSampler: (id: number, data: Partial<SamplerResponse>) => pgUpdate<SamplerResponse>("sampler", id, data),
+  updateSampler: (id: number, data: Partial<SamplerResponse>) =>
+    pgUpdate<SamplerResponse>("sampler", id, data),
   deleteSampler: (id: number) => pgDelete("sampler", id),
 
   // Maps
@@ -217,7 +220,8 @@ export const api = {
   // Scenarios
   listScenarios: () => pgList<ScenarioResponse>("scenario"),
   createScenario: (data: Partial<ScenarioResponse>) => pgCreate<ScenarioResponse>("scenario", data),
-  updateScenario: (id: number, data: Partial<ScenarioResponse>) => pgUpdate<ScenarioResponse>("scenario", id, data),
+  updateScenario: (id: number, data: Partial<ScenarioResponse>) =>
+    pgUpdate<ScenarioResponse>("scenario", id, data),
   deleteScenario: (id: number) => pgDelete("scenario", id),
 
   // Plans
@@ -238,11 +242,18 @@ export const api = {
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   stopTask: async (id: number) => {
     // Abort any running task_runs first
-    const res = await fetch(`${POSTGREST_URL}/task_run?task_id=eq.${id}&task_run_status=eq.running`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" }),
-    });
+    const res = await fetch(
+      `${POSTGREST_URL}/task_run?task_id=eq.${id}&task_run_status=eq.running`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_run_status: "aborted",
+          finished_at: new Date().toISOString(),
+          error_message: "Stopped from web UI",
+        }),
+      },
+    );
     if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     await pgUpdate<TaskResponse>("task", id, { task_status: "aborted" });
   },
@@ -263,13 +274,20 @@ export const api = {
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
-    const abortData = { task_run_status: "aborted", finished_at: new Date().toISOString(), error_message: "Stopped from web UI" };
+    const abortData = {
+      task_run_status: "aborted",
+      finished_at: new Date().toISOString(),
+      error_message: "Stopped from web UI",
+    };
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
-      const res = await fetch(`${POSTGREST_URL}/task_run?task_id=in.(${batch.join(",")})&task_run_status=eq.running`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(abortData),
-      });
+      const res = await fetch(
+        `${POSTGREST_URL}/task_run?task_id=in.(${batch.join(",")})&task_run_status=eq.running`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(abortData),
+        },
+      );
       if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     }
     await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" });
@@ -291,9 +309,7 @@ export const api = {
       `task_run?task_id=eq.${taskId}&order=attempt.desc&limit=${limit}&offset=${offset}&select=id,task_id,executor_id,attempt,run_time_env,task_run_status,started_at,finished_at,error_message`,
     ),
   getTaskRunLog: async (runId: number): Promise<string | null> => {
-    const rows = await pgList<{ log: string | null }>(
-      `task_run?id=eq.${runId}&select=log`,
-    );
+    const rows = await pgList<{ log: string | null }>(`task_run?id=eq.${runId}&select=log`);
     return rows[0]?.log ?? null;
   },
 
@@ -304,17 +320,13 @@ export const api = {
 
   taskClaim: (data: { executor_id: number; [k: string]: unknown }) =>
     managerPost("/task/claim", data),
-  taskFailed: (data: { task_id: number; reason?: string }) =>
-    managerPost("/task/failed", data),
-  taskInvalid: (data: { task_id: number; reason?: string }) =>
-    managerPost("/task/invalid", data),
-  taskSucceeded: (data: { task_id: number }) =>
-    managerPost("/task/succeeded", data),
+  taskFailed: (data: { task_id: number; reason?: string }) => managerPost("/task/failed", data),
+  taskInvalid: (data: { task_id: number; reason?: string }) => managerPost("/task/invalid", data),
+  taskSucceeded: (data: { task_id: number }) => managerPost("/task/succeeded", data),
 
   // --- Byte-level file access via Manager API ---
 
-  listMapFiles: (mapId: number) =>
-    managerGetJson<MapFileMeta[]>(`/map/${mapId}/file`),
+  listMapFiles: (mapId: number) => managerGetJson<MapFileMeta[]>(`/map/${mapId}/file`),
   mapFileUrl: (mapId: number, relPath: string) =>
     managerFileUrl(`/map/${mapId}/file/${encodeRelPath(relPath)}`),
   uploadMapFile: (mapId: number, relPath: string, content: Blob) =>
@@ -331,10 +343,8 @@ export const api = {
   deleteScenarioFile: (scenarioId: number, relPath: string) =>
     managerDelete(`/scenario/${scenarioId}/file/${encodeRelPath(relPath)}`),
 
-  configUrl: (entity: ConfigEntity, id: number) =>
-    managerFileUrl(`/${entity}/${id}/config`),
+  configUrl: (entity: ConfigEntity, id: number) => managerFileUrl(`/${entity}/${id}/config`),
   uploadConfig: (entity: ConfigEntity, id: number, content: Blob) =>
     managerPutBytes(`/${entity}/${id}/config`, content),
-  deleteConfig: (entity: ConfigEntity, id: number) =>
-    managerDelete(`/${entity}/${id}/config`),
+  deleteConfig: (entity: ConfigEntity, id: number) => managerDelete(`/${entity}/${id}/config`),
 };

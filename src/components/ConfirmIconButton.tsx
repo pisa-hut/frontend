@@ -19,12 +19,7 @@ interface Props extends Omit<ButtonProps, "onClick"> {
  *  prop with the popconfirm's open state — tooltip hides for as long as
  *  the popconfirm shows, then returns to its default hover behavior.
  */
-export default function ConfirmIconButton({
-  tooltip,
-  confirmTitle,
-  onConfirm,
-  ...btn
-}: Props) {
+export default function ConfirmIconButton({ tooltip, confirmTitle, onConfirm, ...btn }: Props) {
   const [popOpen, setPopOpen] = useState(false);
   return (
     <Popconfirm

@@ -50,7 +50,10 @@ export default function Upload() {
   const [results, setResults] = useState<UploadResponse | null>(null);
 
   const handleUpload = async () => {
-    if (!file) { message.warning("Select a zip file first"); return; }
+    if (!file) {
+      message.warning("Select a zip file first");
+      return;
+    }
     setUploading(true);
     setResults(null);
     const formData = new FormData();
@@ -63,8 +66,11 @@ export default function Upload() {
       setResults(data);
       const created = data.results.filter((r) => r.status === "created").length;
       message.success(`Uploaded ${created}/${data.total} scenarios`);
-    } catch (e) { message.error(String(e)); }
-    finally { setUploading(false); }
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const created = results?.results.filter((r) => r.status === "created").length ?? 0;
@@ -81,18 +87,30 @@ export default function Upload() {
           <Card>
             <Space direction="vertical" size="middle" style={{ width: "100%" }}>
               <div>
-                <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>Scenario Format</Typography.Text>
-                <Select value={format} onChange={setFormat} options={formatOptions} style={{ width: "100%" }} />
+                <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Scenario Format
+                </Typography.Text>
+                <Select
+                  value={format}
+                  onChange={setFormat}
+                  options={formatOptions}
+                  style={{ width: "100%" }}
+                />
               </div>
 
               <Dragger
                 accept=".zip"
                 maxCount={1}
-                beforeUpload={(f) => { setFile(f); return false; }}
+                beforeUpload={(f) => {
+                  setFile(f);
+                  return false;
+                }}
                 onRemove={() => setFile(null)}
                 style={{ padding: "24px 0" }}
               >
-                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
                 <p className="ant-upload-text">Click or drag a zip file here</p>
                 <p className="ant-upload-hint" style={{ color: "#999", fontSize: 12 }}>
                   Each folder: spec.yaml + .xosc files
@@ -131,7 +149,11 @@ export default function Upload() {
                 </Col>
                 <Col span={8}>
                   <Card size="small" styles={{ body: { textAlign: "center" } }}>
-                    <Statistic title="Errors" value={errors} valueStyle={{ color: errors > 0 ? "#ff4d4f" : undefined }} />
+                    <Statistic
+                      title="Errors"
+                      value={errors}
+                      valueStyle={{ color: errors > 0 ? "#ff4d4f" : undefined }}
+                    />
                   </Card>
                 </Col>
               </Row>
@@ -143,13 +165,28 @@ export default function Upload() {
                 scroll={{ x: "max-content" }}
                 pagination={{ pageSize: 20, showTotal: (t) => `${t} scenarios` }}
                 columns={[
-                  { title: "Status", dataIndex: "status", key: "status", width: 90,
+                  {
+                    title: "Status",
+                    dataIndex: "status",
+                    key: "status",
+                    width: 90,
                     render: statusTag,
-                    filters: [{ text: "Created", value: "created" }, { text: "Skipped", value: "skipped" }, { text: "Error", value: "error" }],
-                    onFilter: (v, r) => r.status === v },
+                    filters: [
+                      { text: "Created", value: "created" },
+                      { text: "Skipped", value: "skipped" },
+                      { text: "Error", value: "error" },
+                    ],
+                    onFilter: (v, r) => r.status === v,
+                  },
                   { title: "Scenario", dataIndex: "name", key: "name", ellipsis: true },
-                  { title: "Message", dataIndex: "message", key: "message", ellipsis: true,
-                    render: (v: string | undefined) => v ? <Typography.Text type="danger">{v}</Typography.Text> : "-" },
+                  {
+                    title: "Message",
+                    dataIndex: "message",
+                    key: "message",
+                    ellipsis: true,
+                    render: (v: string | undefined) =>
+                      v ? <Typography.Text type="danger">{v}</Typography.Text> : "-",
+                  },
                 ]}
               />
             </Space>

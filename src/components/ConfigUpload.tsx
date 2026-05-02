@@ -1,11 +1,6 @@
 import { useState } from "react";
 import { Upload, Button, message, Space, Popconfirm, Modal, Input, Tag, Spin, Alert } from "antd";
-import {
-  UploadOutlined,
-  DownloadOutlined,
-  DeleteOutlined,
-  EditOutlined,
-} from "@ant-design/icons";
+import { UploadOutlined, DownloadOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import type { ConfigEntity } from "../api/types";
 
@@ -89,11 +84,7 @@ export default function ConfigUpload({ entity, id, hasConfig, onChange }: Props)
         <Button size="small" icon={<EditOutlined />} onClick={openEdit}>
           {hasConfig ? "Edit" : "Create"}
         </Button>
-        <Upload
-          showUploadList={false}
-          beforeUpload={beforeUpload}
-          accept=".yaml,.yml,.json"
-        >
+        <Upload showUploadList={false} beforeUpload={beforeUpload} accept=".yaml,.yml,.json">
           <Button size="small" icon={<UploadOutlined />} loading={busy}>
             {hasConfig ? "Replace" : "Upload"}
           </Button>
@@ -136,9 +127,7 @@ export default function ConfigUpload({ entity, id, hasConfig, onChange }: Props)
           </div>
         ) : (
           <div style={{ padding: 16 }}>
-            {editError && (
-              <Alert type="error" message={editError} style={{ marginBottom: 8 }} />
-            )}
+            {editError && <Alert type="error" message={editError} style={{ marginBottom: 8 }} />}
             <Input.TextArea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
@@ -149,8 +138,7 @@ export default function ConfigUpload({ entity, id, hasConfig, onChange }: Props)
                   : "Paste yaml content here, then click Save to create."
               }
               style={{
-                fontFamily:
-                  "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+                fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
                 fontSize: 12,
                 lineHeight: 1.5,
               }}

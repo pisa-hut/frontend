@@ -192,7 +192,10 @@ export default function FileBrowser({
             rel="noreferrer"
           />
           {deleteFile && (
-            <Popconfirm title={`Delete ${r.relative_path}?`} onConfirm={() => handleDelete(r.relative_path)}>
+            <Popconfirm
+              title={`Delete ${r.relative_path}?`}
+              onConfirm={() => handleDelete(r.relative_path)}
+            >
               <Button size="small" danger icon={<DeleteOutlined />} />
             </Popconfirm>
           )}
@@ -218,7 +221,12 @@ export default function FileBrowser({
               style={{ width: 220 }}
               placeholder="optional/subdir/"
             />
-            <Upload showUploadList={false} beforeUpload={beforeUpload} multiple accept={uploadAccept}>
+            <Upload
+              showUploadList={false}
+              beforeUpload={beforeUpload}
+              multiple
+              accept={uploadAccept}
+            >
               <Button icon={<UploadOutlined />} type="primary">
                 Upload file(s)
               </Button>
