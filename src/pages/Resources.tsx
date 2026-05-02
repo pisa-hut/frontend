@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { Tabs, Button, Modal, Form, Input, Switch, message, Space, Table, Dropdown } from "antd";
+import { useState } from "react";
+import { Tabs, Button, Modal, Form, Input, Switch, Space, Table, Dropdown } from "antd";
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -8,29 +8,14 @@ import {
   MoreOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
+import type { FormInstance } from "antd";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfigUpload from "../components/ConfigUpload";
 import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { AvResponse, SimulatorResponse, SamplerResponse, MapResponse } from "../api/types";
-
-// --- Generic resource hook ---
-
-function useResource<T extends { id: number }>(listFn: () => Promise<T[]>) {
-  const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<T | null>(null);
-  const load = useCallback(() => {
-    setLoading(true);
-    listFn()
-      .then(setData)
-      .finally(() => setLoading(false));
-  }, [listFn]);
-  useEffect(load, [load]);
-  return { data, loading, modalOpen, setModalOpen, editing, setEditing, load };
-}
+import { useResourceTab } from "../hooks/useResourceTab";
 
 // --- Shared columns for AV/Simulator (image + runtimes). Config upload is a
 //     row-level action rendered by each tab so it can call `load()` on change.
@@ -67,6 +52,22 @@ const imageColumns = [
   },
 ];
 
+interface ImageFormValues {
+  name: string;
+  image_path: string;
+  nv_runtime: boolean;
+  carla_runtime: boolean;
+  ros_runtime: boolean;
+}
+
+interface ImagePayload {
+  name: string;
+  image_path: Record<string, unknown>;
+  nv_runtime: boolean;
+  carla_runtime: boolean;
+  ros_runtime: boolean;
+}
+
 function ImageForm({
   saving,
   onFinish,
@@ -74,8 +75,8 @@ function ImageForm({
   editing,
 }: {
   saving: boolean;
-  onFinish: (v: any) => void;
-  form: any;
+  onFinish: (v: ImageFormValues) => void;
+  form: FormInstance;
   editing: boolean;
 }) {
   return (
@@ -132,57 +133,70 @@ function ImageForm({
   );
 }
 
+/** Standard "Edit / Delete" overflow menu used by every tab's row. */
+function rowActions<T extends { id: number }>(
+  record: T,
+  openEdit: (r: T) => void,
+  handleDelete: (id: number) => void,
+) {
+  return (
+    <Dropdown
+      menu={{
+        items: [
+          { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(record) },
+          { type: "divider" as const },
+          {
+            key: "delete",
+            icon: <DeleteOutlined />,
+            label: "Delete",
+            danger: true,
+            onClick: () => handleDelete(record.id),
+          },
+        ],
+      }}
+      trigger={["click"]}
+    >
+      <Button size="small" icon={<MoreOutlined />} />
+    </Dropdown>
+  );
+}
+
+/** "Add X" + "Refresh" toolbar shown above each tab's table. */
+function TabToolbar({
+  entityName,
+  onAdd,
+  onReload,
+}: {
+  entityName: string;
+  onAdd: () => void;
+  onReload: () => void;
+}) {
+  return (
+    <Space style={{ marginBottom: 12 }}>
+      <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
+        Add {entityName}
+      </Button>
+      <Button icon={<ReloadOutlined />} onClick={onReload}>
+        Refresh
+      </Button>
+    </Space>
+  );
+}
+
 // --- AVs ---
 
 function AvsTab() {
-  const { data, loading, modalOpen, setModalOpen, editing, setEditing, load } = useResource(
-    api.listAvs,
-  );
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
-  const openEdit = (r: AvResponse) => {
-    setEditing(r);
-    form.setFieldsValue({ ...r, image_path: JSON.stringify(r.image_path, null, 2) });
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: any) => {
-    setSaving(true);
-    try {
-      const payload = { ...values, image_path: JSON.parse(values.image_path) };
-      if (editing) {
-        await api.updateAv(editing.id, payload);
-        message.success("Updated");
-      } else {
-        await api.createAv(payload);
-        message.success("Created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.deleteAv(id);
-      message.success("Deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
+  const tab = useResourceTab<AvResponse, ImagePayload>({
+    listFn: api.listAvs,
+    createFn: api.createAv,
+    updateFn: api.updateAv,
+    deleteFn: api.deleteAv,
+    getInitialValues: (r) => ({ ...r, image_path: JSON.stringify(r.image_path, null, 2) }),
+    transformPayload: (v) => ({
+      ...(v as unknown as ImageFormValues),
+      image_path: JSON.parse((v as unknown as ImageFormValues).image_path),
+    }),
+  });
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
@@ -193,120 +207,59 @@ function AvsTab() {
       key: "config",
       width: 240,
       render: (_: unknown, r: AvResponse) => (
-        <ConfigUpload entity="av" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+        <ConfigUpload entity="av" id={r.id} hasConfig={!!r.config_sha256} onChange={tab.load} />
       ),
     },
     {
       title: "",
       key: "actions",
       width: 50,
-      render: (_: unknown, r: AvResponse) => (
-        <Dropdown
-          menu={{
-            items: [
-              { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
-              { type: "divider" as const },
-              {
-                key: "delete",
-                icon: <DeleteOutlined />,
-                label: "Delete",
-                danger: true,
-                onClick: () => handleDelete(r.id),
-              },
-            ],
-          }}
-          trigger={["click"]}
-        >
-          <Button size="small" icon={<MoreOutlined />} />
-        </Dropdown>
-      ),
+      render: (_: unknown, r: AvResponse) => rowActions(r, tab.openEdit, tab.handleDelete),
     },
   ];
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Add AV
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
-        </Button>
-      </Space>
+      <TabToolbar entityName="AV" onAdd={tab.openCreate} onReload={tab.load} />
       <Table
-        dataSource={data}
+        dataSource={tab.data}
         columns={columns}
         rowKey="id"
-        loading={loading}
+        loading={tab.loading}
         size="small"
         scroll={{ x: "max-content" }}
       />
       <Modal
-        title={editing ? "Edit AV" : "Add AV"}
-        open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        title={tab.editing ? "Edit AV" : "Add AV"}
+        open={tab.modalOpen}
+        onCancel={tab.closeModal}
         footer={null}
       >
-        <ImageForm form={form} saving={saving} onFinish={handleSave} editing={!!editing} />
+        <ImageForm
+          form={tab.form}
+          saving={tab.saving}
+          onFinish={(v) => tab.handleSave(v as unknown as Record<string, unknown>)}
+          editing={!!tab.editing}
+        />
       </Modal>
     </>
   );
 }
 
-// --- Simulators (same structure as AVs) ---
+// --- Simulators (same shape as AVs) ---
 
 function SimulatorsTab() {
-  const { data, loading, modalOpen, setModalOpen, editing, setEditing, load } = useResource(
-    api.listSimulators,
-  );
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
-  const openEdit = (r: SimulatorResponse) => {
-    setEditing(r);
-    form.setFieldsValue({ ...r, image_path: JSON.stringify(r.image_path, null, 2) });
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: any) => {
-    setSaving(true);
-    try {
-      const payload = { ...values, image_path: JSON.parse(values.image_path) };
-      if (editing) {
-        await api.updateSimulator(editing.id, payload);
-        message.success("Updated");
-      } else {
-        await api.createSimulator(payload);
-        message.success("Created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.deleteSimulator(id);
-      message.success("Deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
+  const tab = useResourceTab<SimulatorResponse, ImagePayload>({
+    listFn: api.listSimulators,
+    createFn: api.createSimulator,
+    updateFn: api.updateSimulator,
+    deleteFn: api.deleteSimulator,
+    getInitialValues: (r) => ({ ...r, image_path: JSON.stringify(r.image_path, null, 2) }),
+    transformPayload: (v) => ({
+      ...(v as unknown as ImageFormValues),
+      image_path: JSON.parse((v as unknown as ImageFormValues).image_path),
+    }),
+  });
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
@@ -317,64 +270,45 @@ function SimulatorsTab() {
       key: "config",
       width: 240,
       render: (_: unknown, r: SimulatorResponse) => (
-        <ConfigUpload entity="simulator" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+        <ConfigUpload
+          entity="simulator"
+          id={r.id}
+          hasConfig={!!r.config_sha256}
+          onChange={tab.load}
+        />
       ),
     },
     {
       title: "",
       key: "actions",
       width: 50,
-      render: (_: unknown, r: SimulatorResponse) => (
-        <Dropdown
-          menu={{
-            items: [
-              { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
-              { type: "divider" as const },
-              {
-                key: "delete",
-                icon: <DeleteOutlined />,
-                label: "Delete",
-                danger: true,
-                onClick: () => handleDelete(r.id),
-              },
-            ],
-          }}
-          trigger={["click"]}
-        >
-          <Button size="small" icon={<MoreOutlined />} />
-        </Dropdown>
-      ),
+      render: (_: unknown, r: SimulatorResponse) => rowActions(r, tab.openEdit, tab.handleDelete),
     },
   ];
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Add Simulator
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
-        </Button>
-      </Space>
+      <TabToolbar entityName="Simulator" onAdd={tab.openCreate} onReload={tab.load} />
       <Table
-        dataSource={data}
+        dataSource={tab.data}
         columns={columns}
         rowKey="id"
-        loading={loading}
+        loading={tab.loading}
         size="small"
         scroll={{ x: "max-content" }}
       />
       <Modal
-        title={editing ? "Edit Simulator" : "Add Simulator"}
-        open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        title={tab.editing ? "Edit Simulator" : "Add Simulator"}
+        open={tab.modalOpen}
+        onCancel={tab.closeModal}
         footer={null}
       >
-        <ImageForm form={form} saving={saving} onFinish={handleSave} editing={!!editing} />
+        <ImageForm
+          form={tab.form}
+          saving={tab.saving}
+          onFinish={(v) => tab.handleSave(v as unknown as Record<string, unknown>)}
+          editing={!!tab.editing}
+        />
       </Modal>
     </>
   );
@@ -383,57 +317,12 @@ function SimulatorsTab() {
 // --- Samplers ---
 
 function SamplersTab() {
-  const { data, loading, modalOpen, setModalOpen, editing, setEditing, load } = useResource(
-    api.listSamplers,
-  );
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
-  const openEdit = (r: SamplerResponse) => {
-    setEditing(r);
-    form.setFieldsValue(r);
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: {
-    name: string;
-    module_path: string;
-    config_path?: string;
-  }) => {
-    setSaving(true);
-    try {
-      if (editing) {
-        await api.updateSampler(editing.id, values);
-        message.success("Updated");
-      } else {
-        await api.createSampler(values);
-        message.success("Created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.deleteSampler(id);
-      message.success("Deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
+  const tab = useResourceTab<SamplerResponse>({
+    listFn: api.listSamplers,
+    createFn: api.createSampler,
+    updateFn: api.updateSampler,
+    deleteFn: api.deleteSampler,
+  });
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
@@ -444,64 +333,40 @@ function SamplersTab() {
       key: "config",
       width: 240,
       render: (_: unknown, r: SamplerResponse) => (
-        <ConfigUpload entity="sampler" id={r.id} hasConfig={!!r.config_sha256} onChange={load} />
+        <ConfigUpload
+          entity="sampler"
+          id={r.id}
+          hasConfig={!!r.config_sha256}
+          onChange={tab.load}
+        />
       ),
     },
     {
       title: "",
       key: "actions",
       width: 50,
-      render: (_: unknown, r: SamplerResponse) => (
-        <Dropdown
-          menu={{
-            items: [
-              { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
-              { type: "divider" as const },
-              {
-                key: "delete",
-                icon: <DeleteOutlined />,
-                label: "Delete",
-                danger: true,
-                onClick: () => handleDelete(r.id),
-              },
-            ],
-          }}
-          trigger={["click"]}
-        >
-          <Button size="small" icon={<MoreOutlined />} />
-        </Dropdown>
-      ),
+      render: (_: unknown, r: SamplerResponse) => rowActions(r, tab.openEdit, tab.handleDelete),
     },
   ];
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Add Sampler
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
-        </Button>
-      </Space>
+      <TabToolbar entityName="Sampler" onAdd={tab.openCreate} onReload={tab.load} />
       <Table
-        dataSource={data}
+        dataSource={tab.data}
         columns={columns}
         rowKey="id"
-        loading={loading}
+        loading={tab.loading}
         size="small"
         scroll={{ x: "max-content" }}
       />
       <Modal
-        title={editing ? "Edit Sampler" : "Add Sampler"}
-        open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        title={tab.editing ? "Edit Sampler" : "Add Sampler"}
+        open={tab.modalOpen}
+        onCancel={tab.closeModal}
         footer={null}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
+        <Form form={tab.form} layout="vertical" onFinish={tab.handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -509,8 +374,8 @@ function SamplersTab() {
             <Input />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving} block>
-              {editing ? "Save" : "Create"}
+            <Button type="primary" htmlType="submit" loading={tab.saving} block>
+              {tab.editing ? "Save" : "Create"}
             </Button>
           </Form.Item>
         </Form>
@@ -522,54 +387,13 @@ function SamplersTab() {
 // --- Maps ---
 
 function MapsTab() {
-  const { data, loading, modalOpen, setModalOpen, editing, setEditing, load } = useResource(
-    api.listMaps,
-  );
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
+  const tab = useResourceTab<MapResponse>({
+    listFn: api.listMaps,
+    createFn: api.createMap,
+    updateFn: api.updateMap,
+    deleteFn: api.deleteMap,
+  });
   const [filesFor, setFilesFor] = useState<MapResponse | null>(null);
-
-  const openCreate = () => {
-    setEditing(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
-  const openEdit = (r: MapResponse) => {
-    setEditing(r);
-    form.setFieldsValue(r);
-    setModalOpen(true);
-  };
-
-  const handleSave = async (values: { name: string }) => {
-    setSaving(true);
-    try {
-      if (editing) {
-        await api.updateMap(editing.id, values);
-        message.success("Updated");
-      } else {
-        await api.createMap(values);
-        message.success("Created");
-      }
-      setModalOpen(false);
-      form.resetFields();
-      setEditing(null);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    try {
-      await api.deleteMap(id);
-      message.success("Deleted");
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
 
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
@@ -588,63 +412,34 @@ function MapsTab() {
       title: "",
       key: "actions",
       width: 50,
-      render: (_: unknown, r: MapResponse) => (
-        <Dropdown
-          menu={{
-            items: [
-              { key: "edit", icon: <EditOutlined />, label: "Edit", onClick: () => openEdit(r) },
-              { type: "divider" as const },
-              {
-                key: "delete",
-                icon: <DeleteOutlined />,
-                label: "Delete",
-                danger: true,
-                onClick: () => handleDelete(r.id),
-              },
-            ],
-          }}
-          trigger={["click"]}
-        >
-          <Button size="small" icon={<MoreOutlined />} />
-        </Dropdown>
-      ),
+      render: (_: unknown, r: MapResponse) => rowActions(r, tab.openEdit, tab.handleDelete),
     },
   ];
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Add Map
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
-        </Button>
-      </Space>
+      <TabToolbar entityName="Map" onAdd={tab.openCreate} onReload={tab.load} />
       <Table
-        dataSource={data}
+        dataSource={tab.data}
         columns={columns}
         rowKey="id"
-        loading={loading}
+        loading={tab.loading}
         size="small"
         scroll={{ x: "max-content" }}
       />
       <Modal
-        title={editing ? "Edit Map" : "Add Map"}
-        open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
+        title={tab.editing ? "Edit Map" : "Add Map"}
+        open={tab.modalOpen}
+        onCancel={tab.closeModal}
         footer={null}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
+        <Form form={tab.form} layout="vertical" onFinish={tab.handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving} block>
-              {editing ? "Save" : "Create"}
+            <Button type="primary" htmlType="submit" loading={tab.saving} block>
+              {tab.editing ? "Save" : "Create"}
             </Button>
           </Form.Item>
         </Form>
