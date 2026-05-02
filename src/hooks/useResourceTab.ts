@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Form, message } from "antd";
+import { Form } from "antd";
 import type { FormInstance } from "antd";
+import { notify } from "../utils/notify";
 
 interface ResourceTabConfig<T extends { id: number }, TPayload> {
   listFn: () => Promise<T[]>;
@@ -96,17 +97,17 @@ export function useResourceTab<T extends { id: number }, TPayload = Record<strin
         const payload = transformPayload(values);
         if (editing) {
           await updateFn(editing.id, payload);
-          message.success("Updated");
+          notify.updated();
         } else {
           await createFn(payload);
-          message.success("Created");
+          notify.created();
         }
         setModalOpen(false);
         form.resetFields();
         setEditing(null);
         load();
       } catch (e) {
-        message.error(String(e));
+        notify.fromError(e);
       } finally {
         setSaving(false);
       }
@@ -118,10 +119,10 @@ export function useResourceTab<T extends { id: number }, TPayload = Record<strin
     async (id: number) => {
       try {
         await deleteFn(id);
-        message.success("Deleted");
+        notify.deleted();
         load();
       } catch (e) {
-        message.error(String(e));
+        notify.fromError(e);
       }
     },
     [deleteFn, load],
