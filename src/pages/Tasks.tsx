@@ -56,15 +56,7 @@ import type {
   ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
-
-const statusColors: Record<TaskStatus, string> = {
-  idle: "default",
-  queued: "warning",
-  running: "processing",
-  completed: "success",
-  invalid: "error",
-  aborted: "default",
-};
+import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 
 // Everything that isn't currently queued or running is re-runnable.
 // Shared with LogDrawer via api/types so a Run from a historical
@@ -752,7 +744,7 @@ export default function Tasks() {
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (
         <Tag
-          color={statusColors[status]}
+          color={TASK_STATUS_TAG_COLOR[status]}
           icon={status === "running" ? <SyncOutlined spin /> : undefined}
         >
           {status.toUpperCase()}
