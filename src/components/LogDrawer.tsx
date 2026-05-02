@@ -10,17 +10,9 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
-import type { TaskResponse, TaskRunResponse, TaskStatus, ExecutorResponse } from "../api/types";
+import type { TaskResponse, TaskRunResponse, ExecutorResponse } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
-
-const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
-  idle: "default",
-  queued: "warning",
-  running: "processing",
-  completed: "success",
-  invalid: "error",
-  aborted: "default",
-};
+import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 
 interface Props {
   run: TaskRunResponse | null;
@@ -203,7 +195,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
         {task && (
           <>
             <Typography.Text strong>Task #{task.id}</Typography.Text>
-            <Tag color={TASK_STATUS_COLOR[task.task_status]} style={{ marginInline: 0 }}>
+            <Tag color={TASK_STATUS_TAG_COLOR[task.task_status]} style={{ marginInline: 0 }}>
               {task.task_status}
             </Tag>
             {task.archived && (

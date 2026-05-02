@@ -13,14 +13,17 @@ import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type { TaskResponse, TaskStatus } from "../api/types";
+import { TASK_STATUS_HEX, TASK_STATUS_LABEL } from "../constants/status";
 
-const statusConfig: Record<TaskStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  idle: { color: "#8c8c8c", icon: <PlusCircleOutlined />, label: "Idle" },
-  queued: { color: "#faad14", icon: <ClockCircleOutlined />, label: "Queued" },
-  running: { color: "#1890ff", icon: <SyncOutlined spin />, label: "Running" },
-  completed: { color: "#52c41a", icon: <CheckCircleOutlined />, label: "Completed" },
-  invalid: { color: "#ff4d4f", icon: <WarningOutlined />, label: "Invalid" },
-  aborted: { color: "#ff7875", icon: <StopOutlined />, label: "Aborted" },
+// Hex colour and label come from the shared constants; the icon is a
+// React node so it stays here (constants are plain TS).
+const statusIcon: Record<TaskStatus, React.ReactNode> = {
+  idle: <PlusCircleOutlined />,
+  queued: <ClockCircleOutlined />,
+  running: <SyncOutlined spin />,
+  completed: <CheckCircleOutlined />,
+  invalid: <WarningOutlined />,
+  aborted: <StopOutlined />,
 };
 
 interface AbortedStats {
@@ -204,26 +207,24 @@ export default function Dashboard() {
       )}
 
       <Row gutter={[12, 12]}>
-        {(Object.entries(statusConfig) as [TaskStatus, (typeof statusConfig)[TaskStatus]][]).map(
-          ([status, cfg]) => (
-            <Col xs={8} sm={8} md={4} key={status}>
-              <Card
-                hoverable
-                size="small"
-                onClick={() => navigate(`/tasks?status=${status}`)}
-                style={{ cursor: "pointer", textAlign: "center" }}
-                styles={{ body: { padding: "12px 8px" } }}
-              >
-                <Statistic
-                  title={cfg.label}
-                  value={counts[status]}
-                  prefix={cfg.icon}
-                  valueStyle={{ color: cfg.color, fontSize: 24 }}
-                />
-              </Card>
-            </Col>
-          ),
-        )}
+        {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((status) => (
+          <Col xs={8} sm={8} md={4} key={status}>
+            <Card
+              hoverable
+              size="small"
+              onClick={() => navigate(`/tasks?status=${status}`)}
+              style={{ cursor: "pointer", textAlign: "center" }}
+              styles={{ body: { padding: "12px 8px" } }}
+            >
+              <Statistic
+                title={TASK_STATUS_LABEL[status]}
+                value={counts[status]}
+                prefix={statusIcon[status]}
+                valueStyle={{ color: TASK_STATUS_HEX[status], fontSize: 24 }}
+              />
+            </Card>
+          </Col>
+        ))}
       </Row>
       <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
         <Col xs={24} md={12}>
