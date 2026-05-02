@@ -43,7 +43,6 @@ export default function Executors() {
       sorter: (a: ExecutorResponse, b: ExecutorResponse) => a.slurm_job_id - b.slurm_job_id,
       ...getColumnSearchProps<ExecutorResponse>("slurm_job_id"),
     },
-    { title: "Array", dataIndex: "slurm_array_id", key: "slurm_array_id", width: 80 },
     {
       title: "Nodes",
       dataIndex: "slurm_node_list",
