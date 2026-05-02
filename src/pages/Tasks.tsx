@@ -21,7 +21,6 @@ import {
   Popconfirm,
   Tooltip,
   Affix,
-  Badge,
 } from "antd";
 import {
   ReloadOutlined,
@@ -57,26 +56,13 @@ import type {
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
+import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
 
 // Everything that isn't currently queued or running is re-runnable.
 // Shared with LogDrawer via api/types so a Run from a historical
 // attempt can't bypass the same gate the row action uses.
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
-
-// Quick-filter chips. `triage` is a virtual scope: invalid + !archived.
-// Anything else either picks a single task_status or "all" (no filter).
-type QuickFilter = "all" | "triage" | "archived" | TaskStatus;
-const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "triage", label: "Triage" },
-  { value: "running", label: "Running" },
-  { value: "queued", label: "Queued" },
-  { value: "completed", label: "Completed" },
-  { value: "invalid", label: "Invalid" },
-  { value: "aborted", label: "Aborted" },
-  { value: "archived", label: "Archived" },
-];
 
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -990,42 +976,7 @@ export default function Tasks() {
         </Button>
       </PageHeader>
 
-      {/* Quick-filter chips: replace the dropdown discovery problem.
-          Counts are live (re-derived on every render) so the user can
-          see triage backlog at a glance. */}
-      <div style={{ marginBottom: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {QUICK_FILTERS.map((q) => {
-          const count =
-            q.value === "all"
-              ? tasks.filter((t) => !t.archived).length
-              : q.value === "triage"
-                ? tasks.filter((t) => t.task_status === "invalid" && !t.archived).length
-                : q.value === "archived"
-                  ? tasks.filter((t) => t.archived).length
-                  : tasks.filter((t) => t.task_status === q.value && !t.archived).length;
-          const active = quickFilter === q.value;
-          return (
-            <Button
-              key={q.value}
-              size="small"
-              type={active ? "primary" : "default"}
-              onClick={() => setQuickFilter(q.value)}
-            >
-              {q.label}
-              <Badge
-                count={count}
-                showZero
-                color={active ? "#fff" : undefined}
-                style={{
-                  marginLeft: 6,
-                  backgroundColor: active ? "rgba(255,255,255,0.18)" : undefined,
-                  color: active ? "#fff" : undefined,
-                }}
-              />
-            </Button>
-          );
-        })}
-      </div>
+      <TasksFilters tasks={tasks} quickFilter={quickFilter} onChange={setQuickFilter} />
 
       {selectionBar}
 

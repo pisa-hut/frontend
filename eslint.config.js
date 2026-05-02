@@ -38,8 +38,10 @@ export default defineConfig([
   {
     // ThemeContext exports both a component and a hook from one file by
     // design — splitting them costs more than the fast-refresh edge
-    // case is worth.
-    files: ["src/components/ThemeContext.tsx"],
+    // case is worth. Same reasoning for TasksFilters: the QuickFilter
+    // type and QUICK_FILTERS const are tightly coupled to the chip-bar
+    // component and only consumed by the Tasks page.
+    files: ["src/components/ThemeContext.tsx", "src/components/tasks/TasksFilters.tsx"],
     rules: {
       "react-refresh/only-export-components": "off",
     },
