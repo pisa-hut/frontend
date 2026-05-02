@@ -1,6 +1,31 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Form, Input, Select, message, Space, Table, Spin, Popconfirm, Card, Row, Col, Typography, Tabs, Empty } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlayCircleOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  message,
+  Space,
+  Table,
+  Spin,
+  Popconfirm,
+  Card,
+  Row,
+  Col,
+  Typography,
+  Tabs,
+  Empty,
+} from "antd";
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  EyeOutlined,
+  PlayCircleOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
@@ -42,10 +67,20 @@ export default function Scenarios() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState("");
 
-  const load = () => { setLoading(true); api.listScenarios().then(setData).finally(() => setLoading(false)); };
+  const load = () => {
+    setLoading(true);
+    api
+      .listScenarios()
+      .then(setData)
+      .finally(() => setLoading(false));
+  };
   useEffect(load, []);
 
-  const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    setModalOpen(true);
+  };
   const openEdit = (r: ScenarioResponse) => {
     setEditing(r);
     form.setFieldsValue(r);
@@ -120,83 +155,177 @@ export default function Scenarios() {
     setSaving(true);
     try {
       const payload = { ...values, title: values.title || null };
-      if (editing) { await api.updateScenario(editing.id, payload); message.success("Updated"); }
-      else { await api.createScenario(payload); message.success("Created"); }
-      setModalOpen(false); form.resetFields(); setEditing(null); load();
-    } catch (e) { message.error(String(e)); } finally { setSaving(false); }
+      if (editing) {
+        await api.updateScenario(editing.id, payload);
+        message.success("Updated");
+      } else {
+        await api.createScenario(payload);
+        message.success("Created");
+      }
+      setModalOpen(false);
+      form.resetFields();
+      setEditing(null);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
-    try { await api.deleteScenario(id); message.success("Deleted"); load(); } catch (e) { message.error(String(e)); }
+    try {
+      await api.deleteScenario(id);
+      message.success("Deleted");
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60, ...getColumnSearchProps<ScenarioResponse>("id") },
-    { title: "Title", dataIndex: "title", key: "title", ellipsis: true, render: (v: string | null) => v ?? "-",
-      ...getColumnSearchProps<ScenarioResponse>("title") },
-    { title: "Format", dataIndex: "scenario_format", key: "scenario_format", width: 140,
+    {
+      title: "ID",
+      dataIndex: "id",
+      key: "id",
+      width: 60,
+      ...getColumnSearchProps<ScenarioResponse>("id"),
+    },
+    {
+      title: "Title",
+      dataIndex: "title",
+      key: "title",
+      ellipsis: true,
+      render: (v: string | null) => v ?? "-",
+      ...getColumnSearchProps<ScenarioResponse>("title"),
+    },
+    {
+      title: "Format",
+      dataIndex: "scenario_format",
+      key: "scenario_format",
+      width: 140,
       filters: formatOptions.map((f) => ({ text: f.label, value: f.value })),
-      onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value },
+      onFilter: (value: unknown, r: ScenarioResponse) => r.scenario_format === value,
+    },
   ];
 
   return (
     <>
       <PageHeader title="Scenarios">
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create</Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          Create
+        </Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>
+          Refresh
+        </Button>
       </PageHeader>
       <Row gutter={12}>
         <Col xs={24} lg={selectedId ? 14 : 24}>
           <Table
-            dataSource={data} columns={columns} rowKey="id" loading={loading} size="small" scroll={{ x: "max-content" }}
+            dataSource={data}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            size="small"
+            scroll={{ x: "max-content" }}
             onRow={(r) => ({
               onClick: () => setSelectedId((prev) => (prev === r.id ? null : r.id)),
-              style: { cursor: "pointer", background: selectedId === r.id ? "var(--ant-color-primary-bg, #e6f4ff)" : undefined },
+              style: {
+                cursor: "pointer",
+                background:
+                  selectedId === r.id ? "var(--ant-color-primary-bg, #e6f4ff)" : undefined,
+              },
             })}
           />
         </Col>
-        {selectedId && (() => {
-          const r = data.find((s) => s.id === selectedId);
-          if (!r) return null;
-          return (
-            <Col xs={24} lg={10}>
-              <Card size="small"
-                title={<Typography.Text ellipsis style={{ maxWidth: 250 }}>{r.title ?? `scenario-${r.id}`}</Typography.Text>}
-                extra={<Button size="small" type="text" onClick={() => setSelectedId(null)}>x</Button>}
-              >
-                <div style={{ marginBottom: 12, fontSize: 13 }}>
-                  <div><Typography.Text type="secondary">Format: </Typography.Text>{r.scenario_format}</div>
-                  {r.scenario_path ? (
-                    <div style={{ marginTop: 4 }}>
-                      <Typography.Text type="secondary">Path: </Typography.Text>
-                      <Typography.Text copyable={{ text: r.scenario_path }}>{r.scenario_path}</Typography.Text>
+        {selectedId &&
+          (() => {
+            const r = data.find((s) => s.id === selectedId);
+            if (!r) return null;
+            return (
+              <Col xs={24} lg={10}>
+                <Card
+                  size="small"
+                  title={
+                    <Typography.Text ellipsis style={{ maxWidth: 250 }}>
+                      {r.title ?? `scenario-${r.id}`}
+                    </Typography.Text>
+                  }
+                  extra={
+                    <Button size="small" type="text" onClick={() => setSelectedId(null)}>
+                      x
+                    </Button>
+                  }
+                >
+                  <div style={{ marginBottom: 12, fontSize: 13 }}>
+                    <div>
+                      <Typography.Text type="secondary">Format: </Typography.Text>
+                      {r.scenario_format}
                     </div>
-                  ) : null}
-                </div>
-                <Space wrap size="small">
-                  <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>XOSC</Button>
-                  <Button size="small" icon={<FolderOpenOutlined />} onClick={() => setFilesFor(r)}>Files</Button>
-                  <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>Video</Button>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>Edit</Button>
-                  <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
-                    <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
-                  </Popconfirm>
-                </Space>
-              </Card>
-            </Col>
-          );
-        })()}
+                    {r.scenario_path ? (
+                      <div style={{ marginTop: 4 }}>
+                        <Typography.Text type="secondary">Path: </Typography.Text>
+                        <Typography.Text copyable={{ text: r.scenario_path }}>
+                          {r.scenario_path}
+                        </Typography.Text>
+                      </div>
+                    ) : null}
+                  </div>
+                  <Space wrap size="small">
+                    <Button size="small" icon={<EyeOutlined />} onClick={() => openPreview(r)}>
+                      XOSC
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<FolderOpenOutlined />}
+                      onClick={() => setFilesFor(r)}
+                    >
+                      Files
+                    </Button>
+                    <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openVideo(r)}>
+                      Video
+                    </Button>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+                      Edit
+                    </Button>
+                    <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
+                      <Button size="small" danger icon={<DeleteOutlined />}>
+                        Delete
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                </Card>
+              </Col>
+            );
+          })()}
       </Row>
 
       {/* Edit/Create modal */}
-      <Modal title={editing ? "Edit Scenario" : "Create Scenario"} open={modalOpen} onCancel={() => { setModalOpen(false); setEditing(null); }} footer={null}>
+      <Modal
+        title={editing ? "Edit Scenario" : "Create Scenario"}
+        open={modalOpen}
+        onCancel={() => {
+          setModalOpen(false);
+          setEditing(null);
+        }}
+        footer={null}
+      >
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}><Select options={formatOptions} /></Form.Item>
-          <Form.Item name="title" label="Title"><Input /></Form.Item>
-          <Form.Item><Button type="primary" htmlType="submit" loading={saving} block>{editing ? "Save" : "Create"}</Button></Form.Item>
+          <Form.Item name="scenario_format" label="Format" rules={[{ required: true }]}>
+            <Select options={formatOptions} />
+          </Form.Item>
+          <Form.Item name="title" label="Title">
+            <Input />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={saving} block>
+              {editing ? "Save" : "Create"}
+            </Button>
+          </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
-          Ego destination and target speed live in the scenario's <code>spec.yaml</code> file — use the <b>Files</b> button to edit it.
+          Ego destination and target speed live in the scenario's <code>spec.yaml</code> file — use
+          the <b>Files</b> button to edit it.
         </Typography.Paragraph>
       </Modal>
 
@@ -269,8 +398,7 @@ export default function Scenarios() {
                     overflow: "auto",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-all",
-                    fontFamily:
-                      "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+                    fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
                     background: "var(--ant-color-bg-layout, #f5f5f5)",
                   }}
                 >
@@ -289,7 +417,9 @@ export default function Scenarios() {
         onClose={() => setFilesFor(null)}
         listFiles={() => (filesFor ? api.listScenarioFiles(filesFor.id) : Promise.resolve([]))}
         fileUrl={(rel) => (filesFor ? api.scenarioFileUrl(filesFor.id, rel) : "")}
-        uploadFile={filesFor ? (rel, data) => api.uploadScenarioFile(filesFor.id, rel, data) : undefined}
+        uploadFile={
+          filesFor ? (rel, data) => api.uploadScenarioFile(filesFor.id, rel, data) : undefined
+        }
         deleteFile={filesFor ? (rel) => api.deleteScenarioFile(filesFor.id, rel) : undefined}
       />
 
@@ -297,22 +427,34 @@ export default function Scenarios() {
       <Modal
         title={`${videoTitle} — Video Preview`}
         open={videoOpen}
-        onCancel={() => { setVideoOpen(false); if (videoUrl) URL.revokeObjectURL(videoUrl); }}
-        footer={videoUrl && !videoLoading ? (
-          <Button type="primary" onClick={() => {
-            const a = document.createElement("a");
-            a.href = videoUrl;
-            a.download = `${videoTitle}.mp4`;
-            a.click();
-          }}>Download</Button>
-        ) : null}
+        onCancel={() => {
+          setVideoOpen(false);
+          if (videoUrl) URL.revokeObjectURL(videoUrl);
+        }}
+        footer={
+          videoUrl && !videoLoading ? (
+            <Button
+              type="primary"
+              onClick={() => {
+                const a = document.createElement("a");
+                a.href = videoUrl;
+                a.download = `${videoTitle}.mp4`;
+                a.click();
+              }}
+            >
+              Download
+            </Button>
+          ) : null
+        }
         width="80%"
         styles={{ body: { padding: videoLoading || videoError ? 48 : 0, textAlign: "center" } }}
       >
         {videoLoading ? (
           <div>
             <Spin size="large" />
-            <p style={{ marginTop: 16, color: "#999" }}>Rendering scenario... this may take a minute</p>
+            <p style={{ marginTop: 16, color: "#999" }}>
+              Rendering scenario... this may take a minute
+            </p>
           </div>
         ) : videoError ? (
           <div style={{ color: "#ff4d4f" }}>{videoError}</div>

@@ -1,18 +1,18 @@
 export type TaskStatus =
-  | "idle"       // not queued; brand-new or user hasn't re-Run
-  | "queued"     // waiting for an executor
-  | "running"    // exactly one task_run is active
-  | "completed"  // finished successfully
-  | "invalid"    // permanent fail: USELESS_STREAK_LIMIT consecutive runs finished zero concretes
-  | "aborted";   // user Stop or scancel — needs manual Run to resume
+  | "idle" // not queued; brand-new or user hasn't re-Run
+  | "queued" // waiting for an executor
+  | "running" // exactly one task_run is active
+  | "completed" // finished successfully
+  | "invalid" // permanent fail: USELESS_STREAK_LIMIT consecutive runs finished zero concretes
+  | "aborted"; // user Stop or scancel — needs manual Run to resume
 // task_run_status is "did engine.exec() return cleanly?" — orthogonal
 // to concrete_scenarios_executed, which tracks how much useful work the
 // run produced. A run can legitimately be `failed` with concrete > 0.
 export type TaskRunStatus =
   | "running"
-  | "completed"  // exec() returned without raising
-  | "failed"     // exec() raised
-  | "aborted";   // cancelled (SIGTERM / scancel / user Stop)
+  | "completed" // exec() returned without raising
+  | "failed" // exec() raised
+  | "aborted"; // cancelled (SIGTERM / scancel / user Stop)
 export type ScenarioFormat = "open_scenario1" | "open_scenario2" | "carla_lb_route";
 
 /** Task states the user can re-Run from. Anything not in this set is

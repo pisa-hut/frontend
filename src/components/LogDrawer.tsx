@@ -156,8 +156,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     (run.task_run_status === "completed" ||
       run.task_run_status === "failed" ||
       run.task_run_status === "aborted");
-  const canRun =
-    runIsTerminal && task != null && RUNNABLE_TASK_STATUSES.includes(task.task_status);
+  const canRun = runIsTerminal && task != null && RUNNABLE_TASK_STATUSES.includes(task.task_status);
   // Mirror the per-row Archive trigger: only meaningful for invalid
   // tasks the user hasn't already triaged.
   const canArchive = task != null && task.task_status === "invalid" && !task.archived;
@@ -166,7 +165,10 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     if (!run) return;
     api
       .stopTask(run.task_id)
-      .then(() => { message.success(`Task #${run.task_id} stopped`); onClose(); })
+      .then(() => {
+        message.success(`Task #${run.task_id} stopped`);
+        onClose();
+      })
       .catch((e) => message.error(String(e)));
   }, [run, onClose]);
 
@@ -174,7 +176,10 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     if (!run) return;
     api
       .updateTask(run.task_id, { task_status: "queued" })
-      .then(() => { message.success(`Task #${run.task_id} queued`); onClose(); })
+      .then(() => {
+        message.success(`Task #${run.task_id} queued`);
+        onClose();
+      })
       .catch((e) => message.error(String(e)));
   }, [run, onClose]);
 
@@ -182,7 +187,10 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     if (!task) return;
     api
       .archiveTask(task.id)
-      .then(() => { message.success(`Task #${task.id} archived`); onClose(); })
+      .then(() => {
+        message.success(`Task #${task.id} archived`);
+        onClose();
+      })
       .catch((e) => message.error(String(e)));
   }, [task, onClose]);
 
@@ -199,7 +207,9 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
               {task.task_status}
             </Tag>
             {task.archived && (
-              <Tag color="default" style={{ marginInline: 0 }}>archived</Tag>
+              <Tag color="default" style={{ marginInline: 0 }}>
+                archived
+              </Tag>
             )}
           </>
         )}
@@ -234,17 +244,23 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
           <Space>
             {isLive && (
               <Popconfirm title="Stop this task?" onConfirm={doStop}>
-                <Button size="small" danger icon={<StopOutlined />}>Stop</Button>
+                <Button size="small" danger icon={<StopOutlined />}>
+                  Stop
+                </Button>
               </Popconfirm>
             )}
             {canRun && (
               <Popconfirm title="Re-run this task?" onConfirm={doRun}>
-                <Button size="small" type="primary" icon={<CaretRightOutlined />}>Run</Button>
+                <Button size="small" type="primary" icon={<CaretRightOutlined />}>
+                  Run
+                </Button>
               </Popconfirm>
             )}
             {canArchive && (
               <Popconfirm title="Archive this invalid task?" onConfirm={doArchive}>
-                <Button size="small" icon={<InboxOutlined />}>Archive</Button>
+                <Button size="small" icon={<InboxOutlined />}>
+                  Archive
+                </Button>
               </Popconfirm>
             )}
             {content && !loading && (
@@ -301,8 +317,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
             lineHeight: 1.45,
             whiteSpace: "pre-wrap",
             wordBreak: "break-all",
-            fontFamily:
-              "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+            fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
           }}
         >
           {content}

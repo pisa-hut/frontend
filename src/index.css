@@ -14,7 +14,6 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-
 /* Mobile modals */
 @media (max-width: 767px) {
   .ant-modal {

@@ -120,7 +120,12 @@ export default function Dashboard() {
   // the page on first SSE refresh.
   const counts: Record<TaskStatus, number> = useMemo(() => {
     const c: Record<TaskStatus, number> = {
-      idle: 0, queued: 0, running: 0, completed: 0, invalid: 0, aborted: 0,
+      idle: 0,
+      queued: 0,
+      running: 0,
+      completed: 0,
+      invalid: 0,
+      aborted: 0,
     };
     for (const t of tasks) c[t.task_status]++;
     return c;
@@ -144,7 +149,10 @@ export default function Dashboard() {
     }).length;
   }, [tasks]);
 
-  if (loading) return <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />;
+  if (loading)
+    return (
+      <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />
+    );
 
   return (
     <>
@@ -158,8 +166,12 @@ export default function Dashboard() {
               showIcon
               message={
                 <Space>
-                  <Typography.Text strong>{triageCount} invalid task{triageCount === 1 ? "" : "s"}</Typography.Text>
-                  <Typography.Text>waiting for triage — fix the root cause and re-Run, or Archive.</Typography.Text>
+                  <Typography.Text strong>
+                    {triageCount} invalid task{triageCount === 1 ? "" : "s"}
+                  </Typography.Text>
+                  <Typography.Text>
+                    waiting for triage — fix the root cause and re-Run, or Archive.
+                  </Typography.Text>
                 </Space>
               }
               action={
@@ -175,7 +187,9 @@ export default function Dashboard() {
               showIcon
               message={
                 <Space>
-                  <Typography.Text strong>{stuckCount} task{stuckCount === 1 ? "" : "s"}</Typography.Text>
+                  <Typography.Text strong>
+                    {stuckCount} task{stuckCount === 1 ? "" : "s"}
+                  </Typography.Text>
                   <Typography.Text>running for &gt; 2h — possibly stuck.</Typography.Text>
                 </Space>
               }
@@ -190,24 +204,26 @@ export default function Dashboard() {
       )}
 
       <Row gutter={[12, 12]}>
-        {(Object.entries(statusConfig) as [TaskStatus, (typeof statusConfig)[TaskStatus]][]).map(([status, cfg]) => (
-          <Col xs={8} sm={8} md={4} key={status}>
-            <Card
-              hoverable
-              size="small"
-              onClick={() => navigate(`/tasks?status=${status}`)}
-              style={{ cursor: "pointer", textAlign: "center" }}
-              styles={{ body: { padding: "12px 8px" } }}
-            >
-              <Statistic
-                title={cfg.label}
-                value={counts[status]}
-                prefix={cfg.icon}
-                valueStyle={{ color: cfg.color, fontSize: 24 }}
-              />
-            </Card>
-          </Col>
-        ))}
+        {(Object.entries(statusConfig) as [TaskStatus, (typeof statusConfig)[TaskStatus]][]).map(
+          ([status, cfg]) => (
+            <Col xs={8} sm={8} md={4} key={status}>
+              <Card
+                hoverable
+                size="small"
+                onClick={() => navigate(`/tasks?status=${status}`)}
+                style={{ cursor: "pointer", textAlign: "center" }}
+                styles={{ body: { padding: "12px 8px" } }}
+              >
+                <Statistic
+                  title={cfg.label}
+                  value={counts[status]}
+                  prefix={cfg.icon}
+                  valueStyle={{ color: cfg.color, fontSize: 24 }}
+                />
+              </Card>
+            </Col>
+          ),
+        )}
       </Row>
       <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
         <Col xs={24} md={12}>

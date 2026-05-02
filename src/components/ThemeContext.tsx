@@ -21,11 +21,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = () => setMode((m) => (m === "light" ? "dark" : "light"));
 
-  return (
-    <ThemeContext.Provider value={{ mode, toggle }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ mode, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeContext);

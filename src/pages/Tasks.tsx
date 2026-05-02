@@ -1,14 +1,40 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Tag, Button, Modal, Form, Select, message, Typography, Space,
-  Progress, Alert, Statistic, Card, Row, Col, Input, Checkbox, Table, Popconfirm, Tooltip,
-  Affix, Badge,
+  Tag,
+  Button,
+  Modal,
+  Form,
+  Select,
+  message,
+  Typography,
+  Space,
+  Progress,
+  Alert,
+  Statistic,
+  Card,
+  Row,
+  Col,
+  Input,
+  Checkbox,
+  Table,
+  Popconfirm,
+  Tooltip,
+  Affix,
+  Badge,
 } from "antd";
 import {
-  ReloadOutlined, ThunderboltOutlined,
-  CaretRightOutlined, DeleteOutlined, StopOutlined, PushpinOutlined, SyncOutlined,
-  FileTextOutlined, ClearOutlined, InboxOutlined, UndoOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+  CaretRightOutlined,
+  DeleteOutlined,
+  StopOutlined,
+  PushpinOutlined,
+  SyncOutlined,
+  FileTextOutlined,
+  ClearOutlined,
+  InboxOutlined,
+  UndoOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -20,8 +46,14 @@ import { useLocalStorageSet, useLocalStorageState } from "../hooks/useLocalStora
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
-  TaskResponse, TaskStatus, TaskRunResponse, PlanResponse,
-  AvResponse, SimulatorResponse, SamplerResponse, ExecutorResponse,
+  TaskResponse,
+  TaskStatus,
+  TaskRunResponse,
+  PlanResponse,
+  AvResponse,
+  SimulatorResponse,
+  SamplerResponse,
+  ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 
@@ -117,26 +149,29 @@ export default function Tasks() {
   // the column dropdown, and the bookmark are all coherent. Archived
   // visibility is derived from quickFilter alone in visibleMainTasks
   // (archived only when q === "archived").
-  const setQuickFilter = useCallback((q: QuickFilter) => {
-    setQuickFilterRaw(q);
-    setFilteredInfo((prev) => {
-      const next = { ...prev };
-      if (q === "all" || q === "archived") {
-        next.task_status = null;
-      } else if (q === "triage") {
-        next.task_status = ["invalid"];
-      } else {
-        next.task_status = [q];
-      }
-      return next;
-    });
-    // URL: ?triage=1 for the triage scope, ?status=<x> for a single
-    // status, ?archived=1 for the Archived chip, nothing for "all".
-    if (q === "triage") setSearchParams({ triage: "1" });
-    else if (q === "archived") setSearchParams({ archived: "1" });
-    else if (q === "all") setSearchParams({});
-    else setSearchParams({ status: q });
-  }, [setQuickFilterRaw, setFilteredInfo, setSearchParams]);
+  const setQuickFilter = useCallback(
+    (q: QuickFilter) => {
+      setQuickFilterRaw(q);
+      setFilteredInfo((prev) => {
+        const next = { ...prev };
+        if (q === "all" || q === "archived") {
+          next.task_status = null;
+        } else if (q === "triage") {
+          next.task_status = ["invalid"];
+        } else {
+          next.task_status = [q];
+        }
+        return next;
+      });
+      // URL: ?triage=1 for the triage scope, ?status=<x> for a single
+      // status, ?archived=1 for the Archived chip, nothing for "all".
+      if (q === "triage") setSearchParams({ triage: "1" });
+      else if (q === "archived") setSearchParams({ archived: "1" });
+      else if (q === "all") setSearchParams({});
+      else setSearchParams({ status: q });
+    },
+    [setQuickFilterRaw, setFilteredInfo, setSearchParams],
+  );
 
   // URL → state sync. The localStorage hook overrides the initial
   // useMemo on mount (because it reads its persisted value), so a
@@ -212,7 +247,11 @@ export default function Tasks() {
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
 
-  const [bulkProgress, setBulkProgress] = useState<{ total: number; done: number; errors: number } | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    total: number;
+    done: number;
+    errors: number;
+  } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [previewCount, setPreviewCount] = useState(0);
   const [filteredPlans, setFilteredPlans] = useState<PlanResponse[]>([]);
@@ -221,10 +260,15 @@ export default function Tasks() {
 
   const load = () => {
     setLoading(true);
-    api.listTasks().then(setTasks).finally(() => setLoading(false));
+    api
+      .listTasks()
+      .then(setTasks)
+      .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   // Realtime updates: coalesce bursty inserts/updates into a single refetch
   // per frame. SSE is always on — the Refresh button stays as a manual
@@ -237,10 +281,15 @@ export default function Tasks() {
       api.listTasks().then(setTasks);
     }, 250);
   }, []);
-  usePisaEvents(useCallback((ev) => {
-    if (ev.kind !== "row") return;
-    if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
-  }, [scheduleRefetch]));
+  usePisaEvents(
+    useCallback(
+      (ev) => {
+        if (ev.kind !== "row") return;
+        if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
+      },
+      [scheduleRefetch],
+    ),
+  );
   useEffect(() => {
     return () => {
       if (refetchTimer.current !== null) {
@@ -251,10 +300,18 @@ export default function Tasks() {
   }, []);
 
   const fetchResources = () =>
-    Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()])
-      .then(([p, a, s, sa]) => { setPlans(p); setAvs(a); setSimulators(s); setSamplers(sa); });
+    Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()]).then(
+      ([p, a, s, sa]) => {
+        setPlans(p);
+        setAvs(a);
+        setSimulators(s);
+        setSamplers(sa);
+      },
+    );
 
-  useEffect(() => { fetchResources(); }, []);
+  useEffect(() => {
+    fetchResources();
+  }, []);
 
   // One-shot executor cache for the log drawer title (hostname).
   useEffect(() => {
@@ -377,7 +434,9 @@ export default function Tasks() {
           ev.preventDefault();
           const id = list[curIdx].id;
           const isOpen = expandedRows.includes(id);
-          handleExpandedChange(isOpen ? expandedRows.filter((k) => k !== id) : [...expandedRows, id]);
+          handleExpandedChange(
+            isOpen ? expandedRows.filter((k) => k !== id) : [...expandedRows, id],
+          );
           break;
         }
         case "Enter": {
@@ -394,11 +453,21 @@ export default function Tasks() {
             title: "Keyboard shortcuts",
             content: (
               <ul style={{ paddingLeft: 16 }}>
-                <li><kbd>j</kbd> / <kbd>↓</kbd>  — next row</li>
-                <li><kbd>k</kbd> / <kbd>↑</kbd>  — previous row</li>
-                <li><kbd>Space</kbd> — expand / collapse current row</li>
-                <li><kbd>Enter</kbd> — open log for current row's latest attempt</li>
-                <li><kbd>?</kbd> — this cheat sheet</li>
+                <li>
+                  <kbd>j</kbd> / <kbd>↓</kbd> — next row
+                </li>
+                <li>
+                  <kbd>k</kbd> / <kbd>↑</kbd> — previous row
+                </li>
+                <li>
+                  <kbd>Space</kbd> — expand / collapse current row
+                </li>
+                <li>
+                  <kbd>Enter</kbd> — open log for current row's latest attempt
+                </li>
+                <li>
+                  <kbd>?</kbd> — this cheat sheet
+                </li>
               </ul>
             ),
             okText: "Close",
@@ -414,13 +483,23 @@ export default function Tasks() {
   // --- Actions ---
 
   const handleRun = async (id: number) => {
-    try { await api.updateTask(id, { task_status: "queued" }); message.success(`Task #${id} queued`); load(); }
-    catch (e) { message.error(String(e)); }
+    try {
+      await api.updateTask(id, { task_status: "queued" });
+      message.success(`Task #${id} queued`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
 
   const handleStop = async (id: number) => {
-    try { await api.stopTask(id); message.success(`Task #${id} stopped`); load(); }
-    catch (e) { message.error(String(e)); }
+    try {
+      await api.stopTask(id);
+      message.success(`Task #${id} stopped`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
 
   // Triage action for `invalid` tasks. Archives instead of mutating
@@ -428,39 +507,73 @@ export default function Tasks() {
   // intact. The default Tasks view hides archived rows; the quick-
   // filter chips, including the "Archived" chip, reveal them.
   const handleArchive = async (id: number) => {
-    try { await api.archiveTask(id); message.success(`Task #${id} archived`); load(); }
-    catch (e) { message.error(String(e)); }
+    try {
+      await api.archiveTask(id);
+      message.success(`Task #${id} archived`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
   const handleUnarchive = async (id: number) => {
-    try { await api.unarchiveTask(id); message.success(`Task #${id} unarchived`); load(); }
-    catch (e) { message.error(String(e)); }
+    try {
+      await api.unarchiveTask(id);
+      message.success(`Task #${id} unarchived`);
+      load();
+    } catch (e) {
+      message.error(String(e));
+    }
   };
 
   const handleBulkRun = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && RUNNABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
-    try { await api.batchRunTasks(ids); message.success(`Queued ${ids.length} tasks`); }
-    catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]); load();
+    const ids = tasks
+      .filter((t) => selectedRowKeys.includes(t.id) && RUNNABLE_STATUSES.includes(t.task_status))
+      .map((t) => t.id);
+    try {
+      await api.batchRunTasks(ids);
+      message.success(`Queued ${ids.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    load();
   };
 
   const handleBulkStop = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && STOPPABLE_STATUSES.includes(t.task_status)).map((t) => t.id);
-    try { await api.batchStopTasks(ids); message.success(`Stopped ${ids.length} tasks`); }
-    catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]); load();
+    const ids = tasks
+      .filter((t) => selectedRowKeys.includes(t.id) && STOPPABLE_STATUSES.includes(t.task_status))
+      .map((t) => t.id);
+    try {
+      await api.batchStopTasks(ids);
+      message.success(`Stopped ${ids.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    load();
   };
 
   const handleBulkArchive = async () => {
     const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && !t.archived).map((t) => t.id);
-    try { await api.batchArchiveTasks(ids); message.success(`Archived ${ids.length} tasks`); }
-    catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]); load();
+    try {
+      await api.batchArchiveTasks(ids);
+      message.success(`Archived ${ids.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    load();
   };
 
   const handleBulkDelete = async () => {
-    try { await api.batchDeleteTasks(selectedRowKeys as number[]); message.success(`Deleted ${selectedRowKeys.length} tasks`); }
-    catch (e) { message.error(String(e)); }
-    setSelectedRowKeys([]); load();
+    try {
+      await api.batchDeleteTasks(selectedRowKeys as number[]);
+      message.success(`Deleted ${selectedRowKeys.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    load();
   };
 
   // --- Create ---
@@ -470,17 +583,34 @@ export default function Tasks() {
 
   // --- Bulk create ---
 
-  const handleBulkCreate = async (values: { av_ids: number[]; simulator_ids: number[]; sampler_ids: number[]; plan_ids: number[]; plan_filter?: string }) => {
-    const selectedPlans = values.plan_ids?.length ? values.plan_ids
-      : plans.filter((p) => values.plan_filter ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase()) : true).map((p) => p.id);
+  const handleBulkCreate = async (values: {
+    av_ids: number[];
+    simulator_ids: number[];
+    sampler_ids: number[];
+    plan_ids: number[];
+    plan_filter?: string;
+  }) => {
+    const selectedPlans = values.plan_ids?.length
+      ? values.plan_ids
+      : plans
+          .filter((p) =>
+            values.plan_filter
+              ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
+              : true,
+          )
+          .map((p) => p.id);
     const combos: Partial<TaskResponse>[] = [];
     for (const av_id of values.av_ids)
       for (const simulator_id of values.simulator_ids)
         for (const sampler_id of values.sampler_ids)
           for (const plan_id of selectedPlans)
             combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "idle" });
-    if (!combos.length) { message.warning("No combinations"); return; }
-    setCreating(true); setBulkProgress({ total: combos.length, done: 0, errors: 0 });
+    if (!combos.length) {
+      message.warning("No combinations");
+      return;
+    }
+    setCreating(true);
+    setBulkProgress({ total: combos.length, done: 0, errors: 0 });
     try {
       const { done, errors } = await api.batchCreateTasks(combos, (d, e, t) =>
         setBulkProgress({ total: t, done: d, errors: e }),
@@ -494,14 +624,18 @@ export default function Tasks() {
       message.error(String(e));
     } finally {
       setCreating(false);
-      setBulkModalOpen(false); bulkForm.resetFields(); setBulkProgress(null); load();
+      setBulkModalOpen(false);
+      bulkForm.resetFields();
+      setBulkProgress(null);
+      load();
     }
   };
 
   const computeFilteredPlans = (): PlanResponse[] => {
     const v = bulkForm.getFieldsValue();
     if (v.plan_ids?.length) return plans.filter((p) => v.plan_ids.includes(p.id));
-    if (v.plan_filter) return plans.filter((p) => p.name.toLowerCase().includes(v.plan_filter.toLowerCase()));
+    if (v.plan_filter)
+      return plans.filter((p) => p.name.toLowerCase().includes(v.plan_filter.toLowerCase()));
     return plans;
   };
 
@@ -509,7 +643,12 @@ export default function Tasks() {
     const v = bulkForm.getFieldsValue();
     const matched = computeFilteredPlans();
     setFilteredPlans(matched);
-    setPreviewCount((v.av_ids?.length || 0) * (v.simulator_ids?.length || 0) * (v.sampler_ids?.length || 0) * matched.length);
+    setPreviewCount(
+      (v.av_ids?.length || 0) *
+        (v.simulator_ids?.length || 0) *
+        (v.sampler_ids?.length || 0) *
+        matched.length,
+    );
     setConfirmed(false);
   };
 
@@ -535,21 +674,39 @@ export default function Tasks() {
   };
 
   const expandedColumns = [
-    { title: "AV", dataIndex: "av_id", key: "av_id", width: 100, ellipsis: true,
+    {
+      title: "AV",
+      dataIndex: "av_id",
+      key: "av_id",
+      width: 100,
+      ellipsis: true,
       render: (id: number) => avMap.get(id) ?? `#${id}`,
       filters: avs.map((a) => ({ text: a.name, value: a.id })),
       filteredValue: filteredInfo.av_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.av_id === value },
-    { title: "Simulator", dataIndex: "simulator_id", key: "simulator_id", width: 100, ellipsis: true,
+      onFilter: (value: unknown, record: TaskResponse) => record.av_id === value,
+    },
+    {
+      title: "Simulator",
+      dataIndex: "simulator_id",
+      key: "simulator_id",
+      width: 100,
+      ellipsis: true,
       render: (id: number) => simMap.get(id) ?? `#${id}`,
       filters: simulators.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.simulator_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.simulator_id === value },
-    { title: "Sampler", dataIndex: "sampler_id", key: "sampler_id", width: 80, ellipsis: true,
+      onFilter: (value: unknown, record: TaskResponse) => record.simulator_id === value,
+    },
+    {
+      title: "Sampler",
+      dataIndex: "sampler_id",
+      key: "sampler_id",
+      width: 80,
+      ellipsis: true,
       render: (id: number) => samplerMap.get(id) ?? `#${id}`,
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.sampler_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value },
+      onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value,
+    },
   ];
 
   // Sort is fully controlled — visibleMainTasks pre-sorts (with pinned
@@ -563,99 +720,145 @@ export default function Tasks() {
     sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 60, ellipsis: true,
-      sorter: true, sortOrder: orderFor("id") },
-    { title: "Plan", dataIndex: "plan_id", key: "plan_id", width: 250, ellipsis: true,
+    {
+      title: "ID",
+      dataIndex: "id",
+      key: "id",
+      width: 60,
+      ellipsis: true,
+      sorter: true,
+      sortOrder: orderFor("id"),
+    },
+    {
+      title: "Plan",
+      dataIndex: "plan_id",
+      key: "plan_id",
+      width: 250,
+      ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
       filteredValue: filteredInfo.plan_id ?? null,
-      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? "") },
+      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
+    },
     ...(compactView ? [setupColumn] : expandedColumns),
-    { title: "Status", dataIndex: "task_status", key: "task_status", width: 110,
-      filters: (["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]).map((s) => ({ text: s, value: s })),
+    {
+      title: "Status",
+      dataIndex: "task_status",
+      key: "task_status",
+      width: 110,
+      filters: (
+        ["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]
+      ).map((s) => ({ text: s, value: s })),
       filteredValue: filteredInfo.task_status ?? null,
       onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
       render: (status: TaskStatus) => (
-        <Tag color={statusColors[status]} icon={status === "running" ? <SyncOutlined spin /> : undefined}>
+        <Tag
+          color={statusColors[status]}
+          icon={status === "running" ? <SyncOutlined spin /> : undefined}
+        >
           {status.toUpperCase()}
         </Tag>
-      ) },
-    { title: "Attempts", dataIndex: "attempt_count", key: "attempt_count", width: 70,
-      sorter: true, sortOrder: orderFor("attempt_count") },
-    { title: "Last Run", key: "last_run", width: 170,
-      render: (_: unknown, r: TaskResponse) => { const t = r.task_run?.[0]?.started_at; return t ? new Date(t).toLocaleString() : "-"; },
-      sorter: true, sortOrder: orderFor("last_run") },
-    { title: "", key: "actions", width: 144, render: (_: unknown, record: TaskResponse) => {
-      const canRun = RUNNABLE_STATUSES.includes(record.task_status);
-      const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-      // Archive button is only the triage outcome for invalid tasks; if a row
-      // is already archived (visible only with the toggle on), offer Unarchive.
-      const canArchive = record.task_status === "invalid" && !record.archived;
-      const isPinned = pinnedIds.has(record.id);
-      const latestRun = record.task_run?.[0];
-      // Swallow row-level clicks so any action button (log / pin / run /
-      // stop / its Popconfirm popup) doesn't also trigger the row's
-      // expandRowByClick handler.
-      return (
-        <Space size={2} onClick={(e) => e.stopPropagation()}>
-          <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
-            <Button
-              size="small"
-              icon={<FileTextOutlined />}
-              disabled={!latestRun}
-              onClick={() => latestRun && openLog(latestRun)}
-            />
-          </Tooltip>
-          <Tooltip title={isPinned ? "Unpin" : "Pin"}>
-            <Button
-              size="small"
-              type={isPinned ? "primary" : "default"}
-              icon={<PushpinOutlined />}
-              onClick={() => {
-                setPinnedIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(record.id)) next.delete(record.id);
-                  else next.add(record.id);
-                  return next;
-                });
-              }}
-            />
-          </Tooltip>
-          {canStop ? (
-            <ConfirmIconButton
-              size="small"
-              icon={<StopOutlined />}
-              tooltip="Stop"
-              confirmTitle="Stop?"
-              onConfirm={() => handleStop(record.id)}
-            />
-          ) : (
-            <ConfirmIconButton
-              size="small"
-              type="primary"
-              icon={<CaretRightOutlined />}
-              disabled={!canRun}
-              tooltip={canRun ? "Run" : "Not runnable in this state"}
-              confirmTitle="Run?"
-              onConfirm={() => handleRun(record.id)}
-            />
-          )}
-          {canArchive && (
-            <ConfirmIconButton
-              size="small"
-              icon={<InboxOutlined />}
-              tooltip="Not our problem — archive (hides from default view)"
-              confirmTitle="Archive this invalid task?"
-              onConfirm={() => handleArchive(record.id)}
-            />
-          )}
-          {record.archived && (
-            <Tooltip title="Unarchive (return to default view)">
-              <Button size="small" icon={<UndoOutlined />} onClick={() => handleUnarchive(record.id)} />
+      ),
+    },
+    {
+      title: "Attempts",
+      dataIndex: "attempt_count",
+      key: "attempt_count",
+      width: 70,
+      sorter: true,
+      sortOrder: orderFor("attempt_count"),
+    },
+    {
+      title: "Last Run",
+      key: "last_run",
+      width: 170,
+      render: (_: unknown, r: TaskResponse) => {
+        const t = r.task_run?.[0]?.started_at;
+        return t ? new Date(t).toLocaleString() : "-";
+      },
+      sorter: true,
+      sortOrder: orderFor("last_run"),
+    },
+    {
+      title: "",
+      key: "actions",
+      width: 144,
+      render: (_: unknown, record: TaskResponse) => {
+        const canRun = RUNNABLE_STATUSES.includes(record.task_status);
+        const canStop = STOPPABLE_STATUSES.includes(record.task_status);
+        // Archive button is only the triage outcome for invalid tasks; if a row
+        // is already archived (visible only with the toggle on), offer Unarchive.
+        const canArchive = record.task_status === "invalid" && !record.archived;
+        const isPinned = pinnedIds.has(record.id);
+        const latestRun = record.task_run?.[0];
+        // Swallow row-level clicks so any action button (log / pin / run /
+        // stop / its Popconfirm popup) doesn't also trigger the row's
+        // expandRowByClick handler.
+        return (
+          <Space size={2} onClick={(e) => e.stopPropagation()}>
+            <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
+              <Button
+                size="small"
+                icon={<FileTextOutlined />}
+                disabled={!latestRun}
+                onClick={() => latestRun && openLog(latestRun)}
+              />
             </Tooltip>
-          )}
-        </Space>
-      );
-    }},
+            <Tooltip title={isPinned ? "Unpin" : "Pin"}>
+              <Button
+                size="small"
+                type={isPinned ? "primary" : "default"}
+                icon={<PushpinOutlined />}
+                onClick={() => {
+                  setPinnedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(record.id)) next.delete(record.id);
+                    else next.add(record.id);
+                    return next;
+                  });
+                }}
+              />
+            </Tooltip>
+            {canStop ? (
+              <ConfirmIconButton
+                size="small"
+                icon={<StopOutlined />}
+                tooltip="Stop"
+                confirmTitle="Stop?"
+                onConfirm={() => handleStop(record.id)}
+              />
+            ) : (
+              <ConfirmIconButton
+                size="small"
+                type="primary"
+                icon={<CaretRightOutlined />}
+                disabled={!canRun}
+                tooltip={canRun ? "Run" : "Not runnable in this state"}
+                confirmTitle="Run?"
+                onConfirm={() => handleRun(record.id)}
+              />
+            )}
+            {canArchive && (
+              <ConfirmIconButton
+                size="small"
+                icon={<InboxOutlined />}
+                tooltip="Not our problem — archive (hides from default view)"
+                confirmTitle="Archive this invalid task?"
+                onConfirm={() => handleArchive(record.id)}
+              />
+            )}
+            {record.archived && (
+              <Tooltip title="Unarchive (return to default view)">
+                <Button
+                  size="small"
+                  icon={<UndoOutlined />}
+                  onClick={() => handleUnarchive(record.id)}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
   ];
 
   // --- Selection bar ---
@@ -663,78 +866,136 @@ export default function Tasks() {
   // Selection bar floats at the bottom of the viewport via Affix so the
   // user can scroll the table without losing track of what they've
   // selected. Renders nothing when nothing is selected.
-  const selectionBar = selectedRowKeys.length > 0 && (() => {
-    const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-    // "Select all" operates on the *filtered* list, not the global
-    // tasks array — pre-page-aware so the user doesn't have to walk
-    // the pagination to bulk-act on a filtered scope (e.g. all
-    // invalid + !archived after picking the Triage chip).
-    const visibleIds = visibleMainTasks.map((t) => t.id);
-    const allVisibleSelected =
-      visibleIds.length > 0 && visibleIds.every((id) => selectedRowKeys.includes(id));
-    const runnableCount = selected.filter((t) => RUNNABLE_STATUSES.includes(t.task_status)).length;
-    const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
-    const archivableCount = selected.filter((t) => !t.archived).length;
-    return (
-      <Affix offsetBottom={12} style={{ position: "fixed", left: 16, right: 16, bottom: 12, zIndex: 50 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 8,
-            padding: "8px 14px",
-            borderRadius: 8,
-            background: "var(--ant-color-bg-elevated, rgba(255,255,255,0.97))",
-            boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
-            border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-            backdropFilter: "blur(6px)",
-          }}
+  const selectionBar =
+    selectedRowKeys.length > 0 &&
+    (() => {
+      const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
+      // "Select all" operates on the *filtered* list, not the global
+      // tasks array — pre-page-aware so the user doesn't have to walk
+      // the pagination to bulk-act on a filtered scope (e.g. all
+      // invalid + !archived after picking the Triage chip).
+      const visibleIds = visibleMainTasks.map((t) => t.id);
+      const allVisibleSelected =
+        visibleIds.length > 0 && visibleIds.every((id) => selectedRowKeys.includes(id));
+      const runnableCount = selected.filter((t) =>
+        RUNNABLE_STATUSES.includes(t.task_status),
+      ).length;
+      const stoppableCount = selected.filter((t) =>
+        STOPPABLE_STATUSES.includes(t.task_status),
+      ).length;
+      const archivableCount = selected.filter((t) => !t.archived).length;
+      return (
+        <Affix
+          offsetBottom={12}
+          style={{ position: "fixed", left: 16, right: 16, bottom: 12, zIndex: 50 }}
         >
-          <Space>
-            <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
-            {!allVisibleSelected ? (
-              <Button
-                size="small"
-                type="link"
-                style={{ padding: 0 }}
-                onClick={() => setSelectedRowKeys(visibleIds)}
-              >
-                Select all {visibleIds.length} filtered
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              padding: "8px 14px",
+              borderRadius: 8,
+              background: "var(--ant-color-bg-elevated, rgba(255,255,255,0.97))",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+              border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            <Space>
+              <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
+              {!allVisibleSelected ? (
+                <Button
+                  size="small"
+                  type="link"
+                  style={{ padding: 0 }}
+                  onClick={() => setSelectedRowKeys(visibleIds)}
+                >
+                  Select all {visibleIds.length} filtered
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  type="link"
+                  style={{ padding: 0 }}
+                  onClick={() => setSelectedRowKeys([])}
+                >
+                  Deselect all
+                </Button>
+              )}
+            </Space>
+            <Space>
+              {runnableCount > 0 && (
+                <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}>
+                  <Button size="small" type="primary" icon={<CaretRightOutlined />}>
+                    Run {runnableCount}
+                  </Button>
+                </Popconfirm>
+              )}
+              {stoppableCount > 0 && (
+                <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}>
+                  <Button size="small" icon={<StopOutlined />}>
+                    Stop {stoppableCount}
+                  </Button>
+                </Popconfirm>
+              )}
+              {archivableCount > 0 && (
+                <Popconfirm title={`Archive ${archivableCount}?`} onConfirm={handleBulkArchive}>
+                  <Button size="small" icon={<InboxOutlined />}>
+                    Archive {archivableCount}
+                  </Button>
+                </Popconfirm>
+              )}
+              <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}>
+                <Button size="small" danger icon={<DeleteOutlined />}>
+                  Delete {selectedRowKeys.length}
+                </Button>
+              </Popconfirm>
+              <Button size="small" onClick={() => setSelectedRowKeys([])}>
+                Clear
               </Button>
-            ) : (
-              <Button
-                size="small"
-                type="link"
-                style={{ padding: 0 }}
-                onClick={() => setSelectedRowKeys([])}
-              >
-                Deselect all
-              </Button>
-            )}
-          </Space>
-          <Space>
-            {runnableCount > 0 && <Popconfirm title={`Run ${runnableCount}?`} onConfirm={handleBulkRun}><Button size="small" type="primary" icon={<CaretRightOutlined />}>Run {runnableCount}</Button></Popconfirm>}
-            {stoppableCount > 0 && <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={handleBulkStop}><Button size="small" icon={<StopOutlined />}>Stop {stoppableCount}</Button></Popconfirm>}
-            {archivableCount > 0 && <Popconfirm title={`Archive ${archivableCount}?`} onConfirm={handleBulkArchive}><Button size="small" icon={<InboxOutlined />}>Archive {archivableCount}</Button></Popconfirm>}
-            <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={handleBulkDelete}><Button size="small" danger icon={<DeleteOutlined />}>Delete {selectedRowKeys.length}</Button></Popconfirm>
-            <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear</Button>
-          </Space>
-        </div>
-      </Affix>
-    );
-  })();
+            </Space>
+          </div>
+        </Affix>
+      );
+    })();
 
   return (
     <>
       <PageHeader title="Tasks">
-        <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => { fetchResources().then(() => { setConfirmed(false); setFilteredPlans([]); setPreviewCount(0); setBulkModalOpen(true); }); }}>Create</Button>
-        <Button icon={<ClearOutlined />} onClick={clearFilters} disabled={!hasActiveFilters && quickFilter === "all"}>Clear Filters</Button>
-        <Checkbox checked={compactView} onChange={(e) => setCompactView(e.target.checked)} style={{ marginLeft: 4 }}>
+        <Button
+          type="primary"
+          icon={<ThunderboltOutlined />}
+          onClick={() => {
+            fetchResources().then(() => {
+              setConfirmed(false);
+              setFilteredPlans([]);
+              setPreviewCount(0);
+              setBulkModalOpen(true);
+            });
+          }}
+        >
+          Create
+        </Button>
+        <Button
+          icon={<ClearOutlined />}
+          onClick={clearFilters}
+          disabled={!hasActiveFilters && quickFilter === "all"}
+        >
+          Clear Filters
+        </Button>
+        <Checkbox
+          checked={compactView}
+          onChange={(e) => setCompactView(e.target.checked)}
+          style={{ marginLeft: 4 }}
+        >
           Compact
         </Checkbox>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>
+          Refresh
+        </Button>
       </PageHeader>
 
       {/* Quick-filter chips: replace the dropdown discovery problem.
@@ -790,7 +1051,16 @@ export default function Tasks() {
         // expanded.)
         scroll={{ x: compactView ? 1060 : 1120 }}
         tableLayout="fixed"
-        pagination={{ current: currentPage, pageSize, showSizeChanger: true, showTotal: (t) => `${t} tasks`, onChange: (p, s) => { setCurrentPage(p); setPageSize(s); } }}
+        pagination={{
+          current: currentPage,
+          pageSize,
+          showSizeChanger: true,
+          showTotal: (t) => `${t} tasks`,
+          onChange: (p, s) => {
+            setCurrentPage(p);
+            setPageSize(s);
+          },
+        }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         onChange={(_p, filters, sorter) => {
           setFilteredInfo(filters);
@@ -835,50 +1105,130 @@ export default function Tasks() {
           handleCreate path were dropped to remove the "two ways to do
           one job" problem. */}
       {/* Bulk create */}
-      <Modal title="Bulk Create Tasks" open={bulkModalOpen} onCancel={() => { if (!creating) { setBulkModalOpen(false); setBulkProgress(null); } }} footer={null} width={640}>
-        <Typography.Paragraph type="secondary">Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.</Typography.Paragraph>
-        <Form form={bulkForm} layout="vertical" onFinish={handleBulkCreate} onValuesChange={updatePreview}>
+      <Modal
+        title="Bulk Create Tasks"
+        open={bulkModalOpen}
+        onCancel={() => {
+          if (!creating) {
+            setBulkModalOpen(false);
+            setBulkProgress(null);
+          }
+        }}
+        footer={null}
+        width={640}
+      >
+        <Typography.Paragraph type="secondary">
+          Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.
+        </Typography.Paragraph>
+        <Form
+          form={bulkForm}
+          layout="vertical"
+          onFinish={handleBulkCreate}
+          onValuesChange={updatePreview}
+        >
           <Form.Item name="av_ids" label="AVs" rules={[{ required: true }]}>
-            <Select mode="multiple" options={avs.map((a) => ({ label: a.name, value: a.id }))} placeholder="Select AVs" />
+            <Select
+              mode="multiple"
+              options={avs.map((a) => ({ label: a.name, value: a.id }))}
+              placeholder="Select AVs"
+            />
           </Form.Item>
           <Form.Item name="simulator_ids" label="Simulators" rules={[{ required: true }]}>
-            <Select mode="multiple" options={simulators.map((s) => ({ label: s.name, value: s.id }))} placeholder="Select Simulators" />
+            <Select
+              mode="multiple"
+              options={simulators.map((s) => ({ label: s.name, value: s.id }))}
+              placeholder="Select Simulators"
+            />
           </Form.Item>
           <Form.Item name="sampler_ids" label="Samplers" rules={[{ required: true }]}>
-            <Select mode="multiple" options={samplers.map((s) => ({ label: s.name, value: s.id }))} placeholder="Select Samplers" />
+            <Select
+              mode="multiple"
+              options={samplers.map((s) => ({ label: s.name, value: s.id }))}
+              placeholder="Select Samplers"
+            />
           </Form.Item>
           <Form.Item name="plan_filter" label="Plan name filter">
             <Input placeholder="e.g. tyms, route" allowClear />
           </Form.Item>
           <Form.Item name="plan_ids" label="Plans (leave empty for all matching)">
-            <Select mode="multiple" options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))} showSearch optionFilterProp="label" placeholder="All plans" maxTagCount={5} />
+            <Select
+              mode="multiple"
+              options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))}
+              showSearch
+              optionFilterProp="label"
+              placeholder="All plans"
+              maxTagCount={5}
+            />
           </Form.Item>
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={8}><Card size="small"><Statistic title="Matched" value={filteredPlans.length} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Total plans" value={plans.length} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Tasks" value={previewCount} /></Card></Col>
+            <Col span={8}>
+              <Card size="small">
+                <Statistic title="Matched" value={filteredPlans.length} />
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card size="small">
+                <Statistic title="Total plans" value={plans.length} />
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card size="small">
+                <Statistic title="Tasks" value={previewCount} />
+              </Card>
+            </Col>
           </Row>
           {filteredPlans.length > 0 && (
-            <Table dataSource={filteredPlans} columns={[
-              { title: "ID", dataIndex: "id", key: "id", width: 60 },
-              { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
-              { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
-            ]} rowKey="id" size="small" pagination={{ pageSize: 5, size: "small" }} style={{ marginBottom: 16 }} />
+            <Table
+              dataSource={filteredPlans}
+              columns={[
+                { title: "ID", dataIndex: "id", key: "id", width: 60 },
+                { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
+                { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
+              ]}
+              rowKey="id"
+              size="small"
+              pagination={{ pageSize: 5, size: "small" }}
+              style={{ marginBottom: 16 }}
+            />
           )}
           {bulkProgress && (
             <div style={{ marginBottom: 16 }}>
-              <Progress percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)} status={bulkProgress.errors > 0 ? "exception" : "active"} />
-              <Typography.Text>{bulkProgress.done}/{bulkProgress.total}{bulkProgress.errors > 0 && <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>}</Typography.Text>
+              <Progress
+                percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)}
+                status={bulkProgress.errors > 0 ? "exception" : "active"}
+              />
+              <Typography.Text>
+                {bulkProgress.done}/{bulkProgress.total}
+                {bulkProgress.errors > 0 && (
+                  <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>
+                )}
+              </Typography.Text>
             </div>
           )}
-          {previewCount > 5000 && <Alert type="warning" message={`This will create ${previewCount.toLocaleString()} tasks.`} style={{ marginBottom: 16 }} />}
+          {previewCount > 5000 && (
+            <Alert
+              type="warning"
+              message={`This will create ${previewCount.toLocaleString()} tasks.`}
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Form.Item style={{ marginBottom: 8 }}>
-            <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} disabled={!previewCount}>
+            <Checkbox
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              disabled={!previewCount}
+            >
               I confirm creating {previewCount.toLocaleString()} tasks
             </Checkbox>
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={creating} block disabled={!previewCount || !confirmed}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={creating}
+              block
+              disabled={!previewCount || !confirmed}
+            >
               Create {previewCount.toLocaleString()} Tasks
             </Button>
           </Form.Item>
