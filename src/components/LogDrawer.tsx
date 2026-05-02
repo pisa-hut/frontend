@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Drawer, Space, Button, Tag, Typography, Spin, Empty, Popconfirm, message } from "antd";
 import {
   CaretRightOutlined,
@@ -9,10 +9,10 @@ import {
   SyncOutlined,
 } from "@ant-design/icons";
 import { api } from "../api/client";
-import { usePisaEvents } from "../api/events";
 import type { TaskResponse, TaskRunResponse, ExecutorResponse } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
+import { useLogStream } from "../hooks/useLogStream";
 
 interface Props {
   run: TaskRunResponse | null;
@@ -35,97 +35,8 @@ interface Props {
  *  the user can flow straight to the next task without manually
  *  closing + re-clicking. */
 export default function LogDrawer({ run, task, taskLabel, executor, onClose }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
   const paneRef = useRef<HTMLPreElement | null>(null);
-
-  // Lossless snapshot ↔ SSE handoff (Codex review):
-  //   - cursorRef tracks the UTF-8 byte offset of the currently-shown log
-  //     content. After the snapshot lands it equals byteLength(snapshot);
-  //     after each appended SSE chunk it advances to that chunk's
-  //     end_offset.
-  //   - bufferRef collects SSE chunks that arrive while the snapshot is
-  //     in flight. When the snapshot resolves we drop any chunk whose
-  //     end_offset is already covered by the snapshot, trim the prefix
-  //     of any partially-overlapping chunk, then append the rest.
-  // This replaces the old "drop SSE while loading" path which silently
-  // truncated the live tail of any run that emitted output during the
-  // ~50–200 ms snapshot round-trip.
-  const cursorRef = useRef<number>(0);
-  const bufferRef = useRef<Array<{ chunk: string; end_offset: number }>>([]);
-  const utf8 = useMemo(() => new TextEncoder(), []);
-
-  useEffect(() => {
-    if (!run) {
-      setContent(null);
-      setError(undefined);
-      return;
-    }
-    setLoading(true);
-    setContent(null);
-    setError(undefined);
-    cursorRef.current = 0;
-    bufferRef.current = [];
-    api
-      .getTaskRunLog(run.id)
-      .then((snapshot) => {
-        const snap = snapshot ?? "";
-        cursorRef.current = utf8.encode(snap).length;
-        // Drain anything that arrived during the fetch. Each chunk's
-        // start_offset = end_offset - byteLength(chunk).
-        let merged = snap;
-        for (const ev of bufferRef.current) {
-          const chunkBytes = utf8.encode(ev.chunk).length;
-          const startOffset = ev.end_offset - chunkBytes;
-          if (ev.end_offset <= cursorRef.current) {
-            continue; // entirely covered by snapshot
-          }
-          if (startOffset >= cursorRef.current) {
-            merged += ev.chunk;
-          } else {
-            // straddling: the first (cursor - start) bytes are already
-            // in the snapshot. Trim the prefix on a UTF-8 byte boundary.
-            const skipBytes = cursorRef.current - startOffset;
-            const tail = utf8.encode(ev.chunk).slice(skipBytes);
-            merged += new TextDecoder("utf-8").decode(tail);
-          }
-          cursorRef.current = ev.end_offset;
-        }
-        bufferRef.current = [];
-        setContent(merged);
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [run?.id, utf8]);
-
-  usePisaEvents(
-    useCallback(
-      (ev) => {
-        if (!run) return;
-        if (ev.kind !== "log") return;
-        if (ev.task_run_id !== run.id) return;
-        if (loading) {
-          // Snapshot still in flight — buffer. We'll dedupe by offset
-          // when the fetch resolves.
-          bufferRef.current.push({ chunk: ev.chunk, end_offset: ev.end_offset });
-          return;
-        }
-        // Same dedupe rule as the post-snapshot drain.
-        if (ev.end_offset <= cursorRef.current) return;
-        const chunkBytes = utf8.encode(ev.chunk).length;
-        const startOffset = ev.end_offset - chunkBytes;
-        let toAppend = ev.chunk;
-        if (startOffset < cursorRef.current) {
-          const skipBytes = cursorRef.current - startOffset;
-          toAppend = new TextDecoder("utf-8").decode(utf8.encode(ev.chunk).slice(skipBytes));
-        }
-        cursorRef.current = ev.end_offset;
-        setContent((prev) => (prev ?? "") + toAppend);
-      },
-      [run?.id, loading, utf8],
-    ),
-  );
+  const { content, loading, error } = useLogStream(run?.id ?? null);
 
   // Always stick to the tail — each content update (initial snapshot and
   // every live SSE chunk) scrolls to the bottom so the user sees the
