@@ -1,25 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  Tag,
-  Button,
-  Modal,
-  Form,
-  Select,
-  message,
-  Typography,
-  Space,
-  Progress,
-  Alert,
-  Statistic,
-  Card,
-  Row,
-  Col,
-  Input,
-  Checkbox,
-  Table,
-  Tooltip,
-} from "antd";
+import { Tag, Button, Modal, message, Typography, Space, Checkbox, Table, Tooltip } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
@@ -55,6 +36,7 @@ import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
 import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
+import CreateTaskModal from "../components/tasks/CreateTaskModal";
 
 // Everything that isn't currently queued or running is re-runnable.
 // Shared with LogDrawer via api/types so a Run from a historical
@@ -215,22 +197,14 @@ export default function Tasks() {
   }, []);
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [bulkForm] = Form.useForm();
 
+  // Resource lists used by the bulk-create modal. Page owns them so a
+  // refresh button (or a future SSE update) can re-populate without
+  // re-mounting the modal.
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
-
-  const [bulkProgress, setBulkProgress] = useState<{
-    total: number;
-    done: number;
-    errors: number;
-  } | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
-  const [previewCount, setPreviewCount] = useState(0);
-  const [filteredPlans, setFilteredPlans] = useState<PlanResponse[]>([]);
 
   // --- Data loading ---
 
@@ -552,81 +526,9 @@ export default function Tasks() {
     load();
   };
 
-  // --- Create ---
-  // (Single-task create is the N=1 case of bulk create; no separate
-  //  handler. Bulk modal renders Selects in `mode="multiple"` so the
-  //  user can pick exactly one of each AV/Sim/Sampler/Plan.)
-
-  // --- Bulk create ---
-
-  const handleBulkCreate = async (values: {
-    av_ids: number[];
-    simulator_ids: number[];
-    sampler_ids: number[];
-    plan_ids: number[];
-    plan_filter?: string;
-  }) => {
-    const selectedPlans = values.plan_ids?.length
-      ? values.plan_ids
-      : plans
-          .filter((p) =>
-            values.plan_filter
-              ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
-              : true,
-          )
-          .map((p) => p.id);
-    const combos: Partial<TaskResponse>[] = [];
-    for (const av_id of values.av_ids)
-      for (const simulator_id of values.simulator_ids)
-        for (const sampler_id of values.sampler_ids)
-          for (const plan_id of selectedPlans)
-            combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "idle" });
-    if (!combos.length) {
-      message.warning("No combinations");
-      return;
-    }
-    setCreating(true);
-    setBulkProgress({ total: combos.length, done: 0, errors: 0 });
-    try {
-      const { done, errors } = await api.batchCreateTasks(combos, (d, e, t) =>
-        setBulkProgress({ total: t, done: d, errors: e }),
-      );
-      if (errors === 0) {
-        message.success(`Created ${done} tasks`);
-      } else {
-        message.warning(`Created ${done}, ${errors} failed`);
-      }
-    } catch (e) {
-      message.error(String(e));
-    } finally {
-      setCreating(false);
-      setBulkModalOpen(false);
-      bulkForm.resetFields();
-      setBulkProgress(null);
-      load();
-    }
-  };
-
-  const computeFilteredPlans = (): PlanResponse[] => {
-    const v = bulkForm.getFieldsValue();
-    if (v.plan_ids?.length) return plans.filter((p) => v.plan_ids.includes(p.id));
-    if (v.plan_filter)
-      return plans.filter((p) => p.name.toLowerCase().includes(v.plan_filter.toLowerCase()));
-    return plans;
-  };
-
-  const updatePreview = () => {
-    const v = bulkForm.getFieldsValue();
-    const matched = computeFilteredPlans();
-    setFilteredPlans(matched);
-    setPreviewCount(
-      (v.av_ids?.length || 0) *
-        (v.simulator_ids?.length || 0) *
-        (v.sampler_ids?.length || 0) *
-        matched.length,
-    );
-    setConfirmed(false);
-  };
+  // Single-task create is the N=1 case of the bulk modal — the same
+  // Selects in `mode="multiple"` cover both. The form, preview state,
+  // and progress state live inside CreateTaskModal.
 
   // --- Columns ---
 
@@ -857,12 +759,7 @@ export default function Tasks() {
           type="primary"
           icon={<ThunderboltOutlined />}
           onClick={() => {
-            fetchResources().then(() => {
-              setConfirmed(false);
-              setFilteredPlans([]);
-              setPreviewCount(0);
-              setBulkModalOpen(true);
-            });
+            fetchResources().then(() => setBulkModalOpen(true));
           }}
         >
           Create
@@ -953,140 +850,15 @@ export default function Tasks() {
         }}
       />
 
-      {/* Single Create + Bulk Create are one and the same — Bulk just
-          handles the N=1 case naturally. The standalone Create modal +
-          handleCreate path were dropped to remove the "two ways to do
-          one job" problem. */}
-      {/* Bulk create */}
-      <Modal
-        title="Bulk Create Tasks"
+      <CreateTaskModal
         open={bulkModalOpen}
-        onCancel={() => {
-          if (!creating) {
-            setBulkModalOpen(false);
-            setBulkProgress(null);
-          }
-        }}
-        footer={null}
-        width={640}
-      >
-        <Typography.Paragraph type="secondary">
-          Creates tasks for every combination of selected AVs, Simulators, Samplers, and Plans.
-        </Typography.Paragraph>
-        <Form
-          form={bulkForm}
-          layout="vertical"
-          onFinish={handleBulkCreate}
-          onValuesChange={updatePreview}
-        >
-          <Form.Item name="av_ids" label="AVs" rules={[{ required: true }]}>
-            <Select
-              mode="multiple"
-              options={avs.map((a) => ({ label: a.name, value: a.id }))}
-              placeholder="Select AVs"
-            />
-          </Form.Item>
-          <Form.Item name="simulator_ids" label="Simulators" rules={[{ required: true }]}>
-            <Select
-              mode="multiple"
-              options={simulators.map((s) => ({ label: s.name, value: s.id }))}
-              placeholder="Select Simulators"
-            />
-          </Form.Item>
-          <Form.Item name="sampler_ids" label="Samplers" rules={[{ required: true }]}>
-            <Select
-              mode="multiple"
-              options={samplers.map((s) => ({ label: s.name, value: s.id }))}
-              placeholder="Select Samplers"
-            />
-          </Form.Item>
-          <Form.Item name="plan_filter" label="Plan name filter">
-            <Input placeholder="e.g. tyms, route" allowClear />
-          </Form.Item>
-          <Form.Item name="plan_ids" label="Plans (leave empty for all matching)">
-            <Select
-              mode="multiple"
-              options={plans.map((p) => ({ label: `${p.name} (#${p.id})`, value: p.id }))}
-              showSearch
-              optionFilterProp="label"
-              placeholder="All plans"
-              maxTagCount={5}
-            />
-          </Form.Item>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Matched" value={filteredPlans.length} />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Total plans" value={plans.length} />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="Tasks" value={previewCount} />
-              </Card>
-            </Col>
-          </Row>
-          {filteredPlans.length > 0 && (
-            <Table
-              dataSource={filteredPlans}
-              columns={[
-                { title: "ID", dataIndex: "id", key: "id", width: 60 },
-                { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
-                { title: "Map", dataIndex: "map_id", key: "map_id", width: 60 },
-              ]}
-              rowKey="id"
-              size="small"
-              pagination={{ pageSize: 5, size: "small" }}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-          {bulkProgress && (
-            <div style={{ marginBottom: 16 }}>
-              <Progress
-                percent={Math.round((bulkProgress.done / bulkProgress.total) * 100)}
-                status={bulkProgress.errors > 0 ? "exception" : "active"}
-              />
-              <Typography.Text>
-                {bulkProgress.done}/{bulkProgress.total}
-                {bulkProgress.errors > 0 && (
-                  <Typography.Text type="danger"> ({bulkProgress.errors} errors)</Typography.Text>
-                )}
-              </Typography.Text>
-            </div>
-          )}
-          {previewCount > 5000 && (
-            <Alert
-              type="warning"
-              message={`This will create ${previewCount.toLocaleString()} tasks.`}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-          <Form.Item style={{ marginBottom: 8 }}>
-            <Checkbox
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-              disabled={!previewCount}
-            >
-              I confirm creating {previewCount.toLocaleString()} tasks
-            </Checkbox>
-          </Form.Item>
-          <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={creating}
-              block
-              disabled={!previewCount || !confirmed}
-            >
-              Create {previewCount.toLocaleString()} Tasks
-            </Button>
-          </Form.Item>
-        </Form>
-      </Modal>
+        onClose={() => setBulkModalOpen(false)}
+        onCreated={load}
+        avs={avs}
+        simulators={simulators}
+        samplers={samplers}
+        plans={plans}
+      />
 
       <LogDrawer
         run={logRun}
