@@ -130,7 +130,6 @@ export interface TaskRunResponse {
 export interface ExecutorResponse {
   id: number;
   slurm_job_id: number;
-  slurm_array_id: number;
   slurm_node_list: string;
   hostname: string;
 }
