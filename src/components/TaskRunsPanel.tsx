@@ -143,6 +143,16 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
     }
   };
 
+  // Inverse of "Show older attempts" / "Show all": collapse back to
+  // the initial 5-attempt window. Useful when a long-running task has
+  // hundreds of attempts and the user wants to glance at the head
+  // without scrolling past every retry.
+  const hideOlder = useCallback(() => {
+    limitRef.current = INITIAL_LIMIT;
+    setRuns((prev) => prev.slice(0, INITIAL_LIMIT));
+    setReachedEnd(false);
+  }, []);
+
   const items = useMemo(
     () =>
       runs.map((run) => {
@@ -250,36 +260,50 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
       ) : (
         <>
           <Timeline items={items} />
-          {!reachedEnd && (
-            <Space size="small" style={{ marginTop: 4, marginLeft: 6 }}>
-              <Button
-                size="small"
-                type="link"
-                loading={loadingMore}
-                onClick={loadMore}
-                style={{ padding: 0 }}
-              >
-                Show older attempts
-              </Button>
+          <Space size="small" style={{ marginTop: 4, marginLeft: 6 }}>
+            {!reachedEnd && (
+              <>
+                <Button
+                  size="small"
+                  type="link"
+                  loading={loadingMore}
+                  onClick={loadMore}
+                  style={{ padding: 0 }}
+                >
+                  Show older attempts
+                </Button>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  ·
+                </Typography.Text>
+                <Button
+                  size="small"
+                  type="link"
+                  loading={loadingMore}
+                  onClick={loadAll}
+                  style={{ padding: 0 }}
+                >
+                  Show all
+                </Button>
+              </>
+            )}
+            {runs.length > INITIAL_LIMIT && (
+              <>
+                {!reachedEnd && (
+                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    ·
+                  </Typography.Text>
+                )}
+                <Button size="small" type="link" onClick={hideOlder} style={{ padding: 0 }}>
+                  Hide older
+                </Button>
+              </>
+            )}
+            {reachedEnd && runs.length > INITIAL_LIMIT && (
               <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                ·
+                · {runs.length} attempts — end of history
               </Typography.Text>
-              <Button
-                size="small"
-                type="link"
-                loading={loadingMore}
-                onClick={loadAll}
-                style={{ padding: 0 }}
-              >
-                Show all
-              </Button>
-            </Space>
-          )}
-          {reachedEnd && runs.length > INITIAL_LIMIT && (
-            <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
-              {runs.length} attempts — end of history
-            </Typography.Text>
-          )}
+            )}
+          </Space>
         </>
       )}
     </div>
