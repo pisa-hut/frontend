@@ -457,6 +457,89 @@ export default function Dashboard() {
         style={{ marginTop: 12 }}
         title={
           <Space size={8}>
+            <Typography.Text strong>Setup status breakdown</Typography.Text>
+            <Tag>{setupGroups.length} setups</Tag>
+          </Space>
+        }
+        extra={
+          <Space size={12} wrap>
+            {STATUS_ORDER.map((s) => (
+              <Space key={s} size={4}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: 2,
+                    background: TASK_STATUS_HEX[s],
+                  }}
+                />
+                <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                  {TASK_STATUS_LABEL[s]}
+                </Typography.Text>
+              </Space>
+            ))}
+          </Space>
+        }
+      >
+        {visibleSetupGroups.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks in any setup yet" />
+        ) : (
+          <Row gutter={[12, 16]}>
+            {visibleSetupGroups.map((g) => {
+              const av = avMap.get(g.avId) ?? `#${g.avId}`;
+              const sim = simMap.get(g.simId) ?? `#${g.simId}`;
+              const sampler = samplerMap.get(g.samplerId) ?? `#${g.samplerId}`;
+              return (
+                <Col key={g.key} xs={12} sm={8} md={6} lg={3}>
+                  <Space
+                    direction="vertical"
+                    size={4}
+                    style={{ width: "100%", textAlign: "center", cursor: "pointer" }}
+                    onClick={() =>
+                      navigate(
+                        `/tasks?av_id=${g.avId}&simulator_id=${g.simId}&sampler_id=${g.samplerId}`,
+                      )
+                    }
+                  >
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <StatusDonut counts={g.counts} />
+                    </div>
+                    <Typography.Text
+                      strong
+                      style={{ fontSize: 12, display: "block" }}
+                      ellipsis={{ tooltip: `${av} · ${sim} · ${sampler}` }}
+                    >
+                      {av}
+                    </Typography.Text>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 11, display: "block" }}
+                      ellipsis={{ tooltip: `${sim} · ${sampler}` }}
+                    >
+                      {sim} · {sampler}
+                    </Typography.Text>
+                  </Space>
+                </Col>
+              );
+            })}
+            {hiddenSetupCount > 0 && (
+              <Col xs={24}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  + {hiddenSetupCount} more setup{hiddenSetupCount === 1 ? "" : "s"} not shown
+                  (sorted by task count desc).
+                </Typography.Text>
+              </Col>
+            )}
+          </Row>
+        )}
+      </Card>
+
+      <Card
+        size="small"
+        style={{ marginTop: 12 }}
+        title={
+          <Space size={8}>
             <SyncOutlined
               spin={runningRows.length > 0}
               style={{ color: TASK_STATUS_HEX.running }}
@@ -564,89 +647,6 @@ export default function Dashboard() {
               },
             ]}
           />
-        )}
-      </Card>
-
-      <Card
-        size="small"
-        style={{ marginTop: 12 }}
-        title={
-          <Space size={8}>
-            <Typography.Text strong>Setup status breakdown</Typography.Text>
-            <Tag>{setupGroups.length} setups</Tag>
-          </Space>
-        }
-        extra={
-          <Space size={12} wrap>
-            {STATUS_ORDER.map((s) => (
-              <Space key={s} size={4}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background: TASK_STATUS_HEX[s],
-                  }}
-                />
-                <Typography.Text style={{ fontSize: 11 }} type="secondary">
-                  {TASK_STATUS_LABEL[s]}
-                </Typography.Text>
-              </Space>
-            ))}
-          </Space>
-        }
-      >
-        {visibleSetupGroups.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks in any setup yet" />
-        ) : (
-          <Row gutter={[12, 16]}>
-            {visibleSetupGroups.map((g) => {
-              const av = avMap.get(g.avId) ?? `#${g.avId}`;
-              const sim = simMap.get(g.simId) ?? `#${g.simId}`;
-              const sampler = samplerMap.get(g.samplerId) ?? `#${g.samplerId}`;
-              return (
-                <Col key={g.key} xs={12} sm={8} md={6} lg={3}>
-                  <Space
-                    direction="vertical"
-                    size={4}
-                    style={{ width: "100%", textAlign: "center", cursor: "pointer" }}
-                    onClick={() =>
-                      navigate(
-                        `/tasks?av_id=${g.avId}&simulator_id=${g.simId}&sampler_id=${g.samplerId}`,
-                      )
-                    }
-                  >
-                    <div style={{ display: "flex", justifyContent: "center" }}>
-                      <StatusDonut counts={g.counts} />
-                    </div>
-                    <Typography.Text
-                      strong
-                      style={{ fontSize: 12, display: "block" }}
-                      ellipsis={{ tooltip: `${av} · ${sim} · ${sampler}` }}
-                    >
-                      {av}
-                    </Typography.Text>
-                    <Typography.Text
-                      type="secondary"
-                      style={{ fontSize: 11, display: "block" }}
-                      ellipsis={{ tooltip: `${sim} · ${sampler}` }}
-                    >
-                      {sim} · {sampler}
-                    </Typography.Text>
-                  </Space>
-                </Col>
-              );
-            })}
-            {hiddenSetupCount > 0 && (
-              <Col xs={24}>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  + {hiddenSetupCount} more setup{hiddenSetupCount === 1 ? "" : "s"} not shown
-                  (sorted by task count desc).
-                </Typography.Text>
-              </Col>
-            )}
-          </Row>
         )}
       </Card>
     </>
