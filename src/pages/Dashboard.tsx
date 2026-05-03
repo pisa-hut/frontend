@@ -103,6 +103,70 @@ function formatRuntime(startedAt: string): string {
   return `${h}h ${m % 60}m`;
 }
 
+const STATUS_ORDER: TaskStatus[] = ["completed", "running", "queued", "idle", "invalid", "aborted"];
+
+/** Inline SVG donut. Segments are drawn in `STATUS_ORDER` so the
+ *  same colour always sits in the same position around the ring,
+ *  making it easy to compare two donuts side-by-side. */
+function StatusDonut({
+  counts,
+  size = 84,
+  strokeWidth = 12,
+}: {
+  counts: Record<TaskStatus, number>;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const total = STATUS_ORDER.reduce((acc, s) => acc + counts[s], 0);
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* Background ring so a near-empty donut still has shape. */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="#f0f0f0"
+        strokeWidth={strokeWidth}
+      />
+      {total > 0 &&
+        STATUS_ORDER.map((s) => {
+          const v = counts[s];
+          if (v === 0) return null;
+          const len = (v / total) * c;
+          const seg = (
+            <circle
+              key={s}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={TASK_STATUS_HEX[s]}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${len} ${c - len}`}
+              strokeDashoffset={-acc}
+              transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            />
+          );
+          acc += len;
+          return seg;
+        })}
+      <text
+        x={size / 2}
+        y={size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        style={{ fontSize: 14, fontWeight: 600, fill: "#262626" }}
+      >
+        {total}
+      </text>
+    </svg>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
@@ -247,6 +311,46 @@ export default function Dashboard() {
     [runningRows],
   );
 
+  // Group tasks by AV/Sim/Sampler combo and tally by status. Donut
+  // grid below renders the top SETUP_DONUT_LIMIT busiest combos so
+  // the dashboard surface stays bounded; remainder is summarised in
+  // a "+ N more" footer.
+  const SETUP_DONUT_LIMIT = 8;
+  const setupGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        avId: number;
+        simId: number;
+        samplerId: number;
+        counts: Record<TaskStatus, number>;
+        total: number;
+      }
+    >();
+    for (const t of tasks) {
+      if (t.archived) continue;
+      const key = `${t.av_id}-${t.simulator_id}-${t.sampler_id}`;
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          key,
+          avId: t.av_id,
+          simId: t.simulator_id,
+          samplerId: t.sampler_id,
+          counts: { idle: 0, queued: 0, running: 0, completed: 0, invalid: 0, aborted: 0 },
+          total: 0,
+        };
+        map.set(key, g);
+      }
+      g.counts[t.task_status]++;
+      g.total++;
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [tasks]);
+  const visibleSetupGroups = setupGroups.slice(0, SETUP_DONUT_LIMIT);
+  const hiddenSetupCount = Math.max(0, setupGroups.length - SETUP_DONUT_LIMIT);
+
   if (loading)
     return (
       <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />
@@ -347,6 +451,89 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      <Card
+        size="small"
+        style={{ marginTop: 12 }}
+        title={
+          <Space size={8}>
+            <Typography.Text strong>Setup status breakdown</Typography.Text>
+            <Tag>{setupGroups.length} setups</Tag>
+          </Space>
+        }
+        extra={
+          <Space size={12} wrap>
+            {STATUS_ORDER.map((s) => (
+              <Space key={s} size={4}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: 2,
+                    background: TASK_STATUS_HEX[s],
+                  }}
+                />
+                <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                  {TASK_STATUS_LABEL[s]}
+                </Typography.Text>
+              </Space>
+            ))}
+          </Space>
+        }
+      >
+        {visibleSetupGroups.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks in any setup yet" />
+        ) : (
+          <Row gutter={[12, 16]}>
+            {visibleSetupGroups.map((g) => {
+              const av = avMap.get(g.avId) ?? `#${g.avId}`;
+              const sim = simMap.get(g.simId) ?? `#${g.simId}`;
+              const sampler = samplerMap.get(g.samplerId) ?? `#${g.samplerId}`;
+              return (
+                <Col key={g.key} xs={12} sm={8} md={6} lg={3}>
+                  <Space
+                    direction="vertical"
+                    size={4}
+                    style={{ width: "100%", textAlign: "center", cursor: "pointer" }}
+                    onClick={() =>
+                      navigate(
+                        `/tasks?av_id=${g.avId}&simulator_id=${g.simId}&sampler_id=${g.samplerId}`,
+                      )
+                    }
+                  >
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <StatusDonut counts={g.counts} />
+                    </div>
+                    <Typography.Text
+                      strong
+                      style={{ fontSize: 12, display: "block" }}
+                      ellipsis={{ tooltip: `${av} · ${sim} · ${sampler}` }}
+                    >
+                      {av}
+                    </Typography.Text>
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 11, display: "block" }}
+                      ellipsis={{ tooltip: `${sim} · ${sampler}` }}
+                    >
+                      {sim} · {sampler}
+                    </Typography.Text>
+                  </Space>
+                </Col>
+              );
+            })}
+            {hiddenSetupCount > 0 && (
+              <Col xs={24}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  + {hiddenSetupCount} more setup{hiddenSetupCount === 1 ? "" : "s"} not shown
+                  (sorted by task count desc).
+                </Typography.Text>
+              </Col>
+            )}
+          </Row>
+        )}
+      </Card>
 
       <Card
         size="small"
