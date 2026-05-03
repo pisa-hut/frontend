@@ -388,14 +388,14 @@ export default function Dashboard() {
               {
                 title: "Task",
                 key: "task",
-                width: 70,
+                width: 110,
                 render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12 }}>
+                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
                     #{r.taskId}
                     {r.attempt > 1 && (
                       <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                         {" "}
-                        · #{r.attempt}
+                        · attempt {r.attempt}
                       </Typography.Text>
                     )}
                   </Typography.Text>
