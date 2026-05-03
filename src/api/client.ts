@@ -294,6 +294,8 @@ export const api = {
   },
   batchArchiveTasks: (ids: number[]) =>
     pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
+  batchUnarchiveTasks: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { archived: false }),
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {

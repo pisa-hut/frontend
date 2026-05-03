@@ -546,6 +546,18 @@ export default function Tasks() {
     load();
   };
 
+  const handleBulkUnarchive = async () => {
+    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && t.archived).map((t) => t.id);
+    try {
+      await api.batchUnarchiveTasks(ids);
+      message.success(`Unarchived ${ids.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    load();
+  };
+
   const handleBulkDelete = async () => {
     try {
       await api.batchDeleteTasks(selectedRowKeys as number[]);
@@ -791,6 +803,7 @@ export default function Tasks() {
       onBulkRun={handleBulkRun}
       onBulkStop={handleBulkStop}
       onBulkArchive={handleBulkArchive}
+      onBulkUnarchive={handleBulkUnarchive}
       onBulkDelete={handleBulkDelete}
     />
   );
