@@ -580,224 +580,250 @@ export default function Tasks() {
 
   // --- Columns ---
 
-  const setupColumn = {
-    title: "Setup",
-    key: "setup",
-    width: 220,
-    ellipsis: true,
-    // Setup column packs AV / Sim / Sampler. The compact toggle keeps
-    // the three filter dropdowns reachable via a single Popover; for
-    // most rows the user just glances at "av · sim · sampler".
-    render: (_: unknown, r: TaskResponse) => (
-      <Typography.Text style={{ fontSize: 12 }} ellipsis>
-        {avMap.get(r.av_id) ?? `#${r.av_id}`}
-        <Typography.Text type="secondary"> · </Typography.Text>
-        {simMap.get(r.simulator_id) ?? `#${r.simulator_id}`}
-        <Typography.Text type="secondary"> · </Typography.Text>
-        {samplerMap.get(r.sampler_id) ?? `#${r.sampler_id}`}
-      </Typography.Text>
-    ),
-  };
-
-  // Per-column onFilter wrapper: if the row is pinned, it bypasses
-  // every column filter so AntD's internal filter pass doesn't strip
-  // pinned rows back out of the table dataSource computed above.
-  const pinnedBypass =
-    <T extends TaskResponse>(real: (value: unknown, record: T) => boolean) =>
-    (value: unknown, record: T): boolean =>
-      pinnedIds.has(record.id) || real(value, record);
-
-  const expandedColumns = [
-    {
-      title: "AV",
-      dataIndex: "av_id",
-      key: "av_id",
-      width: 100,
+  // Columns are memoized so AntD's open filter dropdown keeps its
+  // internal `selectedKeys` state across SSE-driven re-renders. When
+  // tasks update via SSE the parent re-renders frequently; an inline
+  // columns array hands AntD a fresh column object each time, which
+  // wipes the dropdown's pending selection and made it look like the
+  // dropdown "refreshed immediately" the moment the user clicked.
+  const columns = useMemo(() => {
+    const setupColumn = {
+      title: "Setup",
+      key: "setup",
+      width: 220,
       ellipsis: true,
-      render: (id: number) => avMap.get(id) ?? `#${id}`,
-      filters: avs.map((a) => ({ text: a.name, value: a.id })),
-      filteredValue: filteredInfo.av_id ?? null,
-      onFilter: pinnedBypass<TaskResponse>((value, record) => record.av_id === value),
-    },
-    {
-      title: "Simulator",
-      dataIndex: "simulator_id",
-      key: "simulator_id",
-      width: 100,
-      ellipsis: true,
-      render: (id: number) => simMap.get(id) ?? `#${id}`,
-      filters: simulators.map((s) => ({ text: s.name, value: s.id })),
-      filteredValue: filteredInfo.simulator_id ?? null,
-      onFilter: pinnedBypass<TaskResponse>((value, record) => record.simulator_id === value),
-    },
-    {
-      title: "Sampler",
-      dataIndex: "sampler_id",
-      key: "sampler_id",
-      width: 80,
-      ellipsis: true,
-      render: (id: number) => samplerMap.get(id) ?? `#${id}`,
-      filters: samplers.map((s) => ({ text: s.name, value: s.id })),
-      filteredValue: filteredInfo.sampler_id ?? null,
-      onFilter: pinnedBypass<TaskResponse>((value, record) => record.sampler_id === value),
-    },
-  ];
-
-  // Sort is fully controlled — visibleMainTasks pre-sorts (with pinned
-  // first within each sort key), so each column reports `sortOrder`
-  // matching sortedInfo and sets `sorter: true` so the header clicks
-  // through ordered cycles without AntD trying to re-sort the data
-  // itself. Without this AntD applies the column's own comparator on
-  // top of my pre-sort and the on-screen order diverged from the
-  // keyboard nav order.
-  const orderFor = (key: string): SortOrder | null =>
-    sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
-
-  const columns = [
-    {
-      title: "ID",
-      dataIndex: "id",
-      key: "id",
-      width: 60,
-      ellipsis: true,
-      sorter: true,
-      sortOrder: orderFor("id"),
-    },
-    {
-      title: "Plan",
-      dataIndex: "plan_id",
-      key: "plan_id",
-      width: 250,
-      ellipsis: true,
-      render: (id: number) => planMap.get(id) ?? `#${id}`,
-      ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
-      filteredValue: filteredInfo.plan_id ?? null,
-      onFilter: pinnedBypass<TaskResponse>((value, record) => {
-        const text = planMap.get(record.plan_id) ?? "";
-        return text.toLowerCase().includes(String(value).toLowerCase());
-      }),
-    },
-    ...(compactView ? [setupColumn] : expandedColumns),
-    {
-      title: "Status",
-      dataIndex: "task_status",
-      key: "task_status",
-      width: 110,
-      filters: (
-        ["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]
-      ).map((s) => ({ text: s, value: s })),
-      filteredValue: filteredInfo.task_status ?? null,
-      onFilter: pinnedBypass<TaskResponse>((value, record) => record.task_status === value),
-      render: (status: TaskStatus) => (
-        <Tag
-          color={TASK_STATUS_TAG_COLOR[status]}
-          icon={status === "running" ? <SyncOutlined spin /> : undefined}
-        >
-          {status.toUpperCase()}
-        </Tag>
+      // Setup column packs AV / Sim / Sampler. The compact toggle keeps
+      // the three filter dropdowns reachable via a single Popover; for
+      // most rows the user just glances at "av · sim · sampler".
+      render: (_: unknown, r: TaskResponse) => (
+        <Typography.Text style={{ fontSize: 12 }} ellipsis>
+          {avMap.get(r.av_id) ?? `#${r.av_id}`}
+          <Typography.Text type="secondary"> · </Typography.Text>
+          {simMap.get(r.simulator_id) ?? `#${r.simulator_id}`}
+          <Typography.Text type="secondary"> · </Typography.Text>
+          {samplerMap.get(r.sampler_id) ?? `#${r.sampler_id}`}
+        </Typography.Text>
       ),
-    },
-    {
-      title: "Attempts",
-      dataIndex: "attempt_count",
-      key: "attempt_count",
-      width: 70,
-      sorter: true,
-      sortOrder: orderFor("attempt_count"),
-    },
-    {
-      title: "Last Run",
-      key: "last_run",
-      width: 170,
-      render: (_: unknown, r: TaskResponse) => {
-        const t = r.task_run?.[0]?.started_at;
-        return t ? new Date(t).toLocaleString() : "-";
+    };
+
+    // Per-column onFilter wrapper: if the row is pinned, it bypasses
+    // every column filter so AntD's internal filter pass doesn't strip
+    // pinned rows back out of the table dataSource computed above.
+    const pinnedBypass =
+      <T extends TaskResponse>(real: (value: unknown, record: T) => boolean) =>
+      (value: unknown, record: T): boolean =>
+        pinnedIds.has(record.id) || real(value, record);
+
+    const expandedColumns = [
+      {
+        title: "AV",
+        dataIndex: "av_id",
+        key: "av_id",
+        width: 100,
+        ellipsis: true,
+        render: (id: number) => avMap.get(id) ?? `#${id}`,
+        filters: avs.map((a) => ({ text: a.name, value: a.id })),
+        filteredValue: filteredInfo.av_id ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => record.av_id === value),
       },
-      sorter: true,
-      sortOrder: orderFor("last_run"),
-    },
-    {
-      title: "",
-      key: "actions",
-      width: 144,
-      render: (_: unknown, record: TaskResponse) => {
-        const canRun = RUNNABLE_STATUSES.includes(record.task_status);
-        const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-        // Archive button is only the triage outcome for invalid tasks; if a row
-        // is already archived (visible only with the toggle on), offer Unarchive.
-        const canArchive = record.task_status === "invalid" && !record.archived;
-        const isPinned = pinnedIds.has(record.id);
-        const latestRun = record.task_run?.[0];
-        // Swallow row-level clicks so any action button (log / pin / run /
-        // stop / its Popconfirm popup) doesn't also trigger the row's
-        // expandRowByClick handler.
-        return (
-          <Space size={2} onClick={(e) => e.stopPropagation()}>
-            <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
-              <Button
-                size="small"
-                icon={<FileTextOutlined />}
-                disabled={!latestRun}
-                onClick={() => latestRun && openLog(latestRun)}
-              />
-            </Tooltip>
-            <Tooltip title={isPinned ? "Unpin" : "Pin"}>
-              <Button
-                size="small"
-                type={isPinned ? "primary" : "default"}
-                icon={<PushpinOutlined />}
-                onClick={() => {
-                  setPinnedIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(record.id)) next.delete(record.id);
-                    else next.add(record.id);
-                    return next;
-                  });
-                }}
-              />
-            </Tooltip>
-            {canStop ? (
-              <ConfirmIconButton
-                size="small"
-                icon={<StopOutlined />}
-                tooltip="Stop"
-                confirmTitle="Stop?"
-                onConfirm={() => handleStop(record.id)}
-              />
-            ) : (
-              <ConfirmIconButton
-                size="small"
-                type="primary"
-                icon={<CaretRightOutlined />}
-                disabled={!canRun}
-                tooltip={canRun ? "Run" : "Not runnable in this state"}
-                confirmTitle="Run?"
-                onConfirm={() => handleRun(record.id)}
-              />
-            )}
-            {canArchive && (
-              <ConfirmIconButton
-                size="small"
-                icon={<InboxOutlined />}
-                tooltip="Not our problem — archive (hides from default view)"
-                confirmTitle="Archive this invalid task?"
-                onConfirm={() => handleArchive(record.id)}
-              />
-            )}
-            {record.archived && (
-              <Tooltip title="Unarchive (return to default view)">
+      {
+        title: "Simulator",
+        dataIndex: "simulator_id",
+        key: "simulator_id",
+        width: 100,
+        ellipsis: true,
+        render: (id: number) => simMap.get(id) ?? `#${id}`,
+        filters: simulators.map((s) => ({ text: s.name, value: s.id })),
+        filteredValue: filteredInfo.simulator_id ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => record.simulator_id === value),
+      },
+      {
+        title: "Sampler",
+        dataIndex: "sampler_id",
+        key: "sampler_id",
+        width: 80,
+        ellipsis: true,
+        render: (id: number) => samplerMap.get(id) ?? `#${id}`,
+        filters: samplers.map((s) => ({ text: s.name, value: s.id })),
+        filteredValue: filteredInfo.sampler_id ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => record.sampler_id === value),
+      },
+    ];
+
+    // Sort is fully controlled — visibleMainTasks pre-sorts (with pinned
+    // first within each sort key), so each column reports `sortOrder`
+    // matching sortedInfo and sets `sorter: true` so the header clicks
+    // through ordered cycles without AntD trying to re-sort the data
+    // itself. Without this AntD applies the column's own comparator on
+    // top of my pre-sort and the on-screen order diverged from the
+    // keyboard nav order.
+    const orderFor = (key: string): SortOrder | null =>
+      sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
+
+    return [
+      {
+        title: "ID",
+        dataIndex: "id",
+        key: "id",
+        width: 60,
+        ellipsis: true,
+        sorter: true,
+        sortOrder: orderFor("id"),
+      },
+      {
+        title: "Plan",
+        dataIndex: "plan_id",
+        key: "plan_id",
+        width: 250,
+        ellipsis: true,
+        render: (id: number) => planMap.get(id) ?? `#${id}`,
+        ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
+        filteredValue: filteredInfo.plan_id ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => {
+          const text = planMap.get(record.plan_id) ?? "";
+          return text.toLowerCase().includes(String(value).toLowerCase());
+        }),
+      },
+      ...(compactView ? [setupColumn] : expandedColumns),
+      {
+        title: "Status",
+        dataIndex: "task_status",
+        key: "task_status",
+        width: 110,
+        filters: (
+          ["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]
+        ).map((s) => ({ text: s, value: s })),
+        filteredValue: filteredInfo.task_status ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => record.task_status === value),
+        render: (status: TaskStatus) => (
+          <Tag
+            color={TASK_STATUS_TAG_COLOR[status]}
+            icon={status === "running" ? <SyncOutlined spin /> : undefined}
+          >
+            {status.toUpperCase()}
+          </Tag>
+        ),
+      },
+      {
+        title: "Attempts",
+        dataIndex: "attempt_count",
+        key: "attempt_count",
+        width: 70,
+        sorter: true,
+        sortOrder: orderFor("attempt_count"),
+      },
+      {
+        title: "Last Run",
+        key: "last_run",
+        width: 170,
+        render: (_: unknown, r: TaskResponse) => {
+          const t = r.task_run?.[0]?.started_at;
+          return t ? new Date(t).toLocaleString() : "-";
+        },
+        sorter: true,
+        sortOrder: orderFor("last_run"),
+      },
+      {
+        title: "",
+        key: "actions",
+        width: 144,
+        render: (_: unknown, record: TaskResponse) => {
+          const canRun = RUNNABLE_STATUSES.includes(record.task_status);
+          const canStop = STOPPABLE_STATUSES.includes(record.task_status);
+          // Archive button is only the triage outcome for invalid tasks; if a row
+          // is already archived (visible only with the toggle on), offer Unarchive.
+          const canArchive = record.task_status === "invalid" && !record.archived;
+          const isPinned = pinnedIds.has(record.id);
+          const latestRun = record.task_run?.[0];
+          // Swallow row-level clicks so any action button (log / pin / run /
+          // stop / its Popconfirm popup) doesn't also trigger the row's
+          // expandRowByClick handler.
+          return (
+            <Space size={2} onClick={(e) => e.stopPropagation()}>
+              <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
                 <Button
                   size="small"
-                  icon={<UndoOutlined />}
-                  onClick={() => handleUnarchive(record.id)}
+                  icon={<FileTextOutlined />}
+                  disabled={!latestRun}
+                  onClick={() => latestRun && openLog(latestRun)}
                 />
               </Tooltip>
-            )}
-          </Space>
-        );
+              <Tooltip title={isPinned ? "Unpin" : "Pin"}>
+                <Button
+                  size="small"
+                  type={isPinned ? "primary" : "default"}
+                  icon={<PushpinOutlined />}
+                  onClick={() => {
+                    setPinnedIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(record.id)) next.delete(record.id);
+                      else next.add(record.id);
+                      return next;
+                    });
+                  }}
+                />
+              </Tooltip>
+              {canStop ? (
+                <ConfirmIconButton
+                  size="small"
+                  icon={<StopOutlined />}
+                  tooltip="Stop"
+                  confirmTitle="Stop?"
+                  onConfirm={() => handleStop(record.id)}
+                />
+              ) : (
+                <ConfirmIconButton
+                  size="small"
+                  type="primary"
+                  icon={<CaretRightOutlined />}
+                  disabled={!canRun}
+                  tooltip={canRun ? "Run" : "Not runnable in this state"}
+                  confirmTitle="Run?"
+                  onConfirm={() => handleRun(record.id)}
+                />
+              )}
+              {canArchive && (
+                <ConfirmIconButton
+                  size="small"
+                  icon={<InboxOutlined />}
+                  tooltip="Not our problem — archive (hides from default view)"
+                  confirmTitle="Archive this invalid task?"
+                  onConfirm={() => handleArchive(record.id)}
+                />
+              )}
+              {record.archived && (
+                <Tooltip title="Unarchive (return to default view)">
+                  <Button
+                    size="small"
+                    icon={<UndoOutlined />}
+                    onClick={() => handleUnarchive(record.id)}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+          );
+        },
       },
-    },
-  ];
+    ];
+  }, [
+    compactView,
+    filteredInfo,
+    sortedInfo,
+    pinnedIds,
+    avs,
+    simulators,
+    samplers,
+    avMap,
+    simMap,
+    samplerMap,
+    planMap,
+    setPinnedIds,
+    openLog,
+    handleRun,
+    handleStop,
+    handleArchive,
+    handleUnarchive,
+  ]);
 
   const selectionBar = (
     <TasksSelectionBar
