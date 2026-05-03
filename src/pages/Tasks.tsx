@@ -75,13 +75,18 @@ export default function Tasks() {
   // everything, archived included" without leaving the current chip.
   // Defaults off so the dashboard / triage flow stays uncluttered.
   const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
-  // Two axes:
+  // Three axes:
   //   1. quickFilter — chip selection. "archived" chip shows ONLY
-  //      archived rows; every other chip's archived behaviour is
-  //      governed by `showArchived` above.
+  //      archived rows by default; every other chip's archived
+  //      behaviour is governed by `showArchived` above.
   //   2. showArchived — orthogonal toggle that lets the user keep
   //      their current chip and add archived rows on top. Off by
   //      default so the dashboard / triage flow stays uncluttered.
+  //   3. pinnedIds — explicit user override. Pinned rows always
+  //      render regardless of chip / toggle / column filters. (See
+  //      visibleMainTasks.) "Always shows only X" claims about chips
+  //      / toggles are therefore approximately true; pinned can leak
+  //      one or two rows of any status into any view.
   const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
@@ -296,11 +301,11 @@ export default function Tasks() {
   // versions used two separate <Table> instances and AntD sized each
   // one independently, so the pinned table's columns never aligned
   // with the main table's. One table = guaranteed alignment.
-  const visibleMainTasks = useMemo(() => {
-    // Archived axis:
-    // - "Archived" chip → ONLY archived rows (chip is itself the filter).
-    // - "Show archived" toggle on → everything (archived AND non-archived).
-    // - Otherwise (default) → exclude archived rows.
+  // Rows that match the active chip + archived toggle + column filters
+  // *strictly*. This is what "filtered scope" means for the selection
+  // bar's "Select all N filtered" and bulk actions — pinned rows
+  // outside the active filter must NOT be swept into a bulk delete.
+  const filteredTasks = useMemo(() => {
     const archivedFilter = (t: TaskResponse) => {
       if (quickFilter === "archived") return t.archived;
       if (showArchived) return true;
@@ -320,7 +325,21 @@ export default function Tasks() {
       }
       return true;
     };
-    const filtered = tasks.filter((t) => archivedFilter(t) && colFilters(t));
+    return tasks.filter((t) => archivedFilter(t) && colFilters(t));
+  }, [tasks, quickFilter, showArchived, filteredInfo]);
+
+  // Rows actually rendered by the table = filtered scope ∪ pinned rows.
+  // Pinned rows always render regardless of chip / archived toggle /
+  // column filters. The per-column `onFilter` handlers also bypass on
+  // pinned (see columns below) so AntD's table layer doesn't strip
+  // pinned rows back out after the data lands.
+  //
+  // Chip badge counts in TasksFilters stay status-based on purpose; the
+  // small "rendered > chip count" divergence is accepted in exchange
+  // for pinned rows being unconditionally visible.
+  const visibleMainTasks = useMemo(() => {
+    const pinnedExtras = tasks.filter((t) => pinnedIds.has(t.id) && !filteredTasks.includes(t));
+    const merged = [...filteredTasks, ...pinnedExtras];
     const { key, order } = sortedInfo;
     const dir = !order ? 0 : order === "ascend" ? 1 : -1;
     const cmp = (a: TaskResponse, b: TaskResponse): number => {
@@ -339,7 +358,7 @@ export default function Tasks() {
           return 0;
       }
     };
-    return [...filtered].sort((a, b) => {
+    return merged.sort((a, b) => {
       // Pinned always wins. Within each pinned/non-pinned group apply
       // the user's sort.
       const ap = pinnedIds.has(a.id);
@@ -347,7 +366,7 @@ export default function Tasks() {
       if (ap !== bp) return ap ? -1 : 1;
       return cmp(a, b);
     });
-  }, [tasks, pinnedIds, quickFilter, showArchived, filteredInfo, sortedInfo]);
+  }, [tasks, filteredTasks, pinnedIds, sortedInfo]);
 
   const [cursorId, setCursorId] = useState<number | null>(null);
   // Bring the cursor row into view when it changes.
@@ -563,6 +582,14 @@ export default function Tasks() {
     ),
   };
 
+  // Per-column onFilter wrapper: if the row is pinned, it bypasses
+  // every column filter so AntD's internal filter pass doesn't strip
+  // pinned rows back out of the table dataSource computed above.
+  const pinnedBypass =
+    <T extends TaskResponse>(real: (value: unknown, record: T) => boolean) =>
+    (value: unknown, record: T): boolean =>
+      pinnedIds.has(record.id) || real(value, record);
+
   const expandedColumns = [
     {
       title: "AV",
@@ -573,7 +600,7 @@ export default function Tasks() {
       render: (id: number) => avMap.get(id) ?? `#${id}`,
       filters: avs.map((a) => ({ text: a.name, value: a.id })),
       filteredValue: filteredInfo.av_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.av_id === value,
+      onFilter: pinnedBypass<TaskResponse>((value, record) => record.av_id === value),
     },
     {
       title: "Simulator",
@@ -584,7 +611,7 @@ export default function Tasks() {
       render: (id: number) => simMap.get(id) ?? `#${id}`,
       filters: simulators.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.simulator_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.simulator_id === value,
+      onFilter: pinnedBypass<TaskResponse>((value, record) => record.simulator_id === value),
     },
     {
       title: "Sampler",
@@ -595,7 +622,7 @@ export default function Tasks() {
       render: (id: number) => samplerMap.get(id) ?? `#${id}`,
       filters: samplers.map((s) => ({ text: s.name, value: s.id })),
       filteredValue: filteredInfo.sampler_id ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.sampler_id === value,
+      onFilter: pinnedBypass<TaskResponse>((value, record) => record.sampler_id === value),
     },
   ];
 
@@ -626,8 +653,12 @@ export default function Tasks() {
       width: 250,
       ellipsis: true,
       render: (id: number) => planMap.get(id) ?? `#${id}`,
-      filteredValue: filteredInfo.plan_id ?? null,
       ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
+      filteredValue: filteredInfo.plan_id ?? null,
+      onFilter: pinnedBypass<TaskResponse>((value, record) => {
+        const text = planMap.get(record.plan_id) ?? "";
+        return text.toLowerCase().includes(String(value).toLowerCase());
+      }),
     },
     ...(compactView ? [setupColumn] : expandedColumns),
     {
@@ -639,7 +670,7 @@ export default function Tasks() {
         ["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]
       ).map((s) => ({ text: s, value: s })),
       filteredValue: filteredInfo.task_status ?? null,
-      onFilter: (value: unknown, record: TaskResponse) => record.task_status === value,
+      onFilter: pinnedBypass<TaskResponse>((value, record) => record.task_status === value),
       render: (status: TaskStatus) => (
         <Tag
           color={TASK_STATUS_TAG_COLOR[status]}
@@ -754,7 +785,7 @@ export default function Tasks() {
   const selectionBar = (
     <TasksSelectionBar
       tasks={tasks}
-      visibleTasks={visibleMainTasks}
+      visibleTasks={filteredTasks}
       selectedRowKeys={selectedRowKeys}
       setSelectedRowKeys={setSelectedRowKeys}
       onBulkRun={handleBulkRun}
@@ -790,7 +821,7 @@ export default function Tasks() {
         >
           Compact
         </Checkbox>
-        <Tooltip title="Include archived rows alongside non-archived ones in the current view. The Archived chip itself is unaffected — it always shows only archived rows.">
+        <Tooltip title="Include archived rows alongside non-archived ones in the current view. (Pinned rows are always shown regardless of this toggle or the chip selection.)">
           <Checkbox
             checked={showArchived}
             onChange={(e) => setShowArchived(e.target.checked)}
