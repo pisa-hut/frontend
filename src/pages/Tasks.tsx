@@ -738,10 +738,17 @@ export default function Tasks() {
       {
         title: "Last Run",
         key: "last_run",
-        width: 170,
+        width: 130,
         render: (_: unknown, r: TaskResponse) => {
           const t = r.task_run?.[0]?.started_at;
-          return t ? new Date(t).toLocaleString() : "-";
+          if (!t) return "-";
+          // Compact "MM/DD HH:mm" format keeps the column narrow
+          // without depending on locale-string's variable width.
+          // The full ISO timestamp is still in the row's tooltip /
+          // expanded panel for the rare case the user needs it.
+          const d = new Date(t);
+          const pad = (n: number) => String(n).padStart(2, "0");
+          return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         },
         sorter: true,
         sortOrder: orderFor("last_run"),
@@ -928,7 +935,7 @@ export default function Tasks() {
         // there's no blank space to the right of the action column.
         // (Selection col ≈ 32 + cols total: 1024 compact / 1084
         // expanded.)
-        scroll={{ x: compactView ? 1040 : 1100 }}
+        scroll={{ x: compactView ? 1000 : 1060 }}
         tableLayout="fixed"
         pagination={{
           current: currentPage,
