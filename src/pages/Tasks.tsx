@@ -129,10 +129,11 @@ export default function Tasks() {
   // Apply a chip click: rewrites task_status filter + URL so the view,
   // the column dropdown, and the bookmark are all coherent. Also
   // clears every other column filter so the chip acts as a fresh
-  // scope rather than a narrower stacked on top of leftover plan /
-  // av / sim / sampler filters from a prior view — that stacking was
-  // confusing because clicking a chip looked like a no-op when an
-  // unrelated column filter was hiding the matching rows.
+  // scope rather than a narrower filter stacked on top of leftover
+  // plan / av / sim / sampler filters from a prior view — that
+  // stacking was confusing because clicking a chip looked like a
+  // no-op when an unrelated column filter was hiding the matching
+  // rows.
   // Archived visibility combines quickFilter ("archived" chip =
   // archived only) with the orthogonal showArchived toggle in
   // visibleMainTasks.
