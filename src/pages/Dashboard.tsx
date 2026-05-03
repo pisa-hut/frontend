@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Card, Col, Row, Space, Statistic, Spin, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Row,
+  Space,
+  Statistic,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
 import {
   CheckCircleOutlined,
   SyncOutlined,
@@ -12,7 +25,15 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
-import type { TaskResponse, TaskStatus } from "../api/types";
+import type {
+  TaskResponse,
+  TaskStatus,
+  ExecutorResponse,
+  AvResponse,
+  SimulatorResponse,
+  SamplerResponse,
+  PlanResponse,
+} from "../api/types";
 import { TASK_STATUS_HEX, TASK_STATUS_LABEL } from "../constants/status";
 
 // Hex colour and label come from the shared constants; the icon is a
@@ -71,16 +92,52 @@ async function fetchAbortedStats(): Promise<AbortedStats> {
   };
 }
 
+function formatRuntime(startedAt: string): string {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  if (ms < 0) return "-";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [aborted, setAborted] = useState<AbortedStats>({ total: 0, last24h: 0 });
+  const [executors, setExecutors] = useState<ExecutorResponse[]>([]);
+  const [plans, setPlans] = useState<PlanResponse[]>([]);
+  const [avs, setAvs] = useState<AvResponse[]>([]);
+  const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
+  const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  // Tick once a minute so the "Runtime" column ages without needing
+  // a full refetch. (Cheap — only the running-tasks table re-renders.)
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setNow((n) => n + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const load = useCallback(() => {
-    return Promise.all([api.listTasks(), fetchAbortedStats()]).then(([t, a]) => {
+    return Promise.all([
+      api.listTasks(),
+      fetchAbortedStats(),
+      api.listExecutors(),
+      api.listPlans(),
+      api.listAvs(),
+      api.listSimulators(),
+      api.listSamplers(),
+    ]).then(([t, a, e, p, av, sim, sam]) => {
       setTasks(t);
       setAborted(a);
+      setExecutors(e);
+      setPlans(p);
+      setAvs(av);
+      setSimulators(sim);
+      setSamplers(sam);
     });
   }, []);
 
@@ -151,6 +208,44 @@ export default function Dashboard() {
       return new Date(startedAt).getTime() < cutoff;
     }).length;
   }, [tasks]);
+
+  const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
+  const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
+  const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
+  const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
+  const executorMap = useMemo(() => new Map(executors.map((e) => [e.id, e])), [executors]);
+
+  // The "Currently running" panel: every task with status=running
+  // joined to its latest task_run for executor + start time. Sorted
+  // longest-running first because that's the row most likely to be
+  // stuck and most worth glancing at.
+  const runningRows = useMemo(() => {
+    return tasks
+      .filter((t) => t.task_status === "running" && t.task_run?.[0])
+      .map((t) => {
+        const run = t.task_run![0];
+        return {
+          taskId: t.id,
+          runId: run.id,
+          attempt: run.attempt,
+          plan: planMap.get(t.plan_id) ?? `#${t.plan_id}`,
+          av: avMap.get(t.av_id) ?? `#${t.av_id}`,
+          sim: simMap.get(t.simulator_id) ?? `#${t.simulator_id}`,
+          sampler: samplerMap.get(t.sampler_id) ?? `#${t.sampler_id}`,
+          executor: executorMap.get(run.executor_id),
+          startedAt: run.started_at ?? "",
+        };
+      })
+      .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  }, [tasks, planMap, avMap, simMap, samplerMap, executorMap]);
+
+  // Distinct executors actually serving a running task right now —
+  // gives a quick "how many machines are busy" glance without
+  // needing to count rows above.
+  const busyExecutorCount = useMemo(
+    () => new Set(runningRows.map((r) => r.executor?.id).filter((id) => id != null)).size,
+    [runningRows],
+  );
 
   if (loading)
     return (
@@ -252,6 +347,118 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      <Card
+        size="small"
+        style={{ marginTop: 12 }}
+        title={
+          <Space size={8}>
+            <SyncOutlined
+              spin={runningRows.length > 0}
+              style={{ color: TASK_STATUS_HEX.running }}
+            />
+            <Typography.Text strong>Currently Running</Typography.Text>
+            <Tag color="blue">{runningRows.length} tasks</Tag>
+            <Tag>
+              {busyExecutorCount} busy executors / {executors.length} total
+            </Tag>
+          </Space>
+        }
+        extra={
+          <Button size="small" type="link" onClick={() => navigate("/tasks?status=running")}>
+            Open in Tasks →
+          </Button>
+        }
+        styles={{ body: { padding: runningRows.length === 0 ? 24 : 0 } }}
+      >
+        {runningRows.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing running right now" />
+        ) : (
+          <Table
+            size="small"
+            dataSource={runningRows}
+            rowKey="runId"
+            pagination={false}
+            scroll={{ y: 320 }}
+            onRow={(r) => ({
+              style: { cursor: "pointer" },
+              onClick: () => navigate(`/tasks?status=running#task-${r.taskId}`),
+            })}
+            columns={[
+              {
+                title: "Task",
+                key: "task",
+                width: 70,
+                render: (_, r) => (
+                  <Typography.Text style={{ fontSize: 12 }}>
+                    #{r.taskId}
+                    {r.attempt > 1 && (
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {" "}
+                        · #{r.attempt}
+                      </Typography.Text>
+                    )}
+                  </Typography.Text>
+                ),
+              },
+              {
+                title: "Plan",
+                key: "plan",
+                ellipsis: true,
+                render: (_, r) => (
+                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
+                    {r.plan}
+                  </Typography.Text>
+                ),
+              },
+              {
+                title: "Setup",
+                key: "setup",
+                ellipsis: true,
+                render: (_, r) => (
+                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
+                    {r.av}
+                    <Typography.Text type="secondary"> · </Typography.Text>
+                    {r.sim}
+                    <Typography.Text type="secondary"> · </Typography.Text>
+                    {r.sampler}
+                  </Typography.Text>
+                ),
+              },
+              {
+                title: "Executor",
+                key: "executor",
+                width: 200,
+                ellipsis: true,
+                render: (_, r) =>
+                  r.executor ? (
+                    <Typography.Text style={{ fontSize: 12 }} ellipsis>
+                      {r.executor.hostname}
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {" "}
+                        · job {r.executor.slurm_job_id}
+                      </Typography.Text>
+                    </Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      —
+                    </Typography.Text>
+                  ),
+              },
+              {
+                title: "Runtime",
+                key: "runtime",
+                width: 100,
+                render: (_, r) => (
+                  <Typography.Text style={{ fontSize: 12 }}>
+                    {r.startedAt ? formatRuntime(r.startedAt) : "-"}
+                  </Typography.Text>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Card>
     </>
   );
 }
