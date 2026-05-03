@@ -749,7 +749,12 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 144,
+        // Sized for 4 small icon buttons (Log + Pin + Run/Stop + at
+        // most one of Archive/Unarchive — those two are mutually
+        // exclusive). Tighter than 144 so there's no dead band on
+        // the right where row-hover bg used to extend past the
+        // last button.
+        width: 120,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
@@ -923,7 +928,7 @@ export default function Tasks() {
         // there's no blank space to the right of the action column.
         // (Selection col ≈ 32 + cols total: 1024 compact / 1084
         // expanded.)
-        scroll={{ x: compactView ? 1060 : 1120 }}
+        scroll={{ x: compactView ? 1040 : 1100 }}
         tableLayout="fixed"
         pagination={{
           current: currentPage,
