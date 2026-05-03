@@ -14,6 +14,19 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Dashboard "Currently running" table: no x-overflow expected, so
+   hide the gutter that Windows Edge / Chrome reserve for the
+   classic scrollbar. macOS Safari already overlays its scrollbar
+   so this is a no-op there — we're matching that behaviour. */
+.dashboard-running-table .ant-table-content,
+.dashboard-running-table .ant-table-body {
+  scrollbar-width: none; /* Firefox + modern */
+}
+.dashboard-running-table .ant-table-content::-webkit-scrollbar,
+.dashboard-running-table .ant-table-body::-webkit-scrollbar {
+  display: none; /* Chromium-based (Edge / Chrome) */
+}
+
 /* Mobile modals */
 @media (max-width: 767px) {
   .ant-modal {
