@@ -320,7 +320,15 @@ export default function Tasks() {
       }
       return true;
     };
-    const filtered = tasks.filter((t) => archivedFilter(t) && colFilters(t));
+    // Pinned rows bypass every filter (chip, archived toggle, column
+    // filters). Pinning is the user's explicit "keep this in front of
+    // me" gesture — losing it because the chip changed defeats the
+    // purpose. Chip badge counts in TasksFilters stay status-based on
+    // purpose; the small "rendered count > chip count" divergence is
+    // accepted in exchange for pinned rows being unconditionally visible.
+    const filtered = tasks.filter(
+      (t) => pinnedIds.has(t.id) || (archivedFilter(t) && colFilters(t)),
+    );
     const { key, order } = sortedInfo;
     const dir = !order ? 0 : order === "ascend" ? 1 : -1;
     const cmp = (a: TaskResponse, b: TaskResponse): number => {
