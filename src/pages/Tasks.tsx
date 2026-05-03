@@ -75,11 +75,13 @@ export default function Tasks() {
   // everything, archived included" without leaving the current chip.
   // Defaults off so the dashboard / triage flow stays uncluttered.
   const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
-  // Quick filter is the source of truth for archived visibility now —
-  // "archived" chip shows ONLY archived rows; every other chip shows
-  // ONLY non-archived rows. (No more orthogonal "show archived"
-  // toggle — that double-axis was the source of "Archived chip shows
-  // non-archived tasks".)
+  // Two axes:
+  //   1. quickFilter — chip selection. "archived" chip shows ONLY
+  //      archived rows; every other chip's archived behaviour is
+  //      governed by `showArchived` above.
+  //   2. showArchived — orthogonal toggle that lets the user keep
+  //      their current chip and add archived rows on top. Off by
+  //      default so the dashboard / triage flow stays uncluttered.
   const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
@@ -110,8 +112,8 @@ export default function Tasks() {
 
   // Apply a chip click: rewrites task_status filter + URL so the view,
   // the column dropdown, and the bookmark are all coherent. Archived
-  // visibility is derived from quickFilter alone in visibleMainTasks
-  // (archived only when q === "archived").
+  // visibility combines quickFilter ("archived" chip = archived only)
+  // with the orthogonal showArchived toggle in visibleMainTasks.
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
@@ -788,11 +790,10 @@ export default function Tasks() {
         >
           Compact
         </Checkbox>
-        <Tooltip title="Include archived rows in the current view (the Archived chip itself is unaffected — it always shows only archived).">
+        <Tooltip title="Include archived rows alongside non-archived ones in the current view. The Archived chip itself is unaffected — it always shows only archived rows.">
           <Checkbox
             checked={showArchived}
             onChange={(e) => setShowArchived(e.target.checked)}
-            disabled={quickFilter === "archived"}
             style={{ marginLeft: 4 }}
           >
             Show archived
@@ -803,7 +804,12 @@ export default function Tasks() {
         </Button>
       </PageHeader>
 
-      <TasksFilters tasks={tasks} quickFilter={quickFilter} onChange={setQuickFilter} />
+      <TasksFilters
+        tasks={tasks}
+        quickFilter={quickFilter}
+        onChange={setQuickFilter}
+        includeArchived={showArchived}
+      />
 
       {selectionBar}
 
