@@ -404,6 +404,7 @@ export default function Dashboard() {
               {
                 title: "Plan",
                 key: "plan",
+                width: 180,
                 ellipsis: true,
                 render: (_, r) => (
                   <Typography.Text style={{ fontSize: 12 }} ellipsis>
@@ -414,6 +415,7 @@ export default function Dashboard() {
               {
                 title: "Setup",
                 key: "setup",
+                width: 220,
                 ellipsis: true,
                 render: (_, r) => (
                   <Typography.Text style={{ fontSize: 12 }} ellipsis>
