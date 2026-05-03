@@ -388,9 +388,9 @@ export default function Dashboard() {
               {
                 title: "Task",
                 key: "task",
-                width: 110,
+                width: 160,
                 render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
+                  <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
                     #{r.taskId}
                     {r.attempt > 1 && (
                       <Typography.Text type="secondary" style={{ fontSize: 11 }}>
