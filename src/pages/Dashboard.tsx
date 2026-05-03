@@ -379,6 +379,7 @@ export default function Dashboard() {
             dataSource={runningRows}
             rowKey="runId"
             pagination={false}
+            scroll={{ x: "max-content" }}
             onRow={(r) => ({
               style: { cursor: "pointer" },
               onClick: () => navigate(`/tasks?status=running#task-${r.taskId}`),
