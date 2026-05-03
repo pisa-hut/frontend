@@ -551,11 +551,14 @@ export default function Tasks() {
     try {
       await api.batchUnarchiveTasks(ids);
       message.success(`Unarchived ${ids.length} tasks`);
+      // Only clear selection + reload on success so a failure leaves
+      // the user able to retry on the same selection (vs. silently
+      // wiping the rows they were trying to act on).
+      setSelectedRowKeys([]);
+      load();
     } catch (e) {
       message.error(String(e));
     }
-    setSelectedRowKeys([]);
-    load();
   };
 
   const handleBulkDelete = async () => {

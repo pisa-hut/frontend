@@ -30,8 +30,8 @@ interface Props {
 /** Affix-pinned bottom bar that appears when at least one task is
  *  selected. Shows the selection count, "Select all filtered" /
  *  "Deselect all" toggle, and bulk-action buttons (Run / Stop /
- *  Archive / Delete) gated by which actions are valid for the
- *  currently selected statuses.
+ *  Archive / Unarchive / Delete) gated by which actions are valid
+ *  for the currently selected statuses.
  *
  *  Returns `null` when nothing is selected — the bar's existence is
  *  itself part of the visual feedback for "you're in selection mode".
