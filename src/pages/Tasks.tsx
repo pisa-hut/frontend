@@ -116,22 +116,24 @@ export default function Tasks() {
   }, [setFilteredInfo, setQuickFilterRaw, setSearchParams]);
 
   // Apply a chip click: rewrites task_status filter + URL so the view,
-  // the column dropdown, and the bookmark are all coherent. Archived
-  // visibility combines quickFilter ("archived" chip = archived only)
-  // with the orthogonal showArchived toggle in visibleMainTasks.
+  // the column dropdown, and the bookmark are all coherent. Also
+  // clears every other column filter so the chip acts as a fresh
+  // scope rather than a narrower stacked on top of leftover plan /
+  // av / sim / sampler filters from a prior view — that stacking was
+  // confusing because clicking a chip looked like a no-op when an
+  // unrelated column filter was hiding the matching rows.
+  // Archived visibility combines quickFilter ("archived" chip =
+  // archived only) with the orthogonal showArchived toggle in
+  // visibleMainTasks.
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
-      setFilteredInfo((prev) => {
-        const next = { ...prev };
-        if (q === "all" || q === "archived") {
-          next.task_status = null;
-        } else if (q === "triage") {
-          next.task_status = ["invalid"];
-        } else {
-          next.task_status = [q];
-        }
-        return next;
+      setFilteredInfo(() => {
+        let task_status: FilterValue | null;
+        if (q === "all" || q === "archived") task_status = null;
+        else if (q === "triage") task_status = ["invalid"];
+        else task_status = [q];
+        return { task_status };
       });
       // URL: ?triage=1 for the triage scope, ?status=<x> for a single
       // status, ?archived=1 for the Archived chip, nothing for "all".
