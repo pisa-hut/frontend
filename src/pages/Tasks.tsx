@@ -44,6 +44,17 @@ import CreateTaskModal from "../components/tasks/CreateTaskModal";
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
+// Cheap-enough deep equality for the listTasks payload (~hundreds of
+// rows max in practice). JSON.stringify is order-sensitive, which is
+// exactly what we want — listTasks always returns rows in `id.desc`
+// and the embedded task_run in `attempt.desc`, so any meaningful
+// change perturbs the string.
+function sameTaskList(a: TaskResponse[], b: TaskResponse[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultStatusFilter = useMemo(() => {
@@ -237,12 +248,23 @@ export default function Tasks() {
   // Realtime updates: coalesce bursty inserts/updates into a single refetch
   // per frame. SSE is always on — the Refresh button stays as a manual
   // re-fetch for the rare case where the stream silently went away.
+  //
+  // We deep-equality-skip identical refetches because heartbeat-only
+  // task_run UPDATEs (every log append) trigger a row event, but the
+  // listTasks select doesn't include `last_heartbeat_at` so the
+  // response is identical to the prior one. Without the skip, every
+  // log append re-rendered the page and reset any open AntD filter
+  // dropdown's pending selection back to the active filter — making
+  // it look like the dropdown "refreshed immediately" the moment the
+  // user clicked a different value.
   const refetchTimer = useRef<number | null>(null);
   const scheduleRefetch = useCallback(() => {
     if (refetchTimer.current !== null) return;
     refetchTimer.current = window.setTimeout(() => {
       refetchTimer.current = null;
-      api.listTasks().then(setTasks);
+      api.listTasks().then((next) => {
+        setTasks((prev) => (sameTaskList(prev, next) ? prev : next));
+      });
     }, 250);
   }, []);
   usePisaEvents(
