@@ -70,11 +70,18 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true);
   // Compact view collapses AV / Sim / Sampler into one Setup column.
   const [compactView, setCompactView] = useLocalStorageState("tasks.compactView", true);
-  // Quick filter is the source of truth for archived visibility now —
-  // "archived" chip shows ONLY archived rows; every other chip shows
-  // ONLY non-archived rows. (No more orthogonal "show archived"
-  // toggle — that double-axis was the source of "Archived chip shows
-  // non-archived tasks".)
+  // Orthogonal include-archived toggle. The Archived chip is still
+  // the way to see ONLY archived rows; this toggle is for "give me
+  // everything, archived included" without leaving the current chip.
+  // Defaults off so the dashboard / triage flow stays uncluttered.
+  const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
+  // Two axes:
+  //   1. quickFilter — chip selection. "archived" chip shows ONLY
+  //      archived rows; every other chip's archived behaviour is
+  //      governed by `showArchived` above.
+  //   2. showArchived — orthogonal toggle that lets the user keep
+  //      their current chip and add archived rows on top. Off by
+  //      default so the dashboard / triage flow stays uncluttered.
   const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
@@ -105,8 +112,8 @@ export default function Tasks() {
 
   // Apply a chip click: rewrites task_status filter + URL so the view,
   // the column dropdown, and the bookmark are all coherent. Archived
-  // visibility is derived from quickFilter alone in visibleMainTasks
-  // (archived only when q === "archived").
+  // visibility combines quickFilter ("archived" chip = archived only)
+  // with the orthogonal showArchived toggle in visibleMainTasks.
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
@@ -290,10 +297,15 @@ export default function Tasks() {
   // one independently, so the pinned table's columns never aligned
   // with the main table's. One table = guaranteed alignment.
   const visibleMainTasks = useMemo(() => {
-    // Archived axis is driven by the chip: only "Archived" shows
-    // archived rows, every other chip excludes them.
-    const archivedFilter = (t: TaskResponse) =>
-      quickFilter === "archived" ? t.archived : !t.archived;
+    // Archived axis:
+    // - "Archived" chip → ONLY archived rows (chip is itself the filter).
+    // - "Show archived" toggle on → everything (archived AND non-archived).
+    // - Otherwise (default) → exclude archived rows.
+    const archivedFilter = (t: TaskResponse) => {
+      if (quickFilter === "archived") return t.archived;
+      if (showArchived) return true;
+      return !t.archived;
+    };
     const colFilters = (t: TaskResponse) => {
       for (const [key, vals] of Object.entries(filteredInfo)) {
         if (!vals || vals.length === 0) continue;
@@ -335,7 +347,7 @@ export default function Tasks() {
       if (ap !== bp) return ap ? -1 : 1;
       return cmp(a, b);
     });
-  }, [tasks, pinnedIds, quickFilter, filteredInfo, sortedInfo]);
+  }, [tasks, pinnedIds, quickFilter, showArchived, filteredInfo, sortedInfo]);
 
   const [cursorId, setCursorId] = useState<number | null>(null);
   // Bring the cursor row into view when it changes.
@@ -778,12 +790,26 @@ export default function Tasks() {
         >
           Compact
         </Checkbox>
+        <Tooltip title="Include archived rows alongside non-archived ones in the current view. The Archived chip itself is unaffected — it always shows only archived rows.">
+          <Checkbox
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            style={{ marginLeft: 4 }}
+          >
+            Show archived
+          </Checkbox>
+        </Tooltip>
         <Button icon={<ReloadOutlined />} onClick={load}>
           Refresh
         </Button>
       </PageHeader>
 
-      <TasksFilters tasks={tasks} quickFilter={quickFilter} onChange={setQuickFilter} />
+      <TasksFilters
+        tasks={tasks}
+        quickFilter={quickFilter}
+        onChange={setQuickFilter}
+        includeArchived={showArchived}
+      />
 
       {selectionBar}
 
