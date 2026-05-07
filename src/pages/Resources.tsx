@@ -14,7 +14,13 @@ import ConfigUpload from "../components/ConfigUpload";
 import FileBrowser from "../components/FileBrowser";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
-import type { AvResponse, SimulatorResponse, SamplerResponse, MapResponse } from "../api/types";
+import type {
+  AvResponse,
+  SimulatorResponse,
+  SamplerResponse,
+  MonitorResponse,
+  MapResponse,
+} from "../api/types";
 import { useResourceTab } from "../hooks/useResourceTab";
 
 // --- Shared columns for AV/Simulator (image + runtimes). Config upload is a
@@ -384,6 +390,84 @@ function SamplersTab() {
   );
 }
 
+// --- Monitors (per-task condition tree: timeout, custom monitors). Same
+//     shape as Samplers — name + module_path + nullable config bytes. The
+//     monitor_id on a task is optional; null means executor falls back
+//     to its bundled default.
+
+function MonitorsTab() {
+  const tab = useResourceTab<MonitorResponse>({
+    listFn: api.listMonitors,
+    createFn: api.createMonitor,
+    updateFn: api.updateMonitor,
+    deleteFn: api.deleteMonitor,
+  });
+
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", width: 50 },
+    { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
+    { title: "Module", dataIndex: "module_path", key: "module_path", ellipsis: true },
+    {
+      title: "Config",
+      key: "config",
+      width: 240,
+      render: (_: unknown, r: MonitorResponse) => (
+        <ConfigUpload
+          entity="monitor"
+          id={r.id}
+          hasConfig={!!r.config_sha256}
+          onChange={tab.load}
+        />
+      ),
+    },
+    {
+      title: "",
+      key: "actions",
+      width: 50,
+      render: (_: unknown, r: MonitorResponse) => rowActions(r, tab.openEdit, tab.handleDelete),
+    },
+  ];
+
+  return (
+    <>
+      <TabToolbar entityName="Monitor" onAdd={tab.openCreate} onReload={tab.load} />
+      <Table
+        dataSource={tab.data}
+        columns={columns}
+        rowKey="id"
+        loading={tab.loading}
+        size="small"
+        scroll={{ x: "max-content" }}
+      />
+      <Modal
+        title={tab.editing ? "Edit Monitor" : "Add Monitor"}
+        open={tab.modalOpen}
+        onCancel={tab.closeModal}
+        footer={null}
+      >
+        <Form form={tab.form} layout="vertical" onFinish={tab.handleSave}>
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="module_path"
+            label="Module Path"
+            rules={[{ required: true }]}
+            initialValue="simcore.monitor.base:Monitor"
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={tab.saving} block>
+              {tab.editing ? "Save" : "Create"}
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
 // --- Maps ---
 
 function MapsTab() {
@@ -467,6 +551,7 @@ export default function Resources() {
           { key: "avs", label: "AVs", children: <AvsTab /> },
           { key: "simulators", label: "Simulators", children: <SimulatorsTab /> },
           { key: "samplers", label: "Samplers", children: <SamplersTab /> },
+          { key: "monitors", label: "Monitors", children: <MonitorsTab /> },
           { key: "maps", label: "Maps", children: <MapsTab /> },
         ]}
       />

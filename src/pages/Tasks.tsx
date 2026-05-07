@@ -30,6 +30,7 @@ import type {
   AvResponse,
   SimulatorResponse,
   SamplerResponse,
+  MonitorResponse,
   ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
@@ -231,6 +232,7 @@ export default function Tasks() {
   const [avs, setAvs] = useState<AvResponse[]>([]);
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
+  const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
 
   // --- Data loading ---
 
@@ -287,14 +289,19 @@ export default function Tasks() {
   }, []);
 
   const fetchResources = () =>
-    Promise.all([api.listPlans(), api.listAvs(), api.listSimulators(), api.listSamplers()]).then(
-      ([p, a, s, sa]) => {
-        setPlans(p);
-        setAvs(a);
-        setSimulators(s);
-        setSamplers(sa);
-      },
-    );
+    Promise.all([
+      api.listPlans(),
+      api.listAvs(),
+      api.listSimulators(),
+      api.listSamplers(),
+      api.listMonitors(),
+    ]).then(([p, a, s, sa, mo]) => {
+      setPlans(p);
+      setAvs(a);
+      setSimulators(s);
+      setSamplers(sa);
+      setMonitors(mo);
+    });
 
   useEffect(() => {
     fetchResources();
@@ -993,6 +1000,7 @@ export default function Tasks() {
         avs={avs}
         simulators={simulators}
         samplers={samplers}
+        monitors={monitors}
         plans={plans}
       />
 
