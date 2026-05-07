@@ -123,13 +123,14 @@ function StatusDonut({
   let acc = 0;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Background ring so a near-empty donut still has shape. */}
+      {/* Background ring so a near-empty donut still has shape.
+          Uses an AntD theme variable so the gray flips for dark mode. */}
       <circle
         cx={size / 2}
         cy={size / 2}
         r={r}
         fill="none"
-        stroke="#f0f0f0"
+        stroke="var(--ant-color-fill-tertiary, #f0f0f0)"
         strokeWidth={strokeWidth}
       />
       {total > 0 &&
@@ -159,7 +160,7 @@ function StatusDonut({
         y={size / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        style={{ fontSize: 14, fontWeight: 600, fill: "#262626" }}
+        style={{ fontSize: 14, fontWeight: 600, fill: "var(--ant-color-text, #262626)" }}
       >
         {total}
       </text>
