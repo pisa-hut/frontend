@@ -218,8 +218,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
             color: "#e5e5e5",
             fontSize: 11,
             lineHeight: 1.45,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
+            whiteSpace: "pre",
             fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
           }}
         >
