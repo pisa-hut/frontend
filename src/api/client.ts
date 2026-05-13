@@ -2,6 +2,7 @@ import type {
   AvResponse,
   SimulatorResponse,
   SamplerResponse,
+  MonitorResponse,
   MapResponse,
   ScenarioResponse,
   PlanResponse,
@@ -210,6 +211,14 @@ export const api = {
   updateSampler: (id: number, data: Partial<SamplerResponse>) =>
     pgUpdate<SamplerResponse>("sampler", id, data),
   deleteSampler: (id: number) => pgDelete("sampler", id),
+
+  // Monitors — per-task condition tree (timeout / custom monitors).
+  // Optional on a task; null = executor falls back to its bundled default.
+  listMonitors: () => pgList<MonitorResponse>("monitor"),
+  createMonitor: (data: Partial<MonitorResponse>) => pgCreate<MonitorResponse>("monitor", data),
+  updateMonitor: (id: number, data: Partial<MonitorResponse>) =>
+    pgUpdate<MonitorResponse>("monitor", id, data),
+  deleteMonitor: (id: number) => pgDelete("monitor", id),
 
   // Maps
   listMaps: () => pgList<MapResponse>("map"),

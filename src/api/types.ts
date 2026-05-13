@@ -57,6 +57,13 @@ export interface SamplerResponse {
   config_sha256?: string | null;
 }
 
+export interface MonitorResponse {
+  id: number;
+  name: string;
+  module_path: string;
+  config_sha256?: string | null;
+}
+
 export interface MapResponse {
   id: number;
   name: string;
@@ -87,7 +94,7 @@ export interface ScenarioFileMeta {
   size: number;
 }
 
-export type ConfigEntity = "av" | "simulator" | "sampler";
+export type ConfigEntity = "av" | "simulator" | "sampler" | "monitor";
 
 export interface PlanResponse {
   id: number;
@@ -102,6 +109,9 @@ export interface TaskResponse {
   av_id: number;
   simulator_id: number;
   sampler_id: number;
+  /** Optional FK to the per-task monitor (timeout / condition tree).
+   *  Null means the executor falls back to its bundled default. */
+  monitor_id?: number | null;
   task_status: TaskStatus;
   created_at: string;
   attempt_count: number;

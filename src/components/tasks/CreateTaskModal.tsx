@@ -19,6 +19,7 @@ import {
 import { api } from "../../api/client";
 import type {
   AvResponse,
+  MonitorResponse,
   PlanResponse,
   SamplerResponse,
   SimulatorResponse,
@@ -35,6 +36,10 @@ interface BulkFormValues {
   av_ids: number[];
   simulator_ids: number[];
   sampler_ids: number[];
+  /** Optional. Empty = leave task.monitor_id null (executor falls
+   *  back to its bundled default). When non-empty, every other combo
+   *  is multiplied by these monitor ids. */
+  monitor_ids?: number[];
   plan_ids?: number[];
   plan_filter?: string;
 }
@@ -48,6 +53,7 @@ interface Props {
   avs: AvResponse[];
   simulators: SimulatorResponse[];
   samplers: SamplerResponse[];
+  monitors: MonitorResponse[];
   plans: PlanResponse[];
 }
 
@@ -67,6 +73,7 @@ export default function CreateTaskModal({
   avs,
   simulators,
   samplers,
+  monitors,
   plans,
 }: Props) {
   const [form] = Form.useForm();
@@ -90,10 +97,15 @@ export default function CreateTaskModal({
     const v = form.getFieldsValue() as BulkFormValues;
     const matched = computeFilteredPlans();
     setFilteredPlans(matched);
+    // Monitor is optional: empty selection means "no pinned monitor"
+    // (the row is created with monitor_id=null) — still one task per
+    // other-combo, so multiply by max(1, monitor_count).
+    const monitorMultiplier = Math.max(1, v.monitor_ids?.length || 0);
     setPreviewCount(
       (v.av_ids?.length || 0) *
         (v.simulator_ids?.length || 0) *
         (v.sampler_ids?.length || 0) *
+        monitorMultiplier *
         matched.length,
     );
     setConfirmed(false);
@@ -115,12 +127,24 @@ export default function CreateTaskModal({
               : true,
           )
           .map((p) => p.id);
+    // Empty monitor selection collapses to a single [null] iteration so
+    // the user can still create tasks without pinning a monitor.
+    const monitorIds: (number | null)[] = values.monitor_ids?.length ? values.monitor_ids : [null];
     const combos: Partial<TaskResponse>[] = [];
     for (const av_id of values.av_ids) {
       for (const simulator_id of values.simulator_ids) {
         for (const sampler_id of values.sampler_ids) {
-          for (const plan_id of selectedPlans) {
-            combos.push({ plan_id, av_id, simulator_id, sampler_id, task_status: "idle" });
+          for (const monitor_id of monitorIds) {
+            for (const plan_id of selectedPlans) {
+              combos.push({
+                plan_id,
+                av_id,
+                simulator_id,
+                sampler_id,
+                monitor_id,
+                task_status: "idle",
+              });
+            }
           }
         }
       }
@@ -176,6 +200,17 @@ export default function CreateTaskModal({
             mode="multiple"
             options={samplers.map((s) => ({ label: s.name, value: s.id }))}
             placeholder="Select Samplers"
+          />
+        </Form.Item>
+        <Form.Item
+          name="monitor_ids"
+          label="Monitors (optional — leave empty for executor default)"
+        >
+          <Select
+            mode="multiple"
+            options={monitors.map((m) => ({ label: m.name, value: m.id }))}
+            placeholder="No pinned monitor"
+            allowClear
           />
         </Form.Item>
         <Form.Item name="plan_filter" label="Plan name filter">
