@@ -109,9 +109,10 @@ export interface TaskResponse {
   av_id: number;
   simulator_id: number;
   sampler_id: number;
-  /** Optional FK to the per-task monitor (timeout / condition tree).
-   *  Null means the executor falls back to its bundled default. */
-  monitor_id?: number | null;
+  /** Required FK to the per-task monitor (timeout / condition tree).
+   *  Every task pins exactly one monitor since the manager m20260513
+   *  migration; the executor no longer carries a fallback default. */
+  monitor_id: number;
   task_status: TaskStatus;
   created_at: string;
   attempt_count: number;
