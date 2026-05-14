@@ -26,6 +26,7 @@ const sampleTask: TaskResponse = {
   av_id: 1,
   simulator_id: 1,
   sampler_id: 1,
+  monitor_id: 1,
   task_status: "completed",
   created_at: "2026-05-01T00:00:00Z",
   attempt_count: 2,
