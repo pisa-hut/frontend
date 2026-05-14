@@ -13,7 +13,7 @@ import {
   InboxOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
-import type { FilterValue, SortOrder } from "antd/es/table/interface";
+import type { FilterDropdownProps, FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
@@ -104,6 +104,21 @@ export default function Tasks() {
     defaultQuickFilter,
   );
 
+  // Plan-tag filter: user picks one or more tag chips above the
+  // table to narrow rows to tasks whose plan carries any of those
+  // tags. Persisted; URL ?tag=foo,bar (or repeated ?tag=foo&tag=bar)
+  // lets dashboard donuts deep-link straight into a tag-scoped view.
+  const defaultTagFilter = useMemo(() => {
+    const all = searchParams.getAll("tag");
+    if (all.length > 1) return all;
+    const single = all[0];
+    return single ? single.split(",").filter(Boolean) : [];
+  }, []);
+  const [tagFilter, setTagFilterRaw] = useLocalStorageState<string[]>(
+    "tasks.tagFilter",
+    defaultTagFilter,
+  );
+
   // Controlled filter state so one "Clear Filters" button can reset every
   // column at once (including the URL-driven default status filter).
   const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
@@ -118,14 +133,31 @@ export default function Tasks() {
     { key: "last_run", order: "descend" },
   );
   const hasActiveFilters = useMemo(
-    () => Object.values(filteredInfo).some((v) => v != null && v.length > 0),
-    [filteredInfo],
+    () =>
+      tagFilter.length > 0 || Object.values(filteredInfo).some((v) => v != null && v.length > 0),
+    [filteredInfo, tagFilter],
   );
   const clearFilters = useCallback(() => {
     setFilteredInfo({});
     setQuickFilterRaw("all");
+    setTagFilterRaw([]);
     setSearchParams({});
-  }, [setFilteredInfo, setQuickFilterRaw, setSearchParams]);
+  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw, setSearchParams]);
+
+  // Update the URL ?tag= param to mirror tagFilter without
+  // disturbing other query params (chip / triage / archived).
+  const setTagFilter = useCallback(
+    (next: string[]) => {
+      setTagFilterRaw(next);
+      setSearchParams((prev) => {
+        const out = new URLSearchParams(prev);
+        out.delete("tag");
+        if (next.length > 0) out.set("tag", next.join(","));
+        return out;
+      });
+    },
+    [setTagFilterRaw, setSearchParams],
+  );
 
   // Apply a chip click: rewrites task_status filter + URL so the view,
   // the column dropdown, and the bookmark are all coherent. Also
@@ -171,6 +203,16 @@ export default function Tasks() {
       if (s && QUICK_FILTERS.some((q) => q.value === s)) next = s as QuickFilter;
     }
     if (next != null && next !== quickFilter) setQuickFilter(next);
+    // Mirror the ?tag= param into tagFilter so dashboard donut
+    // links land already-filtered. Comma-separated form (?tag=a,b)
+    // is the canonical write shape; multi-key form (?tag=a&tag=b)
+    // is also accepted for hand-crafted URLs.
+    const tagAll = searchParams.getAll("tag");
+    const tagsFromUrl =
+      tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
+    if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
+      setTagFilterRaw(tagsFromUrl);
+    }
     // Intentionally only re-fire on URL changes; don't chase quickFilter
     // changes back into the effect (they're outbound from setQuickFilter).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -315,6 +357,36 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
+  // plan_id -> tags lookup so the tag chip bar / Tags column can
+  // resolve tags per task without joining at every render.
+  const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
+  // Tag chip bar: sorted, deduped union of every plan tag attached
+  // to any task currently loaded. Counts come from tasks (not the
+  // plans table) so the chip badge matches the row count the chip
+  // would produce. Tags are restricted to the current archived
+  // axis so a tag whose plans are all archived doesn't show under
+  // the default view.
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of tasks) {
+      if (!showArchived && quickFilter !== "archived" && t.archived) continue;
+      if (quickFilter === "archived" && !t.archived) continue;
+      const tags = planTagsMap.get(t.plan_id) ?? [];
+      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) =>
+      b[1] - a[1] !== 0 ? b[1] - a[1] : a[0].localeCompare(b[0]),
+    );
+  }, [tasks, planTagsMap, showArchived, quickFilter]);
+  const toggleTag = useCallback(
+    (tag: string) => {
+      const next = tagFilter.includes(tag)
+        ? tagFilter.filter((t) => t !== tag)
+        : [...tagFilter, tag];
+      setTagFilter(next);
+    },
+    [tagFilter, setTagFilter],
+  );
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
@@ -357,8 +429,20 @@ export default function Tasks() {
       }
       return true;
     };
-    return tasks.filter((t) => archivedFilter(t) && colFilters(t));
-  }, [tasks, quickFilter, showArchived, filteredInfo]);
+    // Plan-tag filter — OR semantics: a task matches if its
+    // plan's tags contain any of the picked tags. Empty filter =
+    // pass-through. Plans with no tags only pass when the filter
+    // is empty (so picking a tag never silently excludes the
+    // user's untagged work without a deliberate click).
+    const tagSet = new Set(tagFilter);
+    const tagFilterFn = (t: TaskResponse) => {
+      if (tagSet.size === 0) return true;
+      const tags = planTagsMap.get(t.plan_id) ?? [];
+      for (const tag of tags) if (tagSet.has(tag)) return true;
+      return false;
+    };
+    return tasks.filter((t) => archivedFilter(t) && colFilters(t) && tagFilterFn(t));
+  }, [tasks, quickFilter, showArchived, filteredInfo, tagFilter, planTagsMap]);
 
   // Rows actually rendered by the table = filtered scope ∪ pinned rows.
   // Pinned rows always render regardless of chip / archived toggle /
@@ -714,6 +798,70 @@ export default function Tasks() {
           return text.toLowerCase().includes(String(value).toLowerCase());
         }),
       },
+      {
+        title: "Tags",
+        key: "tags",
+        width: 180,
+        ellipsis: true,
+        // Tags column shows the row's plan tags as small chips.
+        // The column's filter dropdown is a thin shim over the
+        // page-level `tagFilter` state (same source the chip bar
+        // above writes to) so the two surfaces never disagree.
+        // onFilter is a pass-through because the actual filtering
+        // already happens in `filteredTasks` upstream — without
+        // this, AntD's own filter pass would drop everything when
+        // tagFilter is empty (no row has filteredValue=[]).
+        render: (_: unknown, r: TaskResponse) => {
+          const tags = planTagsMap.get(r.plan_id) ?? [];
+          if (tags.length === 0) {
+            return (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                —
+              </Typography.Text>
+            );
+          }
+          return (
+            <Space size={[2, 2]} wrap>
+              {tags.map((tag) => (
+                <Tag key={tag} style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                  {tag}
+                </Tag>
+              ))}
+            </Space>
+          );
+        },
+        filteredValue: tagFilter.length > 0 ? tagFilter : null,
+        onFilter: () => true,
+        filterDropdown: ({ confirm }: FilterDropdownProps) => (
+          <div style={{ padding: 8, maxWidth: 240 }}>
+            <Space size={[4, 4]} wrap>
+              {tagCounts.length === 0 ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  No tags yet — set them on the Plans page.
+                </Typography.Text>
+              ) : (
+                tagCounts.map(([tag, count]) => (
+                  <Tag.CheckableTag
+                    key={tag}
+                    checked={tagFilter.includes(tag)}
+                    onChange={() => toggleTag(tag)}
+                  >
+                    {tag} <Typography.Text type="secondary">{count}</Typography.Text>
+                  </Tag.CheckableTag>
+                ))
+              )}
+            </Space>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <Button size="small" type="link" onClick={() => setTagFilter([])}>
+                Clear
+              </Button>
+              <Button size="small" type="primary" onClick={() => confirm()}>
+                OK
+              </Button>
+            </div>
+          </div>
+        ),
+      },
       ...(compactView ? [setupColumn] : expandedColumns),
       {
         title: "Status",
@@ -859,6 +1007,11 @@ export default function Tasks() {
     simMap,
     samplerMap,
     planMap,
+    planTagsMap,
+    tagFilter,
+    tagCounts,
+    toggleTag,
+    setTagFilter,
     setPinnedIds,
     openLog,
     handleRun,
@@ -927,6 +1080,46 @@ export default function Tasks() {
         onChange={setQuickFilter}
         includeArchived={showArchived}
       />
+
+      {tagCounts.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 8,
+          }}
+        >
+          <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 4 }}>
+            Tags:
+          </Typography.Text>
+          {tagCounts.map(([tag, count]) => {
+            const active = tagFilter.includes(tag);
+            return (
+              <Tag.CheckableTag
+                key={tag}
+                checked={active}
+                onChange={() => toggleTag(tag)}
+                style={{ padding: "2px 8px", fontSize: 12 }}
+              >
+                {tag}
+                <Typography.Text
+                  type="secondary"
+                  style={{ marginLeft: 6, fontSize: 11, color: active ? "inherit" : undefined }}
+                >
+                  {count}
+                </Typography.Text>
+              </Tag.CheckableTag>
+            );
+          })}
+          {tagFilter.length > 0 && (
+            <Button size="small" type="link" onClick={() => setTagFilter([])}>
+              Clear tags
+            </Button>
+          )}
+        </div>
+      )}
 
       {selectionBar}
 
