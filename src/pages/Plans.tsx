@@ -1,16 +1,113 @@
-import { useEffect, useState } from "react";
-import { Button, Modal, Form, Select, Input, message, Table, Dropdown } from "antd";
+import { useEffect, useRef, useState } from "react";
 import {
+  AutoComplete,
+  Button,
+  Dropdown,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Space,
+  Tag,
+  Table,
+  message,
+} from "antd";
+import type { InputRef } from "antd";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  MoreOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
+
+/** Per-row chips + inline AutoComplete for adding a new tag. AutoComplete
+ *  pulls suggestions from the parent's de-duped list of tags across all
+ *  plans so common labels stay one keystroke away. Mutations go through
+ *  PostgREST PATCH and the parent's `onChange` re-fetches. */
+function TagsCell({
+  plan,
+  suggestions,
+  onChange,
+}: {
+  plan: PlanResponse;
+  suggestions: string[];
+  onChange: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<InputRef>(null);
+
+  useEffect(() => {
+    if (adding) inputRef.current?.focus();
+  }, [adding]);
+
+  const commit = async () => {
+    const value = draft.trim();
+    if (!value) {
+      setAdding(false);
+      setDraft("");
+      return;
+    }
+    if (plan.tags.includes(value)) {
+      setAdding(false);
+      setDraft("");
+      return;
+    }
+    try {
+      await api.updatePlan(plan.id, { tags: [...plan.tags, value] });
+      onChange();
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setAdding(false);
+      setDraft("");
+    }
+  };
+
+  const remove = async (tag: string) => {
+    try {
+      await api.updatePlan(plan.id, { tags: plan.tags.filter((t) => t !== tag) });
+      onChange();
+    } catch (e) {
+      message.error(String(e));
+    }
+  };
+
+  return (
+    <Space size={[4, 4]} wrap>
+      {plan.tags.map((tag) => (
+        <Tag key={tag} closable onClose={() => remove(tag)}>
+          {tag}
+        </Tag>
+      ))}
+      {adding ? (
+        <AutoComplete
+          ref={inputRef as never}
+          size="small"
+          style={{ width: 120 }}
+          value={draft}
+          onChange={(v) => setDraft(v)}
+          onBlur={commit}
+          options={suggestions.filter((s) => !plan.tags.includes(s)).map((s) => ({ value: s }))}
+        >
+          <Input size="small" onPressEnter={commit} />
+        </AutoComplete>
+      ) : (
+        <Tag
+          style={{ cursor: "pointer", borderStyle: "dashed", background: "transparent" }}
+          onClick={() => setAdding(true)}
+        >
+          <PlusOutlined /> tag
+        </Tag>
+      )}
+    </Space>
+  );
+}
 
 export default function Plans() {
   const [data, setData] = useState<PlanResponse[]>([]);
@@ -22,11 +119,17 @@ export default function Plans() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
+  // Suggestions for the inline tag editor — refreshed alongside the
+  // plan list so newly-added tags become suggestions for sibling rows.
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+
   const load = () => {
     setLoading(true);
-    api
-      .listPlans()
-      .then(setData)
+    Promise.all([api.listPlans(), api.listPlanTags()])
+      .then(([plans, tags]) => {
+        setData(plans);
+        setTagSuggestions(tags);
+      })
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
@@ -106,6 +209,14 @@ export default function Plans() {
       key: "scenario_id",
       width: 100,
       ...getColumnSearchProps<PlanResponse>("scenario_id"),
+    },
+    {
+      title: "Tags",
+      key: "tags",
+      width: 280,
+      render: (_: unknown, r: PlanResponse) => (
+        <TagsCell plan={r} suggestions={tagSuggestions} onChange={load} />
+      ),
     },
     {
       title: "",

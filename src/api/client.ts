@@ -238,6 +238,15 @@ export const api = {
   createPlan: (data: Partial<PlanResponse>) => pgCreate<PlanResponse>("plan", data),
   updatePlan: (id: number, data: Partial<PlanResponse>) => pgUpdate<PlanResponse>("plan", id, data),
   deletePlan: (id: number) => pgDelete("plan", id),
+  /** Distinct tag set across all plans, for autocomplete. Cheap
+   *  for the realistic plan count; if it ever scales, swap for a
+   *  SQL view that returns DISTINCT unnest(tags). */
+  listPlanTags: async (): Promise<string[]> => {
+    const rows = await pgList<{ tags: string[] }>("plan?select=tags");
+    const seen = new Set<string>();
+    for (const row of rows) for (const tag of row.tags ?? []) seen.add(tag);
+    return [...seen].sort();
+  },
 
   // Tasks
   // Latest task_run fields are embedded so the row-level Log button can
