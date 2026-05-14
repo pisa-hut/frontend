@@ -3,6 +3,7 @@ import {
   Typography,
   Upload as AntUpload,
   Button,
+  Input,
   Select,
   Card,
   Tag,
@@ -46,6 +47,10 @@ const statusTag = (status: string) => {
 export default function Upload() {
   const [file, setFile] = useState<File | null>(null);
   const [format, setFormat] = useState<ScenarioFormat>("open_scenario1");
+  // Comma-separated tags applied to every plan auto-created during
+  // this upload. Bare scenarios (no map_name in spec.yaml -> no plan
+  // gets auto-created) are unaffected.
+  const [tagsRaw, setTagsRaw] = useState("");
   const [uploading, setUploading] = useState(false);
   const [results, setResults] = useState<UploadResponse | null>(null);
 
@@ -59,6 +64,7 @@ export default function Upload() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("format", format);
+    if (tagsRaw.trim()) formData.append("tags", tagsRaw);
     try {
       const res = await fetch(`${BASE_URL}/scenario/upload`, { method: "POST", body: formData });
       if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
@@ -96,6 +102,23 @@ export default function Upload() {
                   options={formatOptions}
                   style={{ width: "100%" }}
                 />
+              </div>
+
+              <div>
+                <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Plan tags{" "}
+                  <Typography.Text type="secondary">(optional, comma-sep)</Typography.Text>
+                </Typography.Text>
+                <Input
+                  value={tagsRaw}
+                  onChange={(e) => setTagsRaw(e.target.value)}
+                  placeholder="e.g. sprint-2026-05, carla"
+                  allowClear
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  Applied to every plan auto-created from this upload (only scenarios whose
+                  spec.yaml has map_name produce a plan).
+                </Typography.Text>
               </div>
 
               <Dragger

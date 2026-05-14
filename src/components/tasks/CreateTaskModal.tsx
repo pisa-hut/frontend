@@ -41,6 +41,11 @@ interface BulkFormValues {
   monitor_ids: number[];
   plan_ids?: number[];
   plan_filter?: string;
+  /** Optional. When non-empty, narrows the plan pool to plans
+   *  whose `tags` array contains any of the picked tags (OR
+   *  semantics). Stacked with `plan_filter` (AND between
+   *  filters). Empty = no tag-based narrowing. */
+  plan_tags?: string[];
 }
 
 interface Props {
@@ -84,12 +89,19 @@ export default function CreateTaskModal({
 
   const computeFilteredPlans = (): PlanResponse[] => {
     const v = form.getFieldsValue() as BulkFormValues;
+    // Explicit plan_ids selection wins outright — once the user
+    // picks specific plans, the name / tag filters are bypassed.
     if (v.plan_ids?.length) return plans.filter((p) => v.plan_ids!.includes(p.id));
+    let pool = plans;
+    if (v.plan_tags?.length) {
+      const wanted = new Set(v.plan_tags);
+      pool = pool.filter((p) => p.tags.some((t) => wanted.has(t)));
+    }
     if (v.plan_filter) {
       const f = v.plan_filter.toLowerCase();
-      return plans.filter((p) => p.name.toLowerCase().includes(f));
+      pool = pool.filter((p) => p.name.toLowerCase().includes(f));
     }
-    return plans;
+    return pool;
   };
 
   const updatePreview = () => {
@@ -113,15 +125,22 @@ export default function CreateTaskModal({
   };
 
   const handleSubmit = async (values: BulkFormValues) => {
+    // Mirror computeFilteredPlans's logic so the live preview and
+    // the actual submit always agree on which plans are in scope.
     const selectedPlans = values.plan_ids?.length
       ? values.plan_ids
-      : plans
-          .filter((p) =>
-            values.plan_filter
-              ? p.name.toLowerCase().includes(values.plan_filter.toLowerCase())
-              : true,
-          )
-          .map((p) => p.id);
+      : (() => {
+          let pool = plans;
+          if (values.plan_tags?.length) {
+            const wanted = new Set(values.plan_tags);
+            pool = pool.filter((p) => p.tags.some((t) => wanted.has(t)));
+          }
+          if (values.plan_filter) {
+            const f = values.plan_filter.toLowerCase();
+            pool = pool.filter((p) => p.name.toLowerCase().includes(f));
+          }
+          return pool.map((p) => p.id);
+        })();
     const combos: Partial<TaskResponse>[] = [];
     for (const av_id of values.av_ids) {
       for (const simulator_id of values.simulator_ids) {
@@ -199,6 +218,16 @@ export default function CreateTaskModal({
             mode="multiple"
             options={monitors.map((m) => ({ label: m.name, value: m.id }))}
             placeholder="Select Monitors"
+          />
+        </Form.Item>
+        <Form.Item name="plan_tags" label="Plan tag filter (optional)">
+          <Select
+            mode="multiple"
+            placeholder="Narrow plans by tag (any of)"
+            options={[...new Set(plans.flatMap((p) => p.tags))]
+              .sort()
+              .map((t) => ({ label: t, value: t }))}
+            allowClear
           />
         </Form.Item>
         <Form.Item name="plan_filter" label="Plan name filter">

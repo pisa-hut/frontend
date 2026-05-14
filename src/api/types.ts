@@ -101,6 +101,9 @@ export interface PlanResponse {
   name: string;
   map_id: number;
   scenario_id: number;
+  /** Free-form labels for grouping. Empty array when none set.
+   *  Drives the tag filter in the bulk-create-task modal. */
+  tags: string[];
 }
 
 export interface TaskResponse {
