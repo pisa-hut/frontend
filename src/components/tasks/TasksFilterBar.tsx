@@ -14,47 +14,101 @@ interface Props {
   monitors: MonitorResponse[];
   availableTags: string[];
   filteredInfo: Record<string, FilterValue | null>;
-  setFilteredInfo: (next: Record<string, FilterValue | null>) => void;
+  setFilteredInfo: (
+    next:
+      | Record<string, FilterValue | null>
+      | ((prev: Record<string, FilterValue | null>) => Record<string, FilterValue | null>),
+  ) => void;
   tagFilter: string[];
   setTagFilter: (next: string[]) => void;
   onClearAll: () => void;
   hasActiveFilters: boolean;
+  /** Per-axis row counts within the current scope, keyed by option value. */
+  countsByKey: {
+    av_id: Map<number, number>;
+    simulator_id: Map<number, number>;
+    sampler_id: Map<number, number>;
+    monitor_id: Map<number, number>;
+    tag: Map<string, number>;
+  };
 }
 
 interface ChipRowProps<V extends string | number> {
   label: string;
   options: { label: string; value: V }[];
+  counts: Map<V, number>;
   selected: V[];
   onToggle: (v: V) => void;
   onClear: () => void;
 }
 
+function CountedChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tag.CheckableTag
+      checked={active}
+      onChange={onClick}
+      style={{ padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 }}
+    >
+      {label}
+      <span
+        style={{
+          marginLeft: 6,
+          opacity: 0.65,
+          fontVariantNumeric: "tabular-nums",
+          fontSize: 11,
+        }}
+      >
+        {count}
+      </span>
+    </Tag.CheckableTag>
+  );
+}
+
 function ChipRow<V extends string | number>({
   label,
   options,
+  counts,
   selected,
   onToggle,
   onClear,
 }: ChipRowProps<V>) {
   if (options.length === 0) return null;
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 64, textAlign: "right" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <Typography.Text
+        type="secondary"
+        style={{ fontSize: 12, minWidth: 64, paddingTop: 4, textAlign: "right" }}
+      >
         {label}
       </Typography.Text>
-      <Space size={[4, 4]} wrap style={{ flex: 1 }}>
+      <Space size={[6, 6]} wrap style={{ flex: 1, minWidth: 0 }}>
         {options.map((opt) => (
-          <Tag.CheckableTag
+          <CountedChip
             key={String(opt.value)}
-            checked={selected.includes(opt.value)}
-            onChange={() => onToggle(opt.value)}
-          >
-            {opt.label}
-          </Tag.CheckableTag>
+            label={opt.label}
+            count={counts.get(opt.value) ?? 0}
+            active={selected.includes(opt.value)}
+            onClick={() => onToggle(opt.value)}
+          />
         ))}
       </Space>
       {selected.length > 0 && (
-        <Button size="small" type="link" onClick={onClear} style={{ padding: 0 }}>
+        <Button
+          size="small"
+          type="link"
+          onClick={onClear}
+          style={{ padding: 0, height: "auto", lineHeight: "20px" }}
+        >
           Clear
         </Button>
       )}
@@ -62,7 +116,7 @@ function ChipRow<V extends string | number>({
   );
 }
 
-const updateKey = (
+const setKey = (
   filteredInfo: Record<string, FilterValue | null>,
   key: string,
   values: number[],
@@ -73,7 +127,7 @@ const updateKey = (
   return next;
 };
 
-const toggleNumeric = (current: number[], v: number): number[] =>
+const toggle = <V,>(current: V[], v: V): V[] =>
   current.includes(v) ? current.filter((x) => x !== v) : [...current, v];
 
 export default function TasksFilterBar({
@@ -88,23 +142,20 @@ export default function TasksFilterBar({
   setTagFilter,
   onClearAll,
   hasActiveFilters,
+  countsByKey,
 }: Props) {
   const avSelected = (filteredInfo.av_id ?? []) as number[];
   const simSelected = (filteredInfo.simulator_id ?? []) as number[];
   const samplerSelected = (filteredInfo.sampler_id ?? []) as number[];
   const monitorSelected = (filteredInfo.monitor_id ?? []) as number[];
 
-  const onNumericToggle =
-    (key: string, current: number[]) =>
-    (v: number): void => {
-      setFilteredInfo(updateKey(filteredInfo, key, toggleNumeric(current, v)));
-    };
-  const onNumericClear = (key: string) => (): void => {
-    setFilteredInfo(updateKey(filteredInfo, key, []));
+  const numericToggle = (key: string, current: number[]) => (v: number) => {
+    setFilteredInfo(setKey(filteredInfo, key, toggle(current, v)));
   };
-  const onTagToggle = (v: string): void => {
-    setTagFilter(tagFilter.includes(v) ? tagFilter.filter((t) => t !== v) : [...tagFilter, v]);
+  const numericClear = (key: string) => () => {
+    setFilteredInfo(setKey(filteredInfo, key, []));
   };
+  const tagToggle = (v: string) => setTagFilter(toggle(tagFilter, v));
 
   const anyChips =
     avs.length > 0 ||
@@ -115,44 +166,55 @@ export default function TasksFilterBar({
   if (!anyChips) return null;
 
   return (
-    <Space direction="vertical" size={6} style={{ width: "100%" }}>
+    <Space direction="vertical" size={8} style={{ width: "100%" }}>
       <ChipRow
         label="AVs"
         options={avs.map((a) => ({ label: a.name, value: a.id }))}
+        counts={countsByKey.av_id}
         selected={avSelected}
-        onToggle={onNumericToggle("av_id", avSelected)}
-        onClear={onNumericClear("av_id")}
+        onToggle={numericToggle("av_id", avSelected)}
+        onClear={numericClear("av_id")}
       />
       <ChipRow
         label="Sims"
         options={simulators.map((s) => ({ label: s.name, value: s.id }))}
+        counts={countsByKey.simulator_id}
         selected={simSelected}
-        onToggle={onNumericToggle("simulator_id", simSelected)}
-        onClear={onNumericClear("simulator_id")}
+        onToggle={numericToggle("simulator_id", simSelected)}
+        onClear={numericClear("simulator_id")}
       />
       <ChipRow
         label="Samplers"
         options={samplers.map((s) => ({ label: s.name, value: s.id }))}
+        counts={countsByKey.sampler_id}
         selected={samplerSelected}
-        onToggle={onNumericToggle("sampler_id", samplerSelected)}
-        onClear={onNumericClear("sampler_id")}
+        onToggle={numericToggle("sampler_id", samplerSelected)}
+        onClear={numericClear("sampler_id")}
       />
       <ChipRow
         label="Monitors"
         options={monitors.map((m) => ({ label: m.name, value: m.id }))}
+        counts={countsByKey.monitor_id}
         selected={monitorSelected}
-        onToggle={onNumericToggle("monitor_id", monitorSelected)}
-        onClear={onNumericClear("monitor_id")}
+        onToggle={numericToggle("monitor_id", monitorSelected)}
+        onClear={numericClear("monitor_id")}
       />
       <ChipRow
         label="Tags"
         options={availableTags.map((t) => ({ label: t, value: t }))}
+        counts={countsByKey.tag}
         selected={tagFilter}
-        onToggle={onTagToggle}
+        onToggle={tagToggle}
         onClear={() => setTagFilter([])}
       />
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button size="small" type="link" onClick={onClearAll} disabled={!hasActiveFilters}>
+        <Button
+          size="small"
+          type="link"
+          onClick={onClearAll}
+          disabled={!hasActiveFilters}
+          style={{ padding: 0, height: "auto", lineHeight: "20px" }}
+        >
           Clear all filters
         </Button>
       </div>

@@ -387,18 +387,34 @@ export default function Tasks() {
   // would produce. Tags are restricted to the current archived
   // axis so a tag whose plans are all archived doesn't show under
   // the default view.
-  const tagCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  // Per-axis counts within the current archived scope. Drives the
+  // chip-row badges so the user can see "esmini 12, carla 8" etc.
+  // without first selecting a chip. Computed in one pass.
+  const filterCounts = useMemo(() => {
+    const av = new Map<number, number>();
+    const sim = new Map<number, number>();
+    const sampler = new Map<number, number>();
+    const monitor = new Map<number, number>();
+    const tag = new Map<string, number>();
     for (const t of tasks) {
       if (!showArchived && quickFilter !== "archived" && t.archived) continue;
       if (quickFilter === "archived" && !t.archived) continue;
+      av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
+      sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
+      sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
+      if (t.monitor_id != null) monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
       const tags = planTagsMap.get(t.plan_id) ?? [];
-      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
     }
-    return [...counts.entries()].sort((a, b) =>
-      b[1] - a[1] !== 0 ? b[1] - a[1] : a[0].localeCompare(b[0]),
-    );
+    return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
   }, [tasks, planTagsMap, showArchived, quickFilter]);
+  const tagCounts = useMemo(
+    () =>
+      [...filterCounts.tag.entries()].sort((a, b) =>
+        b[1] - a[1] !== 0 ? b[1] - a[1] : a[0].localeCompare(b[0]),
+      ),
+    [filterCounts.tag],
+  );
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
@@ -770,9 +786,11 @@ export default function Tasks() {
       (value: unknown, record: T): boolean =>
         pinnedIds.has(record.id) || real(value, record);
 
-    // Filter dropdowns for AV/Sim/Sampler moved to TasksFilterBar above
-    // the table; columns keep filteredValue+onFilter so the controlled
-    // filteredInfo state still drives row visibility.
+    // AV/Sim/Sampler filters live in TasksFilterBar; the upstream
+    // `filteredTasks` memo applies them to the dataSource. These
+    // columns are display-only — no filteredValue/onFilter so AntD's
+    // pipeline doesn't double-filter or hand back stale state in
+    // onChange (which used to wipe the chip-set filter).
     const expandedColumns = [
       {
         title: "AV",
@@ -781,8 +799,6 @@ export default function Tasks() {
         width: 100,
         ellipsis: true,
         render: (id: number) => avMap.get(id) ?? `#${id}`,
-        filteredValue: filteredInfo.av_id ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => record.av_id === value),
       },
       {
         title: "Simulator",
@@ -791,8 +807,6 @@ export default function Tasks() {
         width: 100,
         ellipsis: true,
         render: (id: number) => simMap.get(id) ?? `#${id}`,
-        filteredValue: filteredInfo.simulator_id ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => record.simulator_id === value),
       },
       {
         title: "Sampler",
@@ -801,8 +815,6 @@ export default function Tasks() {
         width: 80,
         ellipsis: true,
         render: (id: number) => samplerMap.get(id) ?? `#${id}`,
-        filteredValue: filteredInfo.sampler_id ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => record.sampler_id === value),
       },
     ];
 
@@ -859,8 +871,6 @@ export default function Tasks() {
         dataIndex: "task_status",
         key: "task_status",
         width: 110,
-        filteredValue: filteredInfo.task_status ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => record.task_status === value),
         render: (status: TaskStatus) => (
           <Tag
             color={TASK_STATUS_TAG_COLOR[status]}
@@ -1074,6 +1084,7 @@ export default function Tasks() {
             setTagFilter={setTagFilter}
             onClearAll={clearFilters}
             hasActiveFilters={hasActiveFilters}
+            countsByKey={filterCounts}
           />
         </Space>
       </Card>
@@ -1106,7 +1117,16 @@ export default function Tasks() {
         }}
         rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
         onChange={(_p, filters, sorter) => {
-          setFilteredInfo(filters);
+          // Merge: AntD only knows about the columns that own a
+          // filterDropdown (Plan, ID). Status / AV / Sim / Sampler /
+          // Monitor / Tag come from the filter bar above the table —
+          // overwriting filteredInfo with `filters` from AntD would
+          // wipe those externally-managed keys on every sort click.
+          setFilteredInfo((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(filters)) next[key] = filters[key] ?? null;
+            return next;
+          });
           if (!Array.isArray(sorter)) {
             setSortedInfo({
               key: sorter.columnKey ? String(sorter.columnKey) : undefined,

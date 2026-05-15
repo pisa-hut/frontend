@@ -1,4 +1,4 @@
-import { Badge, Button } from "antd";
+import { Space, Tag, Typography } from "antd";
 import type { TaskResponse, TaskStatus } from "../../api/types";
 
 /** Quick-filter scope shown above the Tasks table.
@@ -25,9 +25,6 @@ export const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
 ];
 
 function countFor(value: QuickFilter, tasks: TaskResponse[], includeArchived: boolean): number {
-  // The Archived chip is itself the archived filter — `includeArchived`
-  // doesn't apply. Every other chip honours it so the badge count
-  // matches the row count rendered in the table.
   const passesArchive = (t: TaskResponse) => includeArchived || !t.archived;
   switch (value) {
     case "all":
@@ -45,44 +42,46 @@ interface Props {
   tasks: TaskResponse[];
   quickFilter: QuickFilter;
   onChange: (q: QuickFilter) => void;
-  /** Whether the page-level "Show archived" toggle is on. The chip
-   *  badge counts must agree with the actual rendered row count, so
-   *  every non-`Archived` chip's count includes archived rows when
-   *  this is true. */
+  /** Whether the page-level "Show archived" toggle is on. Counts must
+   *  agree with the actual rendered row count. */
   includeArchived: boolean;
 }
 
-/** Quick-filter chip bar shown above the Tasks table. Counts are
- *  re-derived on every render so the user can see triage backlog at
- *  a glance, and the "active" chip styling makes the current scope
- *  obvious without reading the URL. */
 export default function TasksFilters({ tasks, quickFilter, onChange, includeArchived }: Props) {
   return (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-      {QUICK_FILTERS.map((q) => {
-        const count = countFor(q.value, tasks, includeArchived);
-        const active = quickFilter === q.value;
-        return (
-          <Button
-            key={q.value}
-            size="small"
-            type={active ? "primary" : "default"}
-            onClick={() => onChange(q.value)}
-          >
-            {q.label}
-            <Badge
-              count={count}
-              showZero
-              color={active ? "#fff" : undefined}
-              style={{
-                marginLeft: 6,
-                backgroundColor: active ? "rgba(255,255,255,0.18)" : undefined,
-                color: active ? "#fff" : undefined,
-              }}
-            />
-          </Button>
-        );
-      })}
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <Typography.Text
+        type="secondary"
+        style={{ fontSize: 12, minWidth: 64, paddingTop: 4, textAlign: "right" }}
+      >
+        Status
+      </Typography.Text>
+      <Space size={[6, 6]} wrap style={{ flex: 1, minWidth: 0 }}>
+        {QUICK_FILTERS.map((q) => {
+          const count = countFor(q.value, tasks, includeArchived);
+          const active = quickFilter === q.value;
+          return (
+            <Tag.CheckableTag
+              key={q.value}
+              checked={active}
+              onChange={() => onChange(q.value)}
+              style={{ padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 }}
+            >
+              {q.label}
+              <span
+                style={{
+                  marginLeft: 6,
+                  opacity: 0.65,
+                  fontVariantNumeric: "tabular-nums",
+                  fontSize: 11,
+                }}
+              >
+                {count}
+              </span>
+            </Tag.CheckableTag>
+          );
+        })}
+      </Space>
     </div>
   );
 }
