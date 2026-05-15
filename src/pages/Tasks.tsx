@@ -13,7 +13,7 @@ import {
   InboxOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
-import type { FilterDropdownProps, FilterValue, SortOrder } from "antd/es/table/interface";
+import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
@@ -36,6 +36,7 @@ import type {
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
+import TasksFilterBar from "../components/tasks/TasksFilterBar";
 import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 import CreateTaskModal from "../components/tasks/CreateTaskModal";
 
@@ -378,15 +379,6 @@ export default function Tasks() {
       b[1] - a[1] !== 0 ? b[1] - a[1] : a[0].localeCompare(b[0]),
     );
   }, [tasks, planTagsMap, showArchived, quickFilter]);
-  const toggleTag = useCallback(
-    (tag: string) => {
-      const next = tagFilter.includes(tag)
-        ? tagFilter.filter((t) => t !== tag)
-        : [...tagFilter, tag];
-      setTagFilter(next);
-    },
-    [tagFilter, setTagFilter],
-  );
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
@@ -758,6 +750,9 @@ export default function Tasks() {
       (value: unknown, record: T): boolean =>
         pinnedIds.has(record.id) || real(value, record);
 
+    // Filter dropdowns for AV/Sim/Sampler moved to TasksFilterBar above
+    // the table; columns keep filteredValue+onFilter so the controlled
+    // filteredInfo state still drives row visibility.
     const expandedColumns = [
       {
         title: "AV",
@@ -766,7 +761,6 @@ export default function Tasks() {
         width: 100,
         ellipsis: true,
         render: (id: number) => avMap.get(id) ?? `#${id}`,
-        filters: avs.map((a) => ({ text: a.name, value: a.id })),
         filteredValue: filteredInfo.av_id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => record.av_id === value),
       },
@@ -777,7 +771,6 @@ export default function Tasks() {
         width: 100,
         ellipsis: true,
         render: (id: number) => simMap.get(id) ?? `#${id}`,
-        filters: simulators.map((s) => ({ text: s.name, value: s.id })),
         filteredValue: filteredInfo.simulator_id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => record.simulator_id === value),
       },
@@ -788,7 +781,6 @@ export default function Tasks() {
         width: 80,
         ellipsis: true,
         render: (id: number) => samplerMap.get(id) ?? `#${id}`,
-        filters: samplers.map((s) => ({ text: s.name, value: s.id })),
         filteredValue: filteredInfo.sampler_id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => record.sampler_id === value),
       },
@@ -841,79 +833,12 @@ export default function Tasks() {
           return text.toLowerCase().includes(String(value).toLowerCase());
         }),
       },
-      {
-        title: "Tags",
-        key: "tags",
-        width: 180,
-        ellipsis: true,
-        // Tags column shows the row's plan tags as small chips.
-        // The column's filter dropdown is a thin shim over the
-        // page-level `tagFilter` state (same source the chip bar
-        // above writes to) so the two surfaces never disagree.
-        // onFilter is a pass-through because the actual filtering
-        // already happens in `filteredTasks` upstream — without
-        // this, AntD's own filter pass would drop everything when
-        // tagFilter is empty (no row has filteredValue=[]).
-        render: (_: unknown, r: TaskResponse) => {
-          const tags = planTagsMap.get(r.plan_id) ?? [];
-          if (tags.length === 0) {
-            return (
-              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                —
-              </Typography.Text>
-            );
-          }
-          return (
-            <Space size={[2, 2]} wrap>
-              {tags.map((tag) => (
-                <Tag key={tag} style={{ marginInlineEnd: 0, fontSize: 11 }}>
-                  {tag}
-                </Tag>
-              ))}
-            </Space>
-          );
-        },
-        filteredValue: tagFilter.length > 0 ? tagFilter : null,
-        onFilter: () => true,
-        filterDropdown: ({ confirm }: FilterDropdownProps) => (
-          <div style={{ padding: 8, maxWidth: 240 }}>
-            <Space size={[4, 4]} wrap>
-              {tagCounts.length === 0 ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  No tags yet — set them on the Plans page.
-                </Typography.Text>
-              ) : (
-                tagCounts.map(([tag, count]) => (
-                  <Tag.CheckableTag
-                    key={tag}
-                    checked={tagFilter.includes(tag)}
-                    onChange={() => toggleTag(tag)}
-                  >
-                    {tag} <Typography.Text type="secondary">{count}</Typography.Text>
-                  </Tag.CheckableTag>
-                ))
-              )}
-            </Space>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-              <Button size="small" type="link" onClick={() => setTagFilter([])}>
-                Clear
-              </Button>
-              <Button size="small" type="primary" onClick={() => confirm()}>
-                OK
-              </Button>
-            </div>
-          </div>
-        ),
-      },
       ...(compactView ? [setupColumn] : expandedColumns),
       {
         title: "Status",
         dataIndex: "task_status",
         key: "task_status",
         width: 110,
-        filters: (
-          ["idle", "queued", "running", "completed", "invalid", "aborted"] as TaskStatus[]
-        ).map((s) => ({ text: s, value: s })),
         filteredValue: filteredInfo.task_status ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => record.task_status === value),
         render: (status: TaskStatus) => (
@@ -1043,18 +968,10 @@ export default function Tasks() {
     filteredInfo,
     sortedInfo,
     pinnedIds,
-    avs,
-    simulators,
-    samplers,
     avMap,
     simMap,
     samplerMap,
     planMap,
-    planTagsMap,
-    tagFilter,
-    tagCounts,
-    toggleTag,
-    setTagFilter,
     setPinnedIds,
     openLog,
     handleRun,
@@ -1124,45 +1041,19 @@ export default function Tasks() {
         includeArchived={showArchived}
       />
 
-      {tagCounts.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: 6,
-            marginBottom: 8,
-          }}
-        >
-          <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 4 }}>
-            Tags:
-          </Typography.Text>
-          {tagCounts.map(([tag, count]) => {
-            const active = tagFilter.includes(tag);
-            return (
-              <Tag.CheckableTag
-                key={tag}
-                checked={active}
-                onChange={() => toggleTag(tag)}
-                style={{ padding: "2px 8px", fontSize: 12 }}
-              >
-                {tag}
-                <Typography.Text
-                  type="secondary"
-                  style={{ marginLeft: 6, fontSize: 11, color: active ? "inherit" : undefined }}
-                >
-                  {count}
-                </Typography.Text>
-              </Tag.CheckableTag>
-            );
-          })}
-          {tagFilter.length > 0 && (
-            <Button size="small" type="link" onClick={() => setTagFilter([])}>
-              Clear tags
-            </Button>
-          )}
-        </div>
-      )}
+      <TasksFilterBar
+        avs={avs}
+        simulators={simulators}
+        samplers={samplers}
+        monitors={monitors}
+        availableTags={tagCounts.map(([tag]) => tag)}
+        filteredInfo={filteredInfo}
+        setFilteredInfo={setFilteredInfo}
+        tagFilter={tagFilter}
+        setTagFilter={setTagFilter}
+        onClearAll={clearFilters}
+        hasActiveFilters={hasActiveFilters}
+      />
 
       {selectionBar}
 
