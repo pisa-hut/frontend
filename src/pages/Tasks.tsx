@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Tag, Button, Modal, message, Typography, Space, Checkbox, Table, Tooltip } from "antd";
+import {
+  Tag,
+  Button,
+  Card,
+  Modal,
+  message,
+  Typography,
+  Space,
+  Checkbox,
+  Table,
+  Tooltip,
+} from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
@@ -138,6 +149,15 @@ export default function Tasks() {
       tagFilter.length > 0 || Object.values(filteredInfo).some((v) => v != null && v.length > 0),
     [filteredInfo, tagFilter],
   );
+
+  // Reset to page 1 whenever the filter set changes — controlled
+  // currentPage doesn't auto-snap when the filter narrows the row
+  // count, so a page-3 view with matches only on page 1 looks like
+  // "no data" until the user navigates pages or sorts (which causes
+  // a re-render that incidentally fixes it).
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredInfo, tagFilter, quickFilter, showArchived]);
   const clearFilters = useCallback(() => {
     setFilteredInfo({});
     setQuickFilterRaw("all");
@@ -1034,26 +1054,29 @@ export default function Tasks() {
         </Button>
       </PageHeader>
 
-      <TasksFilters
-        tasks={tasks}
-        quickFilter={quickFilter}
-        onChange={setQuickFilter}
-        includeArchived={showArchived}
-      />
-
-      <TasksFilterBar
-        avs={avs}
-        simulators={simulators}
-        samplers={samplers}
-        monitors={monitors}
-        availableTags={tagCounts.map(([tag]) => tag)}
-        filteredInfo={filteredInfo}
-        setFilteredInfo={setFilteredInfo}
-        tagFilter={tagFilter}
-        setTagFilter={setTagFilter}
-        onClearAll={clearFilters}
-        hasActiveFilters={hasActiveFilters}
-      />
+      <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <TasksFilters
+            tasks={tasks}
+            quickFilter={quickFilter}
+            onChange={setQuickFilter}
+            includeArchived={showArchived}
+          />
+          <TasksFilterBar
+            avs={avs}
+            simulators={simulators}
+            samplers={samplers}
+            monitors={monitors}
+            availableTags={tagCounts.map(([tag]) => tag)}
+            filteredInfo={filteredInfo}
+            setFilteredInfo={setFilteredInfo}
+            tagFilter={tagFilter}
+            setTagFilter={setTagFilter}
+            onClearAll={clearFilters}
+            hasActiveFilters={hasActiveFilters}
+          />
+        </Space>
+      </Card>
 
       {selectionBar}
 
