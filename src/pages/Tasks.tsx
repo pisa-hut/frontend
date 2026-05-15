@@ -774,6 +774,15 @@ export default function Tasks() {
     const orderFor = (key: string): SortOrder | null =>
       sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
 
+    const parseIdSet = (value: unknown): Set<number> => {
+      const out = new Set<number>();
+      for (const tok of String(value ?? "").split(",")) {
+        const n = parseInt(tok.trim(), 10);
+        if (Number.isFinite(n)) out.add(n);
+      }
+      return out;
+    };
+
     return [
       {
         title: "ID",
@@ -783,6 +792,12 @@ export default function Tasks() {
         ellipsis: true,
         sorter: true,
         sortOrder: orderFor("id"),
+        ...getColumnSearchProps<TaskResponse>("id"),
+        filteredValue: filteredInfo.id ?? null,
+        onFilter: pinnedBypass<TaskResponse>((value, record) => {
+          const ids = parseIdSet(value);
+          return ids.has(record.id);
+        }),
       },
       {
         title: "Plan",
