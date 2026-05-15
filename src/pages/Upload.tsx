@@ -13,6 +13,7 @@ import {
   Col,
   Statistic,
   Table,
+  Empty,
 } from "antd";
 import { UploadOutlined, InboxOutlined } from "@ant-design/icons";
 import PageHeader from "../components/PageHeader";
@@ -85,7 +86,10 @@ export default function Upload() {
 
   return (
     <>
-      <PageHeader title="Upload Scenarios" />
+      <PageHeader
+        title="Upload Scenarios"
+        subtitle="Drop a zip of scenario folders. Each folder needs spec.yaml + .xosc; folders with a map_name also auto-create a plan."
+      />
 
       <Row gutter={[24, 24]}>
         {/* Left: upload form */}
@@ -214,11 +218,11 @@ export default function Upload() {
               />
             </Space>
           ) : (
-            <Card style={{ textAlign: "center", padding: "48px 0", color: "#999" }}>
-              <InboxOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
-              <Typography.Paragraph type="secondary">
-                Upload results will appear here
-              </Typography.Paragraph>
+            <Card styles={{ body: { padding: "48px 0" } }}>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="Upload results will appear here"
+              />
             </Card>
           )}
         </Col>

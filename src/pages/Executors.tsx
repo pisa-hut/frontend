@@ -54,7 +54,10 @@ export default function Executors() {
 
   return (
     <>
-      <PageHeader title="Executors">
+      <PageHeader
+        title="Executors"
+        subtitle="SLURM jobs registered against this manager. Each row is a worker that can claim queued tasks."
+      >
         <Button icon={<ReloadOutlined />} onClick={load}>
           Refresh
         </Button>
