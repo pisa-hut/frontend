@@ -820,8 +820,6 @@ export default function Tasks() {
         key: "id",
         width: 60,
         ellipsis: true,
-        sorter: true,
-        sortOrder: orderFor("id"),
         ...getColumnSearchProps<TaskResponse>("id"),
         filteredValue: filteredInfo.id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => {
