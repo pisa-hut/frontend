@@ -1,4 +1,4 @@
-import { Button, Card, Select, Space, Typography } from "antd";
+import { Button, Card, Space, Tag, Typography } from "antd";
 import type { FilterValue } from "antd/es/table/interface";
 import type {
   AvResponse,
@@ -21,7 +21,48 @@ interface Props {
   hasActiveFilters: boolean;
 }
 
-const setKey = (
+interface ChipRowProps<V extends string | number> {
+  label: string;
+  options: { label: string; value: V }[];
+  selected: V[];
+  onToggle: (v: V) => void;
+  onClear: () => void;
+}
+
+function ChipRow<V extends string | number>({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: ChipRowProps<V>) {
+  if (options.length === 0) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 64, textAlign: "right" }}>
+        {label}
+      </Typography.Text>
+      <Space size={[4, 4]} wrap style={{ flex: 1 }}>
+        {options.map((opt) => (
+          <Tag.CheckableTag
+            key={String(opt.value)}
+            checked={selected.includes(opt.value)}
+            onChange={() => onToggle(opt.value)}
+          >
+            {opt.label}
+          </Tag.CheckableTag>
+        ))}
+      </Space>
+      {selected.length > 0 && (
+        <Button size="small" type="link" onClick={onClear} style={{ padding: 0 }}>
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const updateKey = (
   filteredInfo: Record<string, FilterValue | null>,
   key: string,
   values: number[],
@@ -31,6 +72,9 @@ const setKey = (
   else next[key] = values as unknown as FilterValue;
   return next;
 };
+
+const toggleNumeric = (current: number[], v: number): number[] =>
+  current.includes(v) ? current.filter((x) => x !== v) : [...current, v];
 
 export default function TasksFilterBar({
   avs,
@@ -45,91 +89,71 @@ export default function TasksFilterBar({
   onClearAll,
   hasActiveFilters,
 }: Props) {
-  const avValue = (filteredInfo.av_id ?? []) as number[];
-  const simValue = (filteredInfo.simulator_id ?? []) as number[];
-  const samplerValue = (filteredInfo.sampler_id ?? []) as number[];
-  const monitorValue = (filteredInfo.monitor_id ?? []) as number[];
+  const avSelected = (filteredInfo.av_id ?? []) as number[];
+  const simSelected = (filteredInfo.simulator_id ?? []) as number[];
+  const samplerSelected = (filteredInfo.sampler_id ?? []) as number[];
+  const monitorSelected = (filteredInfo.monitor_id ?? []) as number[];
 
-  const labelStyle = { width: 70, fontSize: 12, color: "var(--ant-color-text-secondary)" };
-  const selectStyle = { flex: 1, minWidth: 200 };
+  const onNumericToggle =
+    (key: string, current: number[]) =>
+    (v: number): void => {
+      setFilteredInfo(updateKey(filteredInfo, key, toggleNumeric(current, v)));
+    };
+  const onNumericClear = (key: string) => (): void => {
+    setFilteredInfo(updateKey(filteredInfo, key, []));
+  };
+  const onTagToggle = (v: string): void => {
+    setTagFilter(tagFilter.includes(v) ? tagFilter.filter((t) => t !== v) : [...tagFilter, v]);
+  };
+
+  const anyChips =
+    avs.length > 0 ||
+    simulators.length > 0 ||
+    samplers.length > 0 ||
+    monitors.length > 0 ||
+    availableTags.length > 0;
+  if (!anyChips) return null;
 
   return (
     <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
       <Space direction="vertical" size={6} style={{ width: "100%" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Typography.Text style={labelStyle}>AVs</Typography.Text>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="All AVs"
-            value={avValue}
-            onChange={(v) => setFilteredInfo(setKey(filteredInfo, "av_id", v))}
-            options={avs.map((a) => ({ label: a.name, value: a.id }))}
-            maxTagCount="responsive"
-            style={selectStyle}
-            size="small"
-          />
-          <Typography.Text style={{ ...labelStyle, width: 70 }}>Sims</Typography.Text>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="All simulators"
-            value={simValue}
-            onChange={(v) => setFilteredInfo(setKey(filteredInfo, "simulator_id", v))}
-            options={simulators.map((s) => ({ label: s.name, value: s.id }))}
-            maxTagCount="responsive"
-            style={selectStyle}
-            size="small"
-          />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Typography.Text style={labelStyle}>Samplers</Typography.Text>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="All samplers"
-            value={samplerValue}
-            onChange={(v) => setFilteredInfo(setKey(filteredInfo, "sampler_id", v))}
-            options={samplers.map((s) => ({ label: s.name, value: s.id }))}
-            maxTagCount="responsive"
-            style={selectStyle}
-            size="small"
-          />
-          <Typography.Text style={labelStyle}>Monitors</Typography.Text>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="All monitors"
-            value={monitorValue}
-            onChange={(v) => setFilteredInfo(setKey(filteredInfo, "monitor_id", v))}
-            options={monitors.map((m) => ({ label: m.name, value: m.id }))}
-            maxTagCount="responsive"
-            style={selectStyle}
-            size="small"
-          />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Typography.Text style={labelStyle}>Tags</Typography.Text>
-          <Select
-            mode="multiple"
-            allowClear
-            showSearch
-            placeholder="All tags"
-            value={tagFilter}
-            onChange={setTagFilter}
-            options={availableTags.map((t) => ({ label: t, value: t }))}
-            maxTagCount="responsive"
-            style={selectStyle}
-            size="small"
-            optionFilterProp="label"
-          />
-          <Button
-            size="small"
-            type="link"
-            onClick={onClearAll}
-            disabled={!hasActiveFilters}
-            style={{ marginLeft: "auto" }}
-          >
+        <ChipRow
+          label="AVs"
+          options={avs.map((a) => ({ label: a.name, value: a.id }))}
+          selected={avSelected}
+          onToggle={onNumericToggle("av_id", avSelected)}
+          onClear={onNumericClear("av_id")}
+        />
+        <ChipRow
+          label="Sims"
+          options={simulators.map((s) => ({ label: s.name, value: s.id }))}
+          selected={simSelected}
+          onToggle={onNumericToggle("simulator_id", simSelected)}
+          onClear={onNumericClear("simulator_id")}
+        />
+        <ChipRow
+          label="Samplers"
+          options={samplers.map((s) => ({ label: s.name, value: s.id }))}
+          selected={samplerSelected}
+          onToggle={onNumericToggle("sampler_id", samplerSelected)}
+          onClear={onNumericClear("sampler_id")}
+        />
+        <ChipRow
+          label="Monitors"
+          options={monitors.map((m) => ({ label: m.name, value: m.id }))}
+          selected={monitorSelected}
+          onToggle={onNumericToggle("monitor_id", monitorSelected)}
+          onClear={onNumericClear("monitor_id")}
+        />
+        <ChipRow
+          label="Tags"
+          options={availableTags.map((t) => ({ label: t, value: t }))}
+          selected={tagFilter}
+          onToggle={onTagToggle}
+          onClear={() => setTagFilter([])}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Button size="small" type="link" onClick={onClearAll} disabled={!hasActiveFilters}>
             Clear all filters
           </Button>
         </div>
