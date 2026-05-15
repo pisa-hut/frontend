@@ -1,4 +1,4 @@
-import { Button, Card, Space, Tag, Typography } from "antd";
+import { Button, Space, Tag, Typography } from "antd";
 import type { FilterValue } from "antd/es/table/interface";
 import type {
   AvResponse,
@@ -115,49 +115,47 @@ export default function TasksFilterBar({
   if (!anyChips) return null;
 
   return (
-    <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
-      <Space direction="vertical" size={6} style={{ width: "100%" }}>
-        <ChipRow
-          label="AVs"
-          options={avs.map((a) => ({ label: a.name, value: a.id }))}
-          selected={avSelected}
-          onToggle={onNumericToggle("av_id", avSelected)}
-          onClear={onNumericClear("av_id")}
-        />
-        <ChipRow
-          label="Sims"
-          options={simulators.map((s) => ({ label: s.name, value: s.id }))}
-          selected={simSelected}
-          onToggle={onNumericToggle("simulator_id", simSelected)}
-          onClear={onNumericClear("simulator_id")}
-        />
-        <ChipRow
-          label="Samplers"
-          options={samplers.map((s) => ({ label: s.name, value: s.id }))}
-          selected={samplerSelected}
-          onToggle={onNumericToggle("sampler_id", samplerSelected)}
-          onClear={onNumericClear("sampler_id")}
-        />
-        <ChipRow
-          label="Monitors"
-          options={monitors.map((m) => ({ label: m.name, value: m.id }))}
-          selected={monitorSelected}
-          onToggle={onNumericToggle("monitor_id", monitorSelected)}
-          onClear={onNumericClear("monitor_id")}
-        />
-        <ChipRow
-          label="Tags"
-          options={availableTags.map((t) => ({ label: t, value: t }))}
-          selected={tagFilter}
-          onToggle={onTagToggle}
-          onClear={() => setTagFilter([])}
-        />
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Button size="small" type="link" onClick={onClearAll} disabled={!hasActiveFilters}>
-            Clear all filters
-          </Button>
-        </div>
-      </Space>
-    </Card>
+    <Space direction="vertical" size={6} style={{ width: "100%" }}>
+      <ChipRow
+        label="AVs"
+        options={avs.map((a) => ({ label: a.name, value: a.id }))}
+        selected={avSelected}
+        onToggle={onNumericToggle("av_id", avSelected)}
+        onClear={onNumericClear("av_id")}
+      />
+      <ChipRow
+        label="Sims"
+        options={simulators.map((s) => ({ label: s.name, value: s.id }))}
+        selected={simSelected}
+        onToggle={onNumericToggle("simulator_id", simSelected)}
+        onClear={onNumericClear("simulator_id")}
+      />
+      <ChipRow
+        label="Samplers"
+        options={samplers.map((s) => ({ label: s.name, value: s.id }))}
+        selected={samplerSelected}
+        onToggle={onNumericToggle("sampler_id", samplerSelected)}
+        onClear={onNumericClear("sampler_id")}
+      />
+      <ChipRow
+        label="Monitors"
+        options={monitors.map((m) => ({ label: m.name, value: m.id }))}
+        selected={monitorSelected}
+        onToggle={onNumericToggle("monitor_id", monitorSelected)}
+        onClear={onNumericClear("monitor_id")}
+      />
+      <ChipRow
+        label="Tags"
+        options={availableTags.map((t) => ({ label: t, value: t }))}
+        selected={tagFilter}
+        onToggle={onTagToggle}
+        onClear={() => setTagFilter([])}
+      />
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button size="small" type="link" onClick={onClearAll} disabled={!hasActiveFilters}>
+          Clear all filters
+        </Button>
+      </div>
+    </Space>
   );
 }

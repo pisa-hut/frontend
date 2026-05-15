@@ -58,7 +58,7 @@ interface Props {
  *  obvious without reading the URL. */
 export default function TasksFilters({ tasks, quickFilter, onChange, includeArchived }: Props) {
   return (
-    <div style={{ marginBottom: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
       {QUICK_FILTERS.map((q) => {
         const count = countFor(q.value, tasks, includeArchived);
         const active = quickFilter === q.value;
