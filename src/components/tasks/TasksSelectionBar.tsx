@@ -83,9 +83,7 @@ export default function TasksSelectionBar({
         <Space size={10}>
           <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {!allVisibleSelected
-              ? `of ${visibleIds.length} filtered`
-              : `(all filtered selected)`}
+            {!allVisibleSelected ? `of ${visibleIds.length} filtered` : `(all filtered selected)`}
           </Typography.Text>
           {!allVisibleSelected ? (
             <Button
