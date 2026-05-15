@@ -71,17 +71,20 @@ export default function TasksSelectionBar({
           justifyContent: "space-between",
           alignItems: "center",
           flexWrap: "wrap",
-          gap: 8,
-          padding: "8px 14px",
-          borderRadius: 8,
+          gap: 12,
+          padding: "10px 14px",
+          borderRadius: 10,
           background: "var(--ant-color-bg-elevated, rgba(255,255,255,0.97))",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
           border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
           backdropFilter: "blur(6px)",
         }}
       >
-        <Space>
+        <Space size={10}>
           <Typography.Text strong>{selectedRowKeys.length} selected</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {!allVisibleSelected ? `of ${visibleIds.length} filtered` : `(all filtered selected)`}
+          </Typography.Text>
           {!allVisibleSelected ? (
             <Button
               size="small"
@@ -89,7 +92,7 @@ export default function TasksSelectionBar({
               style={{ padding: 0 }}
               onClick={() => setSelectedRowKeys(visibleIds)}
             >
-              Select all {visibleIds.length} filtered
+              Select all
             </Button>
           ) : (
             <Button
@@ -98,11 +101,11 @@ export default function TasksSelectionBar({
               style={{ padding: 0 }}
               onClick={() => setSelectedRowKeys([])}
             >
-              Deselect all
+              Deselect
             </Button>
           )}
         </Space>
-        <Space>
+        <Space size={6}>
           {runnableCount > 0 && (
             <Popconfirm title={`Run ${runnableCount}?`} onConfirm={onBulkRun}>
               <Button size="small" type="primary" icon={<CaretRightOutlined />}>
@@ -131,14 +134,21 @@ export default function TasksSelectionBar({
               </Button>
             </Popconfirm>
           )}
+          <span
+            aria-hidden
+            style={{
+              display: "inline-block",
+              width: 1,
+              height: 20,
+              background: "var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
+              margin: "0 2px",
+            }}
+          />
           <Popconfirm title={`Delete ${selectedRowKeys.length}?`} onConfirm={onBulkDelete}>
             <Button size="small" danger icon={<DeleteOutlined />}>
               Delete {selectedRowKeys.length}
             </Button>
           </Popconfirm>
-          <Button size="small" onClick={() => setSelectedRowKeys([])}>
-            Clear
-          </Button>
         </Space>
       </div>
     </Affix>

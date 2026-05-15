@@ -8,9 +8,9 @@ import {
   message,
   Typography,
   Space,
-  Checkbox,
   Table,
   Tooltip,
+  Dropdown,
 } from "antd";
 import {
   ReloadOutlined,
@@ -23,6 +23,8 @@ import {
   ClearOutlined,
   InboxOutlined,
   UndoOutlined,
+  EyeOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -45,7 +47,7 @@ import type {
   ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
-import { TASK_STATUS_TAG_COLOR } from "../constants/status";
+import { TASK_STATUS_TAG_COLOR, TASK_STATUS_LABEL, TASK_STATUS_HEX } from "../constants/status";
 import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
 import TasksFilterBar from "../components/tasks/TasksFilterBar";
 import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
@@ -874,9 +876,27 @@ export default function Tasks() {
         render: (status: TaskStatus) => (
           <Tag
             color={TASK_STATUS_TAG_COLOR[status]}
-            icon={status === "running" ? <SyncOutlined spin /> : undefined}
+            icon={
+              status === "running" ? (
+                <SyncOutlined spin />
+              ) : (
+                <span
+                  aria-hidden
+                  style={{
+                    display: "inline-block",
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    background: TASK_STATUS_HEX[status],
+                    marginRight: 6,
+                    verticalAlign: "middle",
+                  }}
+                />
+              )
+            }
+            style={{ fontWeight: 500 }}
           >
-            {status.toUpperCase()}
+            {TASK_STATUS_LABEL[status]}
           </Tag>
         ),
       },
@@ -894,14 +914,25 @@ export default function Tasks() {
         width: 130,
         render: (_: unknown, r: TaskResponse) => {
           const t = r.task_run?.[0]?.started_at;
-          if (!t) return "-";
-          // Compact "MM/DD HH:mm" format keeps the column narrow
-          // without depending on locale-string's variable width.
-          // The full ISO timestamp is still in the row's tooltip /
-          // expanded panel for the rare case the user needs it.
+          if (!t) return <Typography.Text type="secondary">—</Typography.Text>;
           const d = new Date(t);
           const pad = (n: number) => String(n).padStart(2, "0");
-          return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          const shortLabel = `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          const ms = Date.now() - d.getTime();
+          const rel = (() => {
+            const s = Math.floor(ms / 1000);
+            if (s < 60) return `${s}s ago`;
+            const m = Math.floor(s / 60);
+            if (m < 60) return `${m}m ago`;
+            const h = Math.floor(m / 60);
+            if (h < 48) return `${h}h ago`;
+            return `${Math.floor(h / 24)}d ago`;
+          })();
+          return (
+            <Tooltip title={`${d.toISOString()} · ${rel}`}>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{shortLabel}</span>
+            </Tooltip>
+          );
         },
         sorter: true,
         sortOrder: orderFor("last_run"),
@@ -974,7 +1005,7 @@ export default function Tasks() {
                 <ConfirmIconButton
                   size="small"
                   icon={<InboxOutlined />}
-                  tooltip="Not our problem — archive (hides from default view)"
+                  tooltip="Archive — hide from default view"
                   confirmTitle="Archive this invalid task?"
                   onConfirm={() => handleArchive(record.id)}
                 />
@@ -1028,6 +1059,41 @@ export default function Tasks() {
     <>
       <PageHeader title="Tasks">
         <Button
+          icon={<ClearOutlined />}
+          onClick={clearFilters}
+          disabled={!hasActiveFilters && quickFilter === "all"}
+        >
+          Clear Filters
+        </Button>
+        <Dropdown
+          trigger={["click"]}
+          menu={{
+            items: [
+              {
+                key: "compact",
+                icon: compactView ? <CheckOutlined /> : <span style={{ width: 14 }} />,
+                label: "Compact rows",
+                onClick: () => setCompactView(!compactView),
+              },
+              {
+                key: "archived",
+                icon: showArchived ? <CheckOutlined /> : <span style={{ width: 14 }} />,
+                label: "Include archived",
+                onClick: () => setShowArchived(!showArchived),
+              },
+              { type: "divider" as const },
+              {
+                key: "refresh",
+                icon: <ReloadOutlined />,
+                label: "Refresh",
+                onClick: load,
+              },
+            ],
+          }}
+        >
+          <Button icon={<EyeOutlined />}>View</Button>
+        </Dropdown>
+        <Button
           type="primary"
           icon={<ThunderboltOutlined />}
           onClick={() => {
@@ -1035,32 +1101,6 @@ export default function Tasks() {
           }}
         >
           Create
-        </Button>
-        <Button
-          icon={<ClearOutlined />}
-          onClick={clearFilters}
-          disabled={!hasActiveFilters && quickFilter === "all"}
-        >
-          Clear Filters
-        </Button>
-        <Checkbox
-          checked={compactView}
-          onChange={(e) => setCompactView(e.target.checked)}
-          style={{ marginLeft: 4 }}
-        >
-          Compact
-        </Checkbox>
-        <Tooltip title="Include archived rows alongside non-archived ones in the current view. (Pinned rows are always shown regardless of this toggle or the chip selection.)">
-          <Checkbox
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-            style={{ marginLeft: 4 }}
-          >
-            Show archived
-          </Checkbox>
-        </Tooltip>
-        <Button icon={<ReloadOutlined />} onClick={load}>
-          Refresh
         </Button>
       </PageHeader>
 
@@ -1187,14 +1227,15 @@ export default function Tasks() {
           background: var(--ant-color-primary-bg, #e6f4ff) !important;
           box-shadow: inset 2px 0 0 var(--ant-color-primary, #1677ff);
         }
-        .tasks-row-pinned > td {
-          background: var(--ant-color-warning-bg, #fffbe6);
+        /* Pinned rows: subtle left accent stripe instead of a full yellow
+           wash so the cursor's primary-bg highlight wins when both apply. */
+        .tasks-row-pinned > td:first-child {
+          box-shadow: inset 3px 0 0 var(--ant-color-warning, #faad14);
         }
         /* Mark the boundary between pinned and non-pinned rows so users
-           see "stuff above the line is sticky-of-interest" without
-           needing two separate tables. */
+           see "stuff above the line is sticky-of-interest". */
         .tasks-row-pinned + tr:not(.tasks-row-pinned):not(.ant-table-expanded-row) > td {
-          border-top: 2px solid var(--ant-color-warning-border, #ffe58f);
+          border-top: 1px solid var(--ant-color-warning-border, #ffe58f);
         }
       `}</style>
     </>
