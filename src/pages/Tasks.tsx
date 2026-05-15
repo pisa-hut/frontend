@@ -659,7 +659,7 @@ export default function Tasks() {
 
   // --- Actions ---
 
-  const handleRun = async (id: number) => {
+  const handleRun = useCallback(async (id: number) => {
     try {
       await api.updateTask(id, { task_status: "queued" });
       message.success(`Task #${id} queued`);
@@ -667,9 +667,9 @@ export default function Tasks() {
     } catch (e) {
       message.error(String(e));
     }
-  };
+  }, []);
 
-  const handleStop = async (id: number) => {
+  const handleStop = useCallback(async (id: number) => {
     try {
       await api.stopTask(id);
       message.success(`Task #${id} stopped`);
@@ -677,13 +677,13 @@ export default function Tasks() {
     } catch (e) {
       message.error(String(e));
     }
-  };
+  }, []);
 
   // Triage action for `invalid` tasks. Archives instead of mutating
   // task_status — keeps the state machine pure and the row + history
   // intact. The default Tasks view hides archived rows; the quick-
   // filter chips, including the "Archived" chip, reveal them.
-  const handleArchive = async (id: number) => {
+  const handleArchive = useCallback(async (id: number) => {
     try {
       await api.archiveTask(id);
       message.success(`Task #${id} archived`);
@@ -691,8 +691,8 @@ export default function Tasks() {
     } catch (e) {
       message.error(String(e));
     }
-  };
-  const handleUnarchive = async (id: number) => {
+  }, []);
+  const handleUnarchive = useCallback(async (id: number) => {
     try {
       await api.unarchiveTask(id);
       message.success(`Task #${id} unarchived`);
@@ -700,7 +700,7 @@ export default function Tasks() {
     } catch (e) {
       message.error(String(e));
     }
-  };
+  }, []);
 
   const handleBulkRun = async () => {
     const ids = tasks
@@ -867,7 +867,7 @@ export default function Tasks() {
         width: 60,
         ellipsis: true,
         ...getColumnSearchProps<TaskResponse>("id"),
-        filteredValue: filteredInfo.id ?? null,
+        filteredValue: deferredFilteredInfo.id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => {
           const ids = parseIdSet(value);
           return ids.has(record.id);
@@ -881,7 +881,7 @@ export default function Tasks() {
         ellipsis: true,
         render: (id: number) => planMap.get(id) ?? `#${id}`,
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
-        filteredValue: filteredInfo.plan_id ?? null,
+        filteredValue: deferredFilteredInfo.plan_id ?? null,
         onFilter: pinnedBypass<TaskResponse>((value, record) => {
           const text = planMap.get(record.plan_id) ?? "";
           return text.toLowerCase().includes(String(value).toLowerCase());
@@ -1046,7 +1046,7 @@ export default function Tasks() {
     ];
   }, [
     compactView,
-    filteredInfo,
+    deferredFilteredInfo,
     sortedInfo,
     pinnedIds,
     avMap,
