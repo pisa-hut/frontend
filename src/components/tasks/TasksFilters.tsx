@@ -78,8 +78,7 @@ export default function TasksFilters({ summaries, quickFilter, onChange }: Props
     return { all, byStatus };
   }, [summaries]);
 
-  const countFor = (q: QuickFilter): number =>
-    q === "all" ? counts.all : counts.byStatus[q];
+  const countFor = (q: QuickFilter): number => (q === "all" ? counts.all : counts.byStatus[q]);
 
   const handleToggle = useCallback((q: QuickFilter) => onChange(q), [onChange]);
 

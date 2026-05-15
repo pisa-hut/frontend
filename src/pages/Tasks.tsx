@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
 import {
@@ -126,11 +119,9 @@ export default function Tasks() {
     "tasks.filteredInfo",
     { task_status: defaultStatusFilter ?? null },
   );
-  // Sort is restricted to columns the server can sort by — `last_run`
-  // can't be expressed as a PostgREST `order=` because it's a derived
-  // value across the embedded task_run join. Default = id.desc
-  // (newest task first), which is "what was just created" rather than
-  // "what just ran" but works without a Postgres view.
+  // Sort is restricted to server-sortable columns (id, attempt_count,
+  // last_run_at). The latter is the denormalised column added in
+  // manager m20260516 — kept fresh by a trigger on task_run.
   const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: SortKey; order?: SortOrder }>(
     "tasks.sortedInfo",
     { key: "last_run_at", order: "descend" },
@@ -497,8 +488,8 @@ export default function Tasks() {
   );
 
   const handleBulkRun = async () => {
-    const ids = (selectedRowKeys as number[]).filter(
-      (id) => RUNNABLE_STATUSES.includes(statusById.get(id) ?? "idle"),
+    const ids = (selectedRowKeys as number[]).filter((id) =>
+      RUNNABLE_STATUSES.includes(statusById.get(id) ?? "idle"),
     );
     try {
       await api.batchRunTasks(ids);

@@ -38,4 +38,3 @@ describe("useLocalStorageState", () => {
     expect(window.localStorage.getItem("counter")).toBe("15");
   });
 });
-

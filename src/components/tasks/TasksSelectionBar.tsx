@@ -32,8 +32,7 @@ export default function TasksSelectionBar({
   if (selectedRowKeys.length === 0) return null;
 
   const selectedSet = new Set(selectedRowKeys.map(Number));
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedSet.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSet.has(id));
   let runnableCount = 0;
   let stoppableCount = 0;
   for (const id of selectedSet) {

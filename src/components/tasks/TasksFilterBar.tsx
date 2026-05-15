@@ -230,10 +230,7 @@ export default function TasksFilterBar({
   // so the option object identities are referentially stable across
   // chip-click renders. CountedChip's React.memo can then skip
   // re-render on every chip whose label/count/active didn't change.
-  const avOptions = useMemo(
-    () => avs.map((a) => ({ label: a.name, value: a.id })),
-    [avs],
-  );
+  const avOptions = useMemo(() => avs.map((a) => ({ label: a.name, value: a.id })), [avs]);
   const simOptions = useMemo(
     () => simulators.map((s) => ({ label: s.name, value: s.id })),
     [simulators],
