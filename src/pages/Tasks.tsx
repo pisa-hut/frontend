@@ -416,16 +416,46 @@ export default function Tasks() {
       return !t.archived;
     };
     const colFilters = (t: TaskResponse) => {
+      // Per-column matchers — mirror each column's onFilter so the
+      // upstream "filtered scope" agrees with what AntD renders.
+      // A generic stringify-and-substring pass was wrong for the
+      // Plan column (search text vs. raw plan_id) and the ID column
+      // (comma-separated parser), and made the table show "no data"
+      // even when matching rows existed.
       for (const [key, vals] of Object.entries(filteredInfo)) {
         if (!vals || vals.length === 0) continue;
-        const v = (t as unknown as Record<string, unknown>)[key];
-        const valueText = v == null ? "" : String(v).toLowerCase();
-        const matches = vals.some((filterVal) => {
-          if (filterVal === v) return true;
-          if (filterVal == null) return false;
-          return valueText.includes(String(filterVal).toLowerCase());
-        });
-        if (!matches) return false;
+        switch (key) {
+          case "id": {
+            const ids = new Set<number>();
+            for (const tok of vals.flatMap((v) => String(v).split(","))) {
+              const n = parseInt(tok.trim(), 10);
+              if (Number.isFinite(n)) ids.add(n);
+            }
+            if (!ids.has(t.id)) return false;
+            break;
+          }
+          case "plan_id": {
+            const text = (planMap.get(t.plan_id) ?? "").toLowerCase();
+            if (!vals.some((v) => text.includes(String(v).toLowerCase()))) return false;
+            break;
+          }
+          case "av_id":
+            if (!vals.includes(t.av_id)) return false;
+            break;
+          case "simulator_id":
+            if (!vals.includes(t.simulator_id)) return false;
+            break;
+          case "sampler_id":
+            if (!vals.includes(t.sampler_id)) return false;
+            break;
+          case "task_status":
+            if (!vals.includes(t.task_status)) return false;
+            break;
+          default:
+            // Unknown filter key — let it through rather than silently
+            // hiding rows the user didn't ask to hide.
+            break;
+        }
       }
       return true;
     };
@@ -442,7 +472,7 @@ export default function Tasks() {
       return false;
     };
     return tasks.filter((t) => archivedFilter(t) && colFilters(t) && tagFilterFn(t));
-  }, [tasks, quickFilter, showArchived, filteredInfo, tagFilter, planTagsMap]);
+  }, [tasks, quickFilter, showArchived, filteredInfo, tagFilter, planTagsMap, planMap]);
 
   // Rows actually rendered by the table = filtered scope ∪ pinned rows.
   // Pinned rows always render regardless of chip / archived toggle /
