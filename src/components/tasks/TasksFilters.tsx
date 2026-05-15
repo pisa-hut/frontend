@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from "react";
 import { Space, Tag, Typography } from "antd";
-import type { TaskResponse, TaskStatus } from "../../api/types";
+import type { TaskStatus, TaskSummary } from "../../api/types";
 
 export type QuickFilter = "all" | TaskStatus;
 
@@ -52,12 +52,14 @@ const StatusChip = memo(function StatusChip({
 });
 
 interface Props {
-  tasks: TaskResponse[];
+  /** Lightweight summary list — counts come from this so they reflect
+   *  the global task population, not just the current paginated page. */
+  summaries: TaskSummary[];
   quickFilter: QuickFilter;
   onChange: (q: QuickFilter) => void;
 }
 
-export default function TasksFilters({ tasks, quickFilter, onChange }: Props) {
+export default function TasksFilters({ summaries, quickFilter, onChange }: Props) {
   // One pass for all status counts.
   const counts = useMemo(() => {
     let all = 0;
@@ -69,12 +71,12 @@ export default function TasksFilters({ tasks, quickFilter, onChange }: Props) {
       invalid: 0,
       aborted: 0,
     };
-    for (const t of tasks) {
+    for (const t of summaries) {
       all++;
       byStatus[t.task_status]++;
     }
     return { all, byStatus };
-  }, [tasks]);
+  }, [summaries]);
 
   const countFor = (q: QuickFilter): number =>
     q === "all" ? counts.all : counts.byStatus[q];

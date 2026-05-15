@@ -1,17 +1,18 @@
 import { Affix, Button, Popconfirm, Space, Typography } from "antd";
 import { CaretRightOutlined, DeleteOutlined, StopOutlined } from "@ant-design/icons";
-import type { TaskResponse, TaskStatus } from "../../api/types";
+import type { TaskStatus } from "../../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../../api/types";
 
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 interface Props {
-  /** All tasks (used to compute counts of selected items by status). */
-  tasks: TaskResponse[];
-  /** Tasks visible after the current quick-filter + column filters
-   *  apply. Used by "Select all N filtered" so the user can act on a
-   *  scope spanning multiple pages without paginating through them. */
-  visibleTasks: TaskResponse[];
+  /** id → status lookup over the full filtered set. The selection
+   *  bar uses it to compute Run/Stop counts even when selected rows
+   *  span pages the table isn't currently rendering. */
+  statusById: Map<number, TaskStatus>;
+  /** IDs that match the current chip filter set (across all pages),
+   *  used by "Select all N filtered". */
+  visibleIds: number[];
   selectedRowKeys: React.Key[];
   setSelectedRowKeys: (keys: React.Key[]) => void;
   onBulkRun: () => void;
@@ -20,8 +21,8 @@ interface Props {
 }
 
 export default function TasksSelectionBar({
-  tasks,
-  visibleTasks,
+  statusById,
+  visibleIds,
   selectedRowKeys,
   setSelectedRowKeys,
   onBulkRun,
@@ -30,14 +31,17 @@ export default function TasksSelectionBar({
 }: Props) {
   if (selectedRowKeys.length === 0) return null;
 
-  const selected = tasks.filter((t) => selectedRowKeys.includes(t.id));
-  const visibleIds = visibleTasks.map((t) => t.id);
+  const selectedSet = new Set(selectedRowKeys.map(Number));
   const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedRowKeys.includes(id));
-  const runnableCount = selected.filter((t) =>
-    RUNNABLE_TASK_STATUSES.includes(t.task_status),
-  ).length;
-  const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
+    visibleIds.length > 0 && visibleIds.every((id) => selectedSet.has(id));
+  let runnableCount = 0;
+  let stoppableCount = 0;
+  for (const id of selectedSet) {
+    const st = statusById.get(id);
+    if (st == null) continue;
+    if (RUNNABLE_TASK_STATUSES.includes(st)) runnableCount++;
+    if (STOPPABLE_STATUSES.includes(st)) stoppableCount++;
+  }
 
   return (
     <Affix

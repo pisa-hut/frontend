@@ -8,6 +8,9 @@ import type {
   PlanResponse,
   TaskResponse,
   TaskRunResponse,
+  TaskSummary,
+  TasksPage,
+  TasksPageQuery,
   ExecutorResponse,
   MapFileMeta,
   ScenarioFileMeta,
@@ -256,6 +259,68 @@ export const api = {
     pgList<TaskResponse>(
       "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
     ),
+
+  // Lightweight summary of every task: only the fields needed for
+  // chip-count badges and "select all filtered" computation. Replaces
+  // the all-rich-rows fetch that was costing 1-2 MB / 50-100 ms parse
+  // every time SSE fired.
+  listTaskSummaries: async (): Promise<TaskSummary[]> => {
+    const res = await fetch(
+      `${POSTGREST_URL}/task?select=id,task_status,av_id,simulator_id,sampler_id,monitor_id,plan_id&order=id.desc`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  // Server-side paginated + filtered + sorted rich rows for the
+  // Tasks table. Returns the requested page plus the global filtered
+  // total (via Prefer: count=exact → Content-Range). Plan / tag
+  // filters use the !inner embed pattern so the parent rows are
+  // narrowed, not just the embedded plan resource.
+  listTasksPage: async (q: TasksPageQuery): Promise<TasksPage> => {
+    const p = new URLSearchParams();
+    const needsPlanInner = (q.tags && q.tags.length > 0) || !!q.planSearch;
+    const planEmbed = needsPlanInner ? "plan!inner(id,tags,name)" : "plan(id,tags,name)";
+    p.set(
+      "select",
+      `*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message),${planEmbed}`,
+    );
+    p.set("task_run.order", "attempt.desc");
+    p.set("task_run.limit", "1");
+    // last_run_at is nullable; pin nulls to the bottom so newly-
+    // created tasks that have never run don't dominate desc sort.
+    const orderTail = q.sort.key === "last_run_at" ? ".nullslast" : "";
+    p.set("order", `${q.sort.key}.${q.sort.order}${orderTail}`);
+    p.set("limit", String(q.pageSize));
+    p.set("offset", String((q.page - 1) * q.pageSize));
+    if (q.status?.length) p.set("task_status", `in.(${q.status.join(",")})`);
+    if (q.avIds?.length) p.set("av_id", `in.(${q.avIds.join(",")})`);
+    if (q.simIds?.length) p.set("simulator_id", `in.(${q.simIds.join(",")})`);
+    if (q.samplerIds?.length) p.set("sampler_id", `in.(${q.samplerIds.join(",")})`);
+    if (q.monitorIds?.length) p.set("monitor_id", `in.(${q.monitorIds.join(",")})`);
+    if (q.ids?.length) p.set("id", `in.(${q.ids.join(",")})`);
+    if (q.tags?.length) {
+      // OR semantics: any task whose plan has any of these tags.
+      // PostgREST array-overlap operator is `ov.{a,b,c}`.
+      p.set("plan.tags", `ov.{${q.tags.map(encodeURIComponent).join(",")}}`);
+    }
+    if (q.planSearch) {
+      p.set("plan.name", `ilike.*${q.planSearch}*`);
+    }
+    const url = `${POSTGREST_URL}/task?${p}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", Prefer: "count=exact" },
+      signal: q.signal,
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const rows = (await res.json()) as TaskResponse[];
+    // Content-Range: e.g. "0-19/3890"
+    const range = res.headers.get("Content-Range");
+    const slash = range?.lastIndexOf("/") ?? -1;
+    const total = slash >= 0 && range ? parseInt(range.slice(slash + 1), 10) : rows.length;
+    return { rows, total: Number.isFinite(total) ? total : rows.length };
+  },
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
   stopTask: async (id: number) => {

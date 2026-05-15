@@ -30,6 +30,8 @@ import type {
   TaskResponse,
   TaskStatus,
   TaskRunResponse,
+  TaskSummary,
+  TasksPageQuery,
   PlanResponse,
   AvResponse,
   SimulatorResponse,
@@ -47,43 +49,20 @@ import CreateTaskModal from "../components/tasks/CreateTaskModal";
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
-// Field-level equality for the listTasks payload. The previous
-// JSON.stringify implementation blew up to ~500ms blocking 'message'
-// handlers under SSE pressure on multi-thousand-row tables. Comparing
-// only the fields the UI actually reads keeps the check at a few ms.
-function sameTaskList(a: TaskResponse[], b: TaskResponse[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i];
-    const y = b[i];
-    if (
-      x.id !== y.id ||
-      x.task_status !== y.task_status ||
-      x.attempt_count !== y.attempt_count ||
-      x.plan_id !== y.plan_id ||
-      x.av_id !== y.av_id ||
-      x.simulator_id !== y.simulator_id ||
-      x.sampler_id !== y.sampler_id ||
-      x.monitor_id !== y.monitor_id
-    ) {
-      return false;
-    }
-    const xr = x.task_run?.[0];
-    const yr = y.task_run?.[0];
-    if (xr === yr) continue;
-    if (!xr || !yr) return false;
-    if (
-      xr.id !== yr.id ||
-      xr.attempt !== yr.attempt ||
-      xr.task_run_status !== yr.task_run_status ||
-      xr.started_at !== yr.started_at ||
-      xr.executor_id !== yr.executor_id
-    ) {
-      return false;
-    }
+type SortKey = TasksPageQuery["sort"]["key"];
+const VALID_SORT_KEYS: SortKey[] = ["id", "attempt_count", "last_run_at"];
+
+function isSortKey(s: string | undefined): s is SortKey {
+  return s != null && (VALID_SORT_KEYS as string[]).includes(s);
+}
+
+function parseIdSet(value: unknown): Set<number> {
+  const out = new Set<number>();
+  for (const tok of String(value ?? "").split(",")) {
+    const n = parseInt(tok.trim(), 10);
+    if (Number.isFinite(n)) out.add(n);
   }
-  return true;
+  return out;
 }
 
 export default function Tasks() {
@@ -100,19 +79,29 @@ export default function Tasks() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [tasks, setTasks] = useState<TaskResponse[]>([]);
+  // Server-paginated rows for the Table; full-row TaskResponse with task_run.
+  const [pageRows, setPageRows] = useState<TaskResponse[]>([]);
+  const [pageTotal, setPageTotal] = useState(0);
+  // Loading overlay only shows on the very first fetch. Subsequent
+  // refetches keep the previous page visible until the new one
+  // arrives — flips of the spinner overlay on every SSE event were
+  // their own forced-reflow source.
+  const [initialLoad, setInitialLoad] = useState(true);
+  // Lightweight all-rows summary for chip counts and "select-all-filtered".
+  const [summaries, setSummaries] = useState<TaskSummary[]>([]);
+
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
-  // One-shot cleanup of localStorage keys for removed features so old
-  // sessions don't leave orphaned data sitting around the browser.
+  const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
+    "tasks.quickFilter",
+    defaultQuickFilter,
+  );
+
+  // One-shot localStorage cleanup of orphaned keys for removed features.
   useEffect(() => {
-    for (const k of [
-      "tasks.pinned",
-      "tasks.compactView",
-      "tasks.showArchived",
-    ]) {
+    for (const k of ["tasks.pinned", "tasks.compactView", "tasks.showArchived"]) {
       try {
         localStorage.removeItem(k);
       } catch {
@@ -120,14 +109,7 @@ export default function Tasks() {
       }
     }
   }, []);
-  const [loading, setLoading] = useState(true);
-  const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
-    "tasks.quickFilter",
-    defaultQuickFilter,
-  );
 
-  // Plan-tag filter — comma-separated ?tag= URL param hydrates from
-  // dashboard donut deep-links.
   const defaultTagFilter = useMemo(() => {
     const all = searchParams.getAll("tag");
     if (all.length > 1) return all;
@@ -144,9 +126,14 @@ export default function Tasks() {
     "tasks.filteredInfo",
     { task_status: defaultStatusFilter ?? null },
   );
-  const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: string; order?: SortOrder }>(
+  // Sort is restricted to columns the server can sort by — `last_run`
+  // can't be expressed as a PostgREST `order=` because it's a derived
+  // value across the embedded task_run join. Default = id.desc
+  // (newest task first), which is "what was just created" rather than
+  // "what just ran" but works without a Postgres view.
+  const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: SortKey; order?: SortOrder }>(
     "tasks.sortedInfo",
-    { key: "last_run", order: "descend" },
+    { key: "last_run_at", order: "descend" },
   );
   const hasActiveFilters = useMemo(
     () =>
@@ -154,17 +141,17 @@ export default function Tasks() {
     [filteredInfo, tagFilter],
   );
 
-  // Defer the heavy-consumer view of the filter state. Chip components
-  // keep reading the live values so their checked state flips
-  // instantly; the filteredTasks / filterCounts memos and the Table
-  // read these deferred copies, letting React schedule heavy table
-  // re-renders at lower priority.
+  // Defer chip-input state for any expensive client work that still
+  // reads from filteredInfo/tagFilter (the column dropdown highlights
+  // and sortable column header). The query that drives the server
+  // fetch reads the LIVE state so no extra paint happens between the
+  // chip flip and the new page rendering.
   const deferredFilteredInfo = useDeferredValue(filteredInfo);
-  const deferredTagFilter = useDeferredValue(tagFilter);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [filteredInfo, tagFilter, quickFilter]);
+
   const clearFilters = useCallback(() => {
     setFilteredInfo({});
     setQuickFilterRaw("all");
@@ -197,7 +184,7 @@ export default function Tasks() {
     [setQuickFilterRaw, setFilteredInfo, setSearchParams],
   );
 
-  // URL → state sync (chip + tag from URL after mount).
+  // URL → state sync after mount.
   useEffect(() => {
     const s = searchParams.get("status");
     if (s && QUICK_FILTERS.some((q) => q.value === s) && s !== quickFilter) {
@@ -227,8 +214,6 @@ export default function Tasks() {
     setLogExecutorOverride(executor);
   }, []);
 
-  // Force TaskRunsPanel remount on each expand so stale pagination
-  // state doesn't leak into the next expand.
   const prevExpandedRef = useRef<Set<number>>(new Set());
   const [expansionCounts, setExpansionCounts] = useState<Map<number, number>>(new Map());
   const handleExpandedChange = useCallback((keys: React.Key[]) => {
@@ -256,30 +241,108 @@ export default function Tasks() {
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
 
+  // --- Build the server-side query from chip + sort + page state. ---
+
+  const query: TasksPageQuery = useMemo(() => {
+    const status = (filteredInfo.task_status as string[] | undefined)?.filter(Boolean) as
+      | TaskStatus[]
+      | undefined;
+    const avIds = (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number);
+    const simIds = (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number);
+    const samplerIds = (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number);
+    const monitorIds = (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number);
+    let ids: number[] | undefined;
+    const idVals = filteredInfo.id as (string | number)[] | undefined;
+    if (idVals?.length) {
+      const set = new Set<number>();
+      for (const v of idVals) for (const n of parseIdSet(v)) set.add(n);
+      ids = [...set];
+    }
+    const planSearch = (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString() || undefined;
+    const sortKey: SortKey = isSortKey(sortedInfo.key) ? sortedInfo.key : "id";
+    const sortOrder = sortedInfo.order === "ascend" ? "asc" : "desc";
+    return {
+      page: currentPage,
+      pageSize,
+      sort: { key: sortKey, order: sortOrder },
+      status,
+      avIds,
+      simIds,
+      samplerIds,
+      monitorIds,
+      tags: tagFilter.length > 0 ? tagFilter : undefined,
+      ids,
+      planSearch,
+    };
+  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter]);
+
   // --- Data loading ---
 
-  const load = () => {
-    setLoading(true);
-    api
-      .listTasks()
-      .then(setTasks)
-      .finally(() => setLoading(false));
-  };
+  const summariesPromiseRef = useRef<Promise<unknown> | null>(null);
+  const loadSummaries = useCallback(() => {
+    if (summariesPromiseRef.current) return summariesPromiseRef.current;
+    const p = api
+      .listTaskSummaries()
+      .then((rows) => setSummaries(rows))
+      .finally(() => {
+        summariesPromiseRef.current = null;
+      });
+    summariesPromiseRef.current = p;
+    return p;
+  }, []);
+
+  // Fetch the current page whenever the query changes. AbortController
+  // cancels in-flight fetches when the user clicks chips quickly so a
+  // stale slow response can't overwrite the latest.
+  const pageAbortRef = useRef<AbortController | null>(null);
+  const loadPage = useCallback(async () => {
+    pageAbortRef.current?.abort();
+    const ctl = new AbortController();
+    pageAbortRef.current = ctl;
+    try {
+      const { rows, total } = await api.listTasksPage({ ...query, signal: ctl.signal });
+      setPageRows(rows);
+      setPageTotal(total);
+    } catch (e) {
+      if ((e as { name?: string }).name === "AbortError") return;
+      message.error(String(e));
+    } finally {
+      if (pageAbortRef.current === ctl) {
+        setInitialLoad(false);
+      }
+    }
+  }, [query]);
 
   useEffect(() => {
-    load();
-  }, []);
+    loadPage();
+  }, [loadPage]);
+  useEffect(() => {
+    loadSummaries();
+  }, [loadSummaries]);
 
-  const refetchTimer = useRef<number | null>(null);
+  // SSE-driven refetch is split across two cadences:
+  //   - page refetch every 750ms — keeps Last Run / Status / Attempts
+  //     for the 20 visible rows current enough to feel "live".
+  //   - summaries refetch every 5s — chip count badges drift slowly
+  //     so a few seconds of staleness isn't user-visible.
+  // 250ms (the previous value) under heavy task_run SSE pressure was
+  // firing 4 refetches/sec, each re-rendering the Table.
+  const pageRefetchTimer = useRef<number | null>(null);
+  const summariesRefetchTimer = useRef<number | null>(null);
   const scheduleRefetch = useCallback(() => {
-    if (refetchTimer.current !== null) return;
-    refetchTimer.current = window.setTimeout(() => {
-      refetchTimer.current = null;
-      api.listTasks().then((next) => {
-        setTasks((prev) => (sameTaskList(prev, next) ? prev : next));
-      });
-    }, 250);
-  }, []);
+    if (pageRefetchTimer.current === null) {
+      pageRefetchTimer.current = window.setTimeout(() => {
+        pageRefetchTimer.current = null;
+        loadPage();
+      }, 750);
+    }
+    if (summariesRefetchTimer.current === null) {
+      summariesRefetchTimer.current = window.setTimeout(() => {
+        summariesRefetchTimer.current = null;
+        loadSummaries();
+      }, 5000);
+    }
+  }, [loadPage, loadSummaries]);
   usePisaEvents(
     useCallback(
       (ev) => {
@@ -291,10 +354,15 @@ export default function Tasks() {
   );
   useEffect(() => {
     return () => {
-      if (refetchTimer.current !== null) {
-        window.clearTimeout(refetchTimer.current);
-        refetchTimer.current = null;
+      if (pageRefetchTimer.current !== null) {
+        window.clearTimeout(pageRefetchTimer.current);
+        pageRefetchTimer.current = null;
       }
+      if (summariesRefetchTimer.current !== null) {
+        window.clearTimeout(summariesRefetchTimer.current);
+        summariesRefetchTimer.current = null;
+      }
+      pageAbortRef.current?.abort();
     };
   }, []);
 
@@ -325,14 +393,14 @@ export default function Tasks() {
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
-  // Per-axis chip counts, computed in one pass.
+  // Per-axis chip counts from the lightweight summary in one pass.
   const filterCounts = useMemo(() => {
     const av = new Map<number, number>();
     const sim = new Map<number, number>();
     const sampler = new Map<number, number>();
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
-    for (const t of tasks) {
+    for (const t of summaries) {
       av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
       sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
       sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
@@ -341,7 +409,7 @@ export default function Tasks() {
       for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [tasks, planTagsMap]);
+  }, [summaries, planTagsMap]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -355,113 +423,83 @@ export default function Tasks() {
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
 
   const logTask = useMemo(
-    () => (logRun ? tasks.find((t) => t.id === logRun.task_id) : undefined),
-    [logRun, tasks],
+    () => (logRun ? pageRows.find((t) => t.id === logRun.task_id) : undefined),
+    [logRun, pageRows],
   );
   const logTaskLabel = useMemo(
     () => (logTask ? planMap.get(logTask.plan_id) : undefined),
     [logTask, planMap],
   );
 
-  const filteredTasks = useMemo(() => {
-    const colFilters = (t: TaskResponse) => {
-      for (const [key, vals] of Object.entries(deferredFilteredInfo)) {
-        if (!vals || vals.length === 0) continue;
-        switch (key) {
-          case "id": {
-            const ids = new Set<number>();
-            for (const tok of vals.flatMap((v) => String(v).split(","))) {
-              const n = parseInt(tok.trim(), 10);
-              if (Number.isFinite(n)) ids.add(n);
-            }
-            if (!ids.has(t.id)) return false;
-            break;
-          }
-          case "plan_id": {
-            const text = (planMap.get(t.plan_id) ?? "").toLowerCase();
-            if (!vals.some((v) => text.includes(String(v).toLowerCase()))) return false;
-            break;
-          }
-          case "av_id":
-            if (!vals.includes(t.av_id)) return false;
-            break;
-          case "simulator_id":
-            if (!vals.includes(t.simulator_id)) return false;
-            break;
-          case "sampler_id":
-            if (!vals.includes(t.sampler_id)) return false;
-            break;
-          case "monitor_id":
-            if (t.monitor_id == null || !vals.includes(t.monitor_id)) return false;
-            break;
-          case "task_status":
-            if (!vals.includes(t.task_status)) return false;
-            break;
-          default:
-            break;
-        }
-      }
-      return true;
-    };
-    const tagSet = new Set(deferredTagFilter);
-    const tagFilterFn = (t: TaskResponse) => {
-      if (tagSet.size === 0) return true;
-      const tags = planTagsMap.get(t.plan_id) ?? [];
-      for (const tag of tags) if (tagSet.has(tag)) return true;
-      return false;
-    };
-    return tasks.filter((t) => colFilters(t) && tagFilterFn(t));
-  }, [tasks, deferredFilteredInfo, deferredTagFilter, planTagsMap, planMap]);
+  // For the selection bar's runnable/stoppable counts and "select all
+  // filtered" computation, we need a status lookup that spans pages.
+  // Summaries cover every task; build a quick id→status map.
+  const statusById = useMemo(() => {
+    const m = new Map<number, TaskStatus>();
+    for (const s of summaries) m.set(s.id, s.task_status);
+    return m;
+  }, [summaries]);
 
-  // Apply user sort over the filtered set.
-  const visibleMainTasks = useMemo(() => {
-    const { key, order } = sortedInfo;
-    const dir = !order ? 0 : order === "ascend" ? 1 : -1;
-    if (!dir || !key) return filteredTasks;
-    const cmp = (a: TaskResponse, b: TaskResponse): number => {
-      switch (key) {
-        case "id":
-          return (a.id - b.id) * dir;
-        case "attempt_count":
-          return (a.attempt_count - b.attempt_count) * dir;
-        case "last_run": {
-          const ta = a.task_run?.[0]?.started_at ? new Date(a.task_run[0].started_at).getTime() : 0;
-          const tb = b.task_run?.[0]?.started_at ? new Date(b.task_run[0].started_at).getTime() : 0;
-          return (ta - tb) * dir;
-        }
-        default:
-          return 0;
+  // IDs that match the current chip filter set, derived from
+  // summaries (so it's the FULL filtered set, not just current page).
+  const filteredSummaryIds = useMemo(() => {
+    const idSet = query.ids ? new Set(query.ids) : null;
+    const tagSet = query.tags ? new Set(query.tags) : null;
+    const out: number[] = [];
+    for (const t of summaries) {
+      if (query.status && !query.status.includes(t.task_status)) continue;
+      if (query.avIds && !query.avIds.includes(t.av_id)) continue;
+      if (query.simIds && !query.simIds.includes(t.simulator_id)) continue;
+      if (query.samplerIds && !query.samplerIds.includes(t.sampler_id)) continue;
+      if (query.monitorIds && !query.monitorIds.includes(t.monitor_id)) continue;
+      if (idSet && !idSet.has(t.id)) continue;
+      if (tagSet) {
+        const tags = planTagsMap.get(t.plan_id) ?? [];
+        if (!tags.some((x) => tagSet.has(x))) continue;
       }
-    };
-    return [...filteredTasks].sort(cmp);
-  }, [filteredTasks, sortedInfo]);
+      if (query.planSearch) {
+        const name = (planMap.get(t.plan_id) ?? "").toLowerCase();
+        if (!name.includes(query.planSearch.toLowerCase())) continue;
+      }
+      out.push(t.id);
+    }
+    return out;
+  }, [summaries, query, planTagsMap, planMap]);
 
   // --- Actions ---
 
-  const handleRun = useCallback(async (id: number) => {
-    try {
-      await api.updateTask(id, { task_status: "queued" });
-      message.success(`Task #${id} queued`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
+  const handleRun = useCallback(
+    async (id: number) => {
+      try {
+        await api.updateTask(id, { task_status: "queued" });
+        message.success(`Task #${id} queued`);
+        loadPage();
+        loadSummaries();
+      } catch (e) {
+        message.error(String(e));
+      }
+    },
+    [loadPage, loadSummaries],
+  );
 
-  const handleStop = useCallback(async (id: number) => {
-    try {
-      await api.stopTask(id);
-      message.success(`Task #${id} stopped`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
+  const handleStop = useCallback(
+    async (id: number) => {
+      try {
+        await api.stopTask(id);
+        message.success(`Task #${id} stopped`);
+        loadPage();
+        loadSummaries();
+      } catch (e) {
+        message.error(String(e));
+      }
+    },
+    [loadPage, loadSummaries],
+  );
 
   const handleBulkRun = async () => {
-    const ids = tasks
-      .filter((t) => selectedRowKeys.includes(t.id) && RUNNABLE_STATUSES.includes(t.task_status))
-      .map((t) => t.id);
+    const ids = (selectedRowKeys as number[]).filter(
+      (id) => RUNNABLE_STATUSES.includes(statusById.get(id) ?? "idle"),
+    );
     try {
       await api.batchRunTasks(ids);
       message.success(`Queued ${ids.length} tasks`);
@@ -469,13 +507,15 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    load();
+    loadPage();
+    loadSummaries();
   };
 
   const handleBulkStop = async () => {
-    const ids = tasks
-      .filter((t) => selectedRowKeys.includes(t.id) && STOPPABLE_STATUSES.includes(t.task_status))
-      .map((t) => t.id);
+    const ids = (selectedRowKeys as number[]).filter((id) => {
+      const st = statusById.get(id);
+      return st != null && STOPPABLE_STATUSES.includes(st);
+    });
     try {
       await api.batchStopTasks(ids);
       message.success(`Stopped ${ids.length} tasks`);
@@ -483,7 +523,8 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    load();
+    loadPage();
+    loadSummaries();
   };
 
   const handleBulkDelete = async () => {
@@ -494,7 +535,8 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    load();
+    loadPage();
+    loadSummaries();
   };
 
   // --- Columns ---
@@ -503,15 +545,6 @@ export default function Tasks() {
     const orderFor = (key: string): SortOrder | null =>
       sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
 
-    const parseIdSet = (value: unknown): Set<number> => {
-      const out = new Set<number>();
-      for (const tok of String(value ?? "").split(",")) {
-        const n = parseInt(tok.trim(), 10);
-        if (Number.isFinite(n)) out.add(n);
-      }
-      return out;
-    };
-
     return [
       {
         title: "ID",
@@ -519,12 +552,10 @@ export default function Tasks() {
         key: "id",
         width: 60,
         ellipsis: true,
+        sorter: true,
+        sortOrder: orderFor("id"),
         ...getColumnSearchProps<TaskResponse>("id"),
         filteredValue: deferredFilteredInfo.id ?? null,
-        onFilter: (value: unknown, record: TaskResponse) => {
-          const ids = parseIdSet(value);
-          return ids.has(record.id);
-        },
       },
       {
         title: "Plan",
@@ -535,10 +566,6 @@ export default function Tasks() {
         render: (id: number) => planMap.get(id) ?? `#${id}`,
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
         filteredValue: deferredFilteredInfo.plan_id ?? null,
-        onFilter: (value: unknown, record: TaskResponse) => {
-          const text = planMap.get(record.plan_id) ?? "";
-          return text.toLowerCase().includes(String(value).toLowerCase());
-        },
       },
       {
         title: "Setup",
@@ -597,10 +624,13 @@ export default function Tasks() {
       },
       {
         title: "Last Run",
-        key: "last_run",
+        key: "last_run_at",
+        dataIndex: "last_run_at",
         width: 130,
+        sorter: true,
+        sortOrder: orderFor("last_run_at"),
         render: (_: unknown, r: TaskResponse) => {
-          const t = r.task_run?.[0]?.started_at;
+          const t = r.last_run_at ?? r.task_run?.[0]?.started_at;
           if (!t) return <Typography.Text type="secondary">—</Typography.Text>;
           const d = new Date(t);
           const pad = (n: number) => String(n).padStart(2, "0");
@@ -621,8 +651,6 @@ export default function Tasks() {
             </Tooltip>
           );
         },
-        sorter: true,
-        sortOrder: orderFor("last_run"),
       },
       {
         title: "",
@@ -680,8 +708,8 @@ export default function Tasks() {
 
   const selectionBar = (
     <TasksSelectionBar
-      tasks={tasks}
-      visibleTasks={filteredTasks}
+      statusById={statusById}
+      visibleIds={filteredSummaryIds}
       selectedRowKeys={selectedRowKeys}
       setSelectedRowKeys={setSelectedRowKeys}
       onBulkRun={handleBulkRun}
@@ -690,13 +718,17 @@ export default function Tasks() {
     />
   );
 
-  // --- Memoized Table props (stable refs so AntD skips row re-render
-  //     when nothing relevant changed). ---
-  const tableScroll = useMemo(() => ({ x: 1000 }), []);
+  // --- Memoized Table props ---
+  // No tableScroll — `scroll={{x:N}}` + tableLayout=fixed forces AntD
+  // to mount a hidden shadow table for column-width measurement on
+  // every render (each measure cost ~77ms forced reflow). With
+  // pagination the visible row count is tiny and the page is wide
+  // enough for the columns to fit without horizontal scroll.
   const tablePagination = useMemo(
     () => ({
       current: currentPage,
       pageSize,
+      total: pageTotal,
       showSizeChanger: true,
       showTotal: (t: number) => `${t} tasks`,
       onChange: (p: number, s: number) => {
@@ -704,12 +736,13 @@ export default function Tasks() {
         setPageSize(s);
       },
     }),
-    [currentPage, pageSize, setPageSize],
+    [currentPage, pageSize, pageTotal, setPageSize],
   );
   const tableRowSelection = useMemo(
     () => ({
       selectedRowKeys,
       onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
+      preserveSelectedRowKeys: true,
     }),
     [selectedRowKeys],
   );
@@ -727,10 +760,15 @@ export default function Tasks() {
         return next;
       });
       if (!Array.isArray(sorter)) {
-        setSortedInfo({
-          key: sorter.columnKey ? String(sorter.columnKey) : undefined,
-          order: sorter.order ?? undefined,
-        });
+        const k = sorter.columnKey ? String(sorter.columnKey) : undefined;
+        if (isSortKey(k) && sorter.order != null) {
+          setSortedInfo({ key: k, order: sorter.order });
+        } else {
+          // user cleared the sort — fall back to the default rather
+          // than letting AntD send us undefined (which would mean "no
+          // order=" on the next query).
+          setSortedInfo({ key: "last_run_at", order: "descend" });
+        }
       }
     },
     [setFilteredInfo, setSortedInfo],
@@ -765,7 +803,13 @@ export default function Tasks() {
         >
           Clear Filters
         </Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => {
+            loadPage();
+            loadSummaries();
+          }}
+        >
           Refresh
         </Button>
         <Button
@@ -781,7 +825,7 @@ export default function Tasks() {
 
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
-          <TasksFilters tasks={tasks} quickFilter={quickFilter} onChange={setQuickFilter} />
+          <TasksFilters summaries={summaries} quickFilter={quickFilter} onChange={setQuickFilter} />
           <TasksFilterBar
             avs={avs}
             simulators={simulators}
@@ -802,13 +846,11 @@ export default function Tasks() {
       {selectionBar}
 
       <Table
-        dataSource={visibleMainTasks}
+        dataSource={pageRows}
         columns={columns}
         rowKey="id"
-        loading={loading}
+        loading={initialLoad}
         size="small"
-        scroll={tableScroll}
-        tableLayout="fixed"
         pagination={tablePagination}
         rowSelection={tableRowSelection}
         onChange={tableOnChange}
@@ -818,7 +860,10 @@ export default function Tasks() {
       <CreateTaskModal
         open={bulkModalOpen}
         onClose={() => setBulkModalOpen(false)}
-        onCreated={load}
+        onCreated={() => {
+          loadPage();
+          loadSummaries();
+        }}
         avs={avs}
         simulators={simulators}
         samplers={samplers}
