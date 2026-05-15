@@ -1,30 +1,21 @@
-import { useCallback, useDeferredValue, useEffect, useRef, useState, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
-  Tag,
-  Button,
-  Card,
-  Modal,
-  message,
-  Typography,
-  Space,
-  Table,
-  Tooltip,
-  Dropdown,
-} from "antd";
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useSearchParams } from "react-router-dom";
+import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
   CaretRightOutlined,
   StopOutlined,
-  PushpinOutlined,
   SyncOutlined,
   FileTextOutlined,
   ClearOutlined,
-  InboxOutlined,
-  UndoOutlined,
-  EyeOutlined,
-  CheckOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -32,7 +23,7 @@ import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
 import TaskRunsPanel from "../components/TaskRunsPanel";
-import { useLocalStorageSet, useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -53,21 +44,46 @@ import TasksFilterBar from "../components/tasks/TasksFilterBar";
 import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 import CreateTaskModal from "../components/tasks/CreateTaskModal";
 
-// Everything that isn't currently queued or running is re-runnable.
-// Shared with LogDrawer via api/types so a Run from a historical
-// attempt can't bypass the same gate the row action uses.
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
-// Cheap-enough deep equality for the listTasks payload (~hundreds of
-// rows max in practice). JSON.stringify is order-sensitive, which is
-// exactly what we want — listTasks always returns rows in `id.desc`
-// and the embedded task_run in `attempt.desc`, so any meaningful
-// change perturbs the string.
+// Field-level equality for the listTasks payload. The previous
+// JSON.stringify implementation blew up to ~500ms blocking 'message'
+// handlers under SSE pressure on multi-thousand-row tables. Comparing
+// only the fields the UI actually reads keeps the check at a few ms.
 function sameTaskList(a: TaskResponse[], b: TaskResponse[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
-  return JSON.stringify(a) === JSON.stringify(b);
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.task_status !== y.task_status ||
+      x.attempt_count !== y.attempt_count ||
+      x.plan_id !== y.plan_id ||
+      x.av_id !== y.av_id ||
+      x.simulator_id !== y.simulator_id ||
+      x.sampler_id !== y.sampler_id ||
+      x.monitor_id !== y.monitor_id
+    ) {
+      return false;
+    }
+    const xr = x.task_run?.[0];
+    const yr = y.task_run?.[0];
+    if (xr === yr) continue;
+    if (!xr || !yr) return false;
+    if (
+      xr.id !== yr.id ||
+      xr.attempt !== yr.attempt ||
+      xr.task_run_status !== yr.task_run_status ||
+      xr.started_at !== yr.started_at ||
+      xr.executor_id !== yr.executor_id
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export default function Tasks() {
@@ -75,73 +91,59 @@ export default function Tasks() {
   const defaultStatusFilter = useMemo(() => {
     const s = searchParams.get("status");
     return s ? [s] : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The url ?triage=1 shortcut wins over ?status=
   const defaultQuickFilter: QuickFilter = useMemo(() => {
-    if (searchParams.get("triage") === "1") return "triage";
     const s = searchParams.get("status");
     if (s && QUICK_FILTERS.some((q) => q.value === s)) return s as QuickFilter;
     return "all";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  // View state persisted per browser via localStorage so filters,
-  // pinned rows, page size and the compact/archive toggles survive
-  // a refresh. Selection itself stays ephemeral on purpose.
-  const [pinnedIds, setPinnedIds] = useLocalStorageSet("tasks.pinned");
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
+  // One-shot cleanup of localStorage keys for removed features so old
+  // sessions don't leave orphaned data sitting around the browser.
+  useEffect(() => {
+    for (const k of [
+      "tasks.pinned",
+      "tasks.compactView",
+      "tasks.showArchived",
+    ]) {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
   const [loading, setLoading] = useState(true);
-  // Compact view collapses AV / Sim / Sampler into one Setup column.
-  const [compactView, setCompactView] = useLocalStorageState("tasks.compactView", true);
-  // Orthogonal include-archived toggle. The Archived chip is still
-  // the way to see ONLY archived rows; this toggle is for "give me
-  // everything, archived included" without leaving the current chip.
-  // Defaults off so the dashboard / triage flow stays uncluttered.
-  const [showArchived, setShowArchived] = useLocalStorageState("tasks.showArchived", false);
-  // Three axes:
-  //   1. quickFilter — chip selection. "archived" chip shows ONLY
-  //      archived rows by default; every other chip's archived
-  //      behaviour is governed by `showArchived` above.
-  //   2. showArchived — orthogonal toggle that lets the user keep
-  //      their current chip and add archived rows on top. Off by
-  //      default so the dashboard / triage flow stays uncluttered.
-  //   3. pinnedIds — explicit user override. Pinned rows always
-  //      render regardless of chip / toggle / column filters. (See
-  //      visibleMainTasks.) "Always shows only X" claims about chips
-  //      / toggles are therefore approximately true; pinned can leak
-  //      one or two rows of any status into any view.
   const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
   );
 
-  // Plan-tag filter: user picks one or more tag chips above the
-  // table to narrow rows to tasks whose plan carries any of those
-  // tags. Persisted; URL ?tag=foo,bar (or repeated ?tag=foo&tag=bar)
-  // lets dashboard donuts deep-link straight into a tag-scoped view.
+  // Plan-tag filter — comma-separated ?tag= URL param hydrates from
+  // dashboard donut deep-links.
   const defaultTagFilter = useMemo(() => {
     const all = searchParams.getAll("tag");
     if (all.length > 1) return all;
     const single = all[0];
     return single ? single.split(",").filter(Boolean) : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [tagFilter, setTagFilterRaw] = useLocalStorageState<string[]>(
     "tasks.tagFilter",
     defaultTagFilter,
   );
 
-  // Controlled filter state so one "Clear Filters" button can reset every
-  // column at once (including the URL-driven default status filter).
   const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
     "tasks.filteredInfo",
     { task_status: defaultStatusFilter ?? null },
   );
-  // Mirror the table's sort so j/k keyboard nav walks rows in the order
-  // the user actually sees them. Default matches the column's
-  // defaultSortOrder for "Last Run" descend so first-render is in sync.
   const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: string; order?: SortOrder }>(
     "tasks.sortedInfo",
     { key: "last_run", order: "descend" },
@@ -152,26 +154,17 @@ export default function Tasks() {
     [filteredInfo, tagFilter],
   );
 
-  // Defer the heavy-consumer view of the filter state. The chip
-  // components keep reading the live values so their checked state
-  // flips instantly on click; the filteredTasks / filterCounts memos
-  // and the Table read these deferred copies, letting React schedule
-  // the heavy table re-render at lower priority. Click → INP drops
-  // because the next paint only carries the chip update; the row
-  // re-render lands in the next idle frame.
+  // Defer the heavy-consumer view of the filter state. Chip components
+  // keep reading the live values so their checked state flips
+  // instantly; the filteredTasks / filterCounts memos and the Table
+  // read these deferred copies, letting React schedule heavy table
+  // re-renders at lower priority.
   const deferredFilteredInfo = useDeferredValue(filteredInfo);
   const deferredTagFilter = useDeferredValue(tagFilter);
-  const deferredQuickFilter = useDeferredValue(quickFilter);
-  const deferredShowArchived = useDeferredValue(showArchived);
 
-  // Reset to page 1 whenever the filter set changes — controlled
-  // currentPage doesn't auto-snap when the filter narrows the row
-  // count, so a page-3 view with matches only on page 1 looks like
-  // "no data" until the user navigates pages or sorts (which causes
-  // a re-render that incidentally fixes it).
   useEffect(() => {
     setCurrentPage(1);
-  }, [filteredInfo, tagFilter, quickFilter, showArchived]);
+  }, [filteredInfo, tagFilter, quickFilter]);
   const clearFilters = useCallback(() => {
     setFilteredInfo({});
     setQuickFilterRaw("all");
@@ -179,8 +172,6 @@ export default function Tasks() {
     setSearchParams({});
   }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw, setSearchParams]);
 
-  // Update the URL ?tag= param to mirror tagFilter without
-  // disturbing other query params (chip / triage / archived).
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
@@ -194,75 +185,37 @@ export default function Tasks() {
     [setTagFilterRaw, setSearchParams],
   );
 
-  // Apply a chip click: rewrites task_status filter + URL so the view,
-  // the column dropdown, and the bookmark are all coherent. Also
-  // clears every other column filter so the chip acts as a fresh
-  // scope rather than a narrower filter stacked on top of leftover
-  // plan / av / sim / sampler filters from a prior view — that
-  // stacking was confusing because clicking a chip looked like a
-  // no-op when an unrelated column filter was hiding the matching
-  // rows.
-  // Archived visibility combines quickFilter ("archived" chip =
-  // archived only) with the orthogonal showArchived toggle in
-  // visibleMainTasks.
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
-      setFilteredInfo(() => {
-        let task_status: FilterValue | null;
-        if (q === "all" || q === "archived") task_status = null;
-        else if (q === "triage") task_status = ["invalid"];
-        else task_status = [q];
-        return { task_status };
-      });
-      // URL: ?triage=1 for the triage scope, ?status=<x> for a single
-      // status, ?archived=1 for the Archived chip, nothing for "all".
-      if (q === "triage") setSearchParams({ triage: "1" });
-      else if (q === "archived") setSearchParams({ archived: "1" });
-      else if (q === "all") setSearchParams({});
+      setFilteredInfo(() => ({
+        task_status: q === "all" ? null : ([q] as FilterValue),
+      }));
+      if (q === "all") setSearchParams({});
       else setSearchParams({ status: q });
     },
     [setQuickFilterRaw, setFilteredInfo, setSearchParams],
   );
 
-  // URL → state sync. The localStorage hook overrides the initial
-  // useMemo on mount (because it reads its persisted value), so a
-  // dashboard link like /tasks?triage=1 was getting clobbered. This
-  // effect re-applies whenever the URL params change after mount.
+  // URL → state sync (chip + tag from URL after mount).
   useEffect(() => {
-    let next: QuickFilter | null = null;
-    if (searchParams.get("triage") === "1") next = "triage";
-    else if (searchParams.get("archived") === "1") next = "archived";
-    else {
-      const s = searchParams.get("status");
-      if (s && QUICK_FILTERS.some((q) => q.value === s)) next = s as QuickFilter;
+    const s = searchParams.get("status");
+    if (s && QUICK_FILTERS.some((q) => q.value === s) && s !== quickFilter) {
+      setQuickFilter(s as QuickFilter);
     }
-    if (next != null && next !== quickFilter) setQuickFilter(next);
-    // Mirror the ?tag= param into tagFilter so dashboard donut
-    // links land already-filtered. Comma-separated form (?tag=a,b)
-    // is the canonical write shape; multi-key form (?tag=a&tag=b)
-    // is also accepted for hand-crafted URLs.
     const tagAll = searchParams.getAll("tag");
     const tagsFromUrl =
       tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
     if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
       setTagFilterRaw(tagsFromUrl);
     }
-    // Intentionally only re-fire on URL changes; don't chase quickFilter
-    // changes back into the effect (they're outbound from setQuickFilter).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // Log drawer: owned at the page level so both the row action button and
-  // the timeline in TaskRunsPanel can open it, sharing one drawer.
+  // Log drawer
   const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
   const [logExecutorOverride, setLogExecutorOverride] = useState<ExecutorResponse | undefined>();
   const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
-  // Drawer takes (run, task, label) — task and label are derived from
-  // current state so they refresh after SSE updates (e.g. task_status
-  // flipping from invalid → archived without closing the drawer).
-  // logExecutor is derived so the drawer title updates once the executor
-  // cache arrives even if openLog was called before executorsById loaded.
   const logExecutor = useMemo(() => {
     if (logExecutorOverride) return logExecutorOverride;
     if (!logRun) return undefined;
@@ -274,13 +227,8 @@ export default function Tasks() {
     setLogExecutorOverride(executor);
   }, []);
 
-  // Increment a per-task counter on every expand so we can key the
-  // TaskRunsPanel by it, forcing a real remount each time. Without this
-  // AntD can preserve the panel's React instance across collapse+expand,
-  // which lets stale state (e.g. a limit grown by "Show older") leak
-  // into the next expand. We diff against a ref instead of nesting one
-  // setState inside another's updater — that nested pattern is
-  // unreliable under React 18's double-invocation.
+  // Force TaskRunsPanel remount on each expand so stale pagination
+  // state doesn't leak into the next expand.
   const prevExpandedRef = useRef<Set<number>>(new Set());
   const [expansionCounts, setExpansionCounts] = useState<Map<number, number>>(new Map());
   const handleExpandedChange = useCallback((keys: React.Key[]) => {
@@ -302,9 +250,6 @@ export default function Tasks() {
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
-  // Resource lists used by the bulk-create modal. Page owns them so a
-  // refresh button (or a future SSE update) can re-populate without
-  // re-mounting the modal.
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
@@ -325,18 +270,6 @@ export default function Tasks() {
     load();
   }, []);
 
-  // Realtime updates: coalesce bursty inserts/updates into a single refetch
-  // per frame. SSE is always on — the Refresh button stays as a manual
-  // re-fetch for the rare case where the stream silently went away.
-  //
-  // We deep-equality-skip identical refetches because heartbeat-only
-  // task_run UPDATEs (every log append) trigger a row event, but the
-  // listTasks select doesn't include `last_heartbeat_at` so the
-  // response is identical to the prior one. Without the skip, every
-  // log append re-rendered the page and reset any open AntD filter
-  // dropdown's pending selection back to the active filter — making
-  // it look like the dropdown "refreshed immediately" the moment the
-  // user clicked a different value.
   const refetchTimer = useRef<number | null>(null);
   const scheduleRefetch = useCallback(() => {
     if (refetchTimer.current !== null) return;
@@ -384,7 +317,6 @@ export default function Tasks() {
     fetchResources();
   }, []);
 
-  // One-shot executor cache for the log drawer title (hostname).
   useEffect(() => {
     api.listExecutors().then((all) => {
       setExecutorsById(new Map(all.map((e) => [e.id, e])));
@@ -392,18 +324,8 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
-  // plan_id -> tags lookup so the tag chip bar / Tags column can
-  // resolve tags per task without joining at every render.
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
-  // Tag chip bar: sorted, deduped union of every plan tag attached
-  // to any task currently loaded. Counts come from tasks (not the
-  // plans table) so the chip badge matches the row count the chip
-  // would produce. Tags are restricted to the current archived
-  // axis so a tag whose plans are all archived doesn't show under
-  // the default view.
-  // Per-axis counts within the current archived scope. Drives the
-  // chip-row badges so the user can see "esmini 12, carla 8" etc.
-  // without first selecting a chip. Computed in one pass.
+  // Per-axis chip counts, computed in one pass.
   const filterCounts = useMemo(() => {
     const av = new Map<number, number>();
     const sim = new Map<number, number>();
@@ -411,8 +333,6 @@ export default function Tasks() {
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
     for (const t of tasks) {
-      if (!deferredShowArchived && deferredQuickFilter !== "archived" && t.archived) continue;
-      if (deferredQuickFilter === "archived" && !t.archived) continue;
       av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
       sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
       sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
@@ -421,7 +341,7 @@ export default function Tasks() {
       for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [tasks, planTagsMap, deferredShowArchived, deferredQuickFilter]);
+  }, [tasks, planTagsMap]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -429,6 +349,7 @@ export default function Tasks() {
       ),
     [filterCounts.tag],
   );
+  const availableTagNames = useMemo(() => tagCounts.map(([t]) => t), [tagCounts]);
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
@@ -442,28 +363,8 @@ export default function Tasks() {
     [logTask, planMap],
   );
 
-  // Single dataSource for the only Table on the page — pinned rows
-  // float to the top within whatever sort the user picked. Earlier
-  // versions used two separate <Table> instances and AntD sized each
-  // one independently, so the pinned table's columns never aligned
-  // with the main table's. One table = guaranteed alignment.
-  // Rows that match the active chip + archived toggle + column filters
-  // *strictly*. This is what "filtered scope" means for the selection
-  // bar's "Select all N filtered" and bulk actions — pinned rows
-  // outside the active filter must NOT be swept into a bulk delete.
   const filteredTasks = useMemo(() => {
-    const archivedFilter = (t: TaskResponse) => {
-      if (deferredQuickFilter === "archived") return t.archived;
-      if (deferredShowArchived) return true;
-      return !t.archived;
-    };
     const colFilters = (t: TaskResponse) => {
-      // Per-column matchers — mirror each column's onFilter so the
-      // upstream "filtered scope" agrees with what AntD renders.
-      // A generic stringify-and-substring pass was wrong for the
-      // Plan column (search text vs. raw plan_id) and the ID column
-      // (comma-separated parser), and made the table show "no data"
-      // even when matching rows existed.
       for (const [key, vals] of Object.entries(deferredFilteredInfo)) {
         if (!vals || vals.length === 0) continue;
         switch (key) {
@@ -490,22 +391,18 @@ export default function Tasks() {
           case "sampler_id":
             if (!vals.includes(t.sampler_id)) return false;
             break;
+          case "monitor_id":
+            if (t.monitor_id == null || !vals.includes(t.monitor_id)) return false;
+            break;
           case "task_status":
             if (!vals.includes(t.task_status)) return false;
             break;
           default:
-            // Unknown filter key — let it through rather than silently
-            // hiding rows the user didn't ask to hide.
             break;
         }
       }
       return true;
     };
-    // Plan-tag filter — OR semantics: a task matches if its
-    // plan's tags contain any of the picked tags. Empty filter =
-    // pass-through. Plans with no tags only pass when the filter
-    // is empty (so picking a tag never silently excludes the
-    // user's untagged work without a deliberate click).
     const tagSet = new Set(deferredTagFilter);
     const tagFilterFn = (t: TaskResponse) => {
       if (tagSet.size === 0) return true;
@@ -513,33 +410,15 @@ export default function Tasks() {
       for (const tag of tags) if (tagSet.has(tag)) return true;
       return false;
     };
-    return tasks.filter((t) => archivedFilter(t) && colFilters(t) && tagFilterFn(t));
-  }, [
-    tasks,
-    deferredQuickFilter,
-    deferredShowArchived,
-    deferredFilteredInfo,
-    deferredTagFilter,
-    planTagsMap,
-    planMap,
-  ]);
+    return tasks.filter((t) => colFilters(t) && tagFilterFn(t));
+  }, [tasks, deferredFilteredInfo, deferredTagFilter, planTagsMap, planMap]);
 
-  // Rows actually rendered by the table = filtered scope ∪ pinned rows.
-  // Pinned rows always render regardless of chip / archived toggle /
-  // column filters. The per-column `onFilter` handlers also bypass on
-  // pinned (see columns below) so AntD's table layer doesn't strip
-  // pinned rows back out after the data lands.
-  //
-  // Chip badge counts in TasksFilters stay status-based on purpose; the
-  // small "rendered > chip count" divergence is accepted in exchange
-  // for pinned rows being unconditionally visible.
+  // Apply user sort over the filtered set.
   const visibleMainTasks = useMemo(() => {
-    const pinnedExtras = tasks.filter((t) => pinnedIds.has(t.id) && !filteredTasks.includes(t));
-    const merged = [...filteredTasks, ...pinnedExtras];
     const { key, order } = sortedInfo;
     const dir = !order ? 0 : order === "ascend" ? 1 : -1;
+    if (!dir || !key) return filteredTasks;
     const cmp = (a: TaskResponse, b: TaskResponse): number => {
-      if (!dir || !key) return 0;
       switch (key) {
         case "id":
           return (a.id - b.id) * dir;
@@ -554,108 +433,8 @@ export default function Tasks() {
           return 0;
       }
     };
-    return merged.sort((a, b) => {
-      // Pinned always wins. Within each pinned/non-pinned group apply
-      // the user's sort.
-      const ap = pinnedIds.has(a.id);
-      const bp = pinnedIds.has(b.id);
-      if (ap !== bp) return ap ? -1 : 1;
-      return cmp(a, b);
-    });
-  }, [tasks, filteredTasks, pinnedIds, sortedInfo]);
-
-  const [cursorId, setCursorId] = useState<number | null>(null);
-  // Bring the cursor row into view when it changes.
-  useEffect(() => {
-    if (cursorId == null) return;
-    const node = document.querySelector(`tr[data-row-key="${cursorId}"]`);
-    if (node) (node as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [cursorId]);
-
-  // Keyboard nav. Skip when the user is typing into an input/textarea
-  // or interacting with an open Modal/Popconfirm/Drawer.
-  useEffect(() => {
-    const isTypingTarget = (el: EventTarget | null): boolean => {
-      if (!(el instanceof HTMLElement)) return false;
-      const tag = el.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-      if (el.isContentEditable) return true;
-      // Don't hijack while AntD popovers/modals are open.
-      if (document.querySelector(".ant-modal-mask, .ant-popover-open")) return true;
-      return false;
-    };
-    const onKey = (ev: KeyboardEvent) => {
-      if (isTypingTarget(ev.target)) return;
-      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      const list = visibleMainTasks;
-      if (list.length === 0) return;
-      const curIdx = cursorId == null ? -1 : list.findIndex((t) => t.id === cursorId);
-      switch (ev.key) {
-        case "j":
-        case "ArrowDown": {
-          ev.preventDefault();
-          const next = list[Math.min(list.length - 1, curIdx + 1)] ?? list[0];
-          setCursorId(next.id);
-          break;
-        }
-        case "k":
-        case "ArrowUp": {
-          ev.preventDefault();
-          const next = list[Math.max(0, curIdx - 1)] ?? list[0];
-          setCursorId(next.id);
-          break;
-        }
-        case " ":
-        case "Spacebar": {
-          if (curIdx < 0) return;
-          ev.preventDefault();
-          const id = list[curIdx].id;
-          const isOpen = expandedRows.includes(id);
-          handleExpandedChange(
-            isOpen ? expandedRows.filter((k) => k !== id) : [...expandedRows, id],
-          );
-          break;
-        }
-        case "Enter": {
-          if (curIdx < 0) return;
-          ev.preventDefault();
-          const t = list[curIdx];
-          const latest = t.task_run?.[0];
-          if (latest) openLog(latest);
-          break;
-        }
-        case "?": {
-          ev.preventDefault();
-          Modal.info({
-            title: "Keyboard shortcuts",
-            content: (
-              <ul style={{ paddingLeft: 16 }}>
-                <li>
-                  <kbd>j</kbd> / <kbd>↓</kbd> — next row
-                </li>
-                <li>
-                  <kbd>k</kbd> / <kbd>↑</kbd> — previous row
-                </li>
-                <li>
-                  <kbd>Space</kbd> — expand / collapse current row
-                </li>
-                <li>
-                  <kbd>Enter</kbd> — open log for current row's latest attempt
-                </li>
-                <li>
-                  <kbd>?</kbd> — this cheat sheet
-                </li>
-              </ul>
-            ),
-            okText: "Close",
-          });
-          break;
-        }
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [visibleMainTasks, cursorId, expandedRows, handleExpandedChange, openLog]);
+    return [...filteredTasks].sort(cmp);
+  }, [filteredTasks, sortedInfo]);
 
   // --- Actions ---
 
@@ -673,29 +452,6 @@ export default function Tasks() {
     try {
       await api.stopTask(id);
       message.success(`Task #${id} stopped`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
-
-  // Triage action for `invalid` tasks. Archives instead of mutating
-  // task_status — keeps the state machine pure and the row + history
-  // intact. The default Tasks view hides archived rows; the quick-
-  // filter chips, including the "Archived" chip, reveal them.
-  const handleArchive = useCallback(async (id: number) => {
-    try {
-      await api.archiveTask(id);
-      message.success(`Task #${id} archived`);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
-  const handleUnarchive = useCallback(async (id: number) => {
-    try {
-      await api.unarchiveTask(id);
-      message.success(`Task #${id} unarchived`);
       load();
     } catch (e) {
       message.error(String(e));
@@ -730,33 +486,6 @@ export default function Tasks() {
     load();
   };
 
-  const handleBulkArchive = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && !t.archived).map((t) => t.id);
-    try {
-      await api.batchArchiveTasks(ids);
-      message.success(`Archived ${ids.length} tasks`);
-    } catch (e) {
-      message.error(String(e));
-    }
-    setSelectedRowKeys([]);
-    load();
-  };
-
-  const handleBulkUnarchive = async () => {
-    const ids = tasks.filter((t) => selectedRowKeys.includes(t.id) && t.archived).map((t) => t.id);
-    try {
-      await api.batchUnarchiveTasks(ids);
-      message.success(`Unarchived ${ids.length} tasks`);
-      // Only clear selection + reload on success so a failure leaves
-      // the user able to retry on the same selection (vs. silently
-      // wiping the rows they were trying to act on).
-      setSelectedRowKeys([]);
-      load();
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
-
   const handleBulkDelete = async () => {
     try {
       await api.batchDeleteTasks(selectedRowKeys as number[]);
@@ -768,85 +497,9 @@ export default function Tasks() {
     load();
   };
 
-  // Single-task create is the N=1 case of the bulk modal — the same
-  // Selects in `mode="multiple"` cover both. The form, preview state,
-  // and progress state live inside CreateTaskModal.
-
   // --- Columns ---
 
-  // Columns are memoized so AntD's open filter dropdown keeps its
-  // internal `selectedKeys` state across SSE-driven re-renders. When
-  // tasks update via SSE the parent re-renders frequently; an inline
-  // columns array hands AntD a fresh column object each time, which
-  // wipes the dropdown's pending selection and made it look like the
-  // dropdown "refreshed immediately" the moment the user clicked.
   const columns = useMemo(() => {
-    const setupColumn = {
-      title: "Setup",
-      key: "setup",
-      width: 220,
-      ellipsis: true,
-      // Setup column packs AV / Sim / Sampler. The compact toggle keeps
-      // the three filter dropdowns reachable via a single Popover; for
-      // most rows the user just glances at "av · sim · sampler".
-      render: (_: unknown, r: TaskResponse) => (
-        <Typography.Text style={{ fontSize: 12 }} ellipsis>
-          {avMap.get(r.av_id) ?? `#${r.av_id}`}
-          <Typography.Text type="secondary"> · </Typography.Text>
-          {simMap.get(r.simulator_id) ?? `#${r.simulator_id}`}
-          <Typography.Text type="secondary"> · </Typography.Text>
-          {samplerMap.get(r.sampler_id) ?? `#${r.sampler_id}`}
-        </Typography.Text>
-      ),
-    };
-
-    // Per-column onFilter wrapper: if the row is pinned, it bypasses
-    // every column filter so AntD's internal filter pass doesn't strip
-    // pinned rows back out of the table dataSource computed above.
-    const pinnedBypass =
-      <T extends TaskResponse>(real: (value: unknown, record: T) => boolean) =>
-      (value: unknown, record: T): boolean =>
-        pinnedIds.has(record.id) || real(value, record);
-
-    // AV/Sim/Sampler filters live in TasksFilterBar; the upstream
-    // `filteredTasks` memo applies them to the dataSource. These
-    // columns are display-only — no filteredValue/onFilter so AntD's
-    // pipeline doesn't double-filter or hand back stale state in
-    // onChange (which used to wipe the chip-set filter).
-    const expandedColumns = [
-      {
-        title: "AV",
-        dataIndex: "av_id",
-        key: "av_id",
-        width: 100,
-        ellipsis: true,
-        render: (id: number) => avMap.get(id) ?? `#${id}`,
-      },
-      {
-        title: "Simulator",
-        dataIndex: "simulator_id",
-        key: "simulator_id",
-        width: 100,
-        ellipsis: true,
-        render: (id: number) => simMap.get(id) ?? `#${id}`,
-      },
-      {
-        title: "Sampler",
-        dataIndex: "sampler_id",
-        key: "sampler_id",
-        width: 80,
-        ellipsis: true,
-        render: (id: number) => samplerMap.get(id) ?? `#${id}`,
-      },
-    ];
-
-    // Sort is fully controlled — visibleMainTasks pre-sorts (with pinned
-    // first within each sort key), so each column reports `sortOrder`
-    // matching sortedInfo and sets `sorter: true` so the header clicks
-    // through ordered cycles without AntD trying to re-sort the data
-    // itself. Without this AntD applies the column's own comparator on
-    // top of my pre-sort and the on-screen order diverged from the
-    // keyboard nav order.
     const orderFor = (key: string): SortOrder | null =>
       sortedInfo.key === key ? (sortedInfo.order ?? null) : null;
 
@@ -868,10 +521,10 @@ export default function Tasks() {
         ellipsis: true,
         ...getColumnSearchProps<TaskResponse>("id"),
         filteredValue: deferredFilteredInfo.id ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => {
+        onFilter: (value: unknown, record: TaskResponse) => {
           const ids = parseIdSet(value);
           return ids.has(record.id);
-        }),
+        },
       },
       {
         title: "Plan",
@@ -882,12 +535,26 @@ export default function Tasks() {
         render: (id: number) => planMap.get(id) ?? `#${id}`,
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
         filteredValue: deferredFilteredInfo.plan_id ?? null,
-        onFilter: pinnedBypass<TaskResponse>((value, record) => {
+        onFilter: (value: unknown, record: TaskResponse) => {
           const text = planMap.get(record.plan_id) ?? "";
           return text.toLowerCase().includes(String(value).toLowerCase());
-        }),
+        },
       },
-      ...(compactView ? [setupColumn] : expandedColumns),
+      {
+        title: "Setup",
+        key: "setup",
+        width: 220,
+        ellipsis: true,
+        render: (_: unknown, r: TaskResponse) => (
+          <Typography.Text style={{ fontSize: 12 }} ellipsis>
+            {avMap.get(r.av_id) ?? `#${r.av_id}`}
+            <Typography.Text type="secondary"> · </Typography.Text>
+            {simMap.get(r.simulator_id) ?? `#${r.simulator_id}`}
+            <Typography.Text type="secondary"> · </Typography.Text>
+            {samplerMap.get(r.sampler_id) ?? `#${r.sampler_id}`}
+          </Typography.Text>
+        ),
+      },
       {
         title: "Status",
         dataIndex: "task_status",
@@ -960,23 +627,11 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        // Sized for 4 small icon buttons (Log + Pin + Run/Stop + at
-        // most one of Archive/Unarchive — those two are mutually
-        // exclusive). Tighter than 144 so there's no dead band on
-        // the right where row-hover bg used to extend past the
-        // last button.
-        width: 120,
+        width: 90,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-          // Archive button is only the triage outcome for invalid tasks; if a row
-          // is already archived (visible only with the toggle on), offer Unarchive.
-          const canArchive = record.task_status === "invalid" && !record.archived;
-          const isPinned = pinnedIds.has(record.id);
           const latestRun = record.task_run?.[0];
-          // Swallow row-level clicks so any action button (log / pin / run /
-          // stop / its Popconfirm popup) doesn't also trigger the row's
-          // expandRowByClick handler.
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
               <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
@@ -985,21 +640,6 @@ export default function Tasks() {
                   icon={<FileTextOutlined />}
                   disabled={!latestRun}
                   onClick={() => latestRun && openLog(latestRun)}
-                />
-              </Tooltip>
-              <Tooltip title={isPinned ? "Unpin" : "Pin"}>
-                <Button
-                  size="small"
-                  type={isPinned ? "primary" : "default"}
-                  icon={<PushpinOutlined />}
-                  onClick={() => {
-                    setPinnedIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(record.id)) next.delete(record.id);
-                      else next.add(record.id);
-                      return next;
-                    });
-                  }}
                 />
               </Tooltip>
               {canStop ? (
@@ -1021,44 +661,21 @@ export default function Tasks() {
                   onConfirm={() => handleRun(record.id)}
                 />
               )}
-              {canArchive && (
-                <ConfirmIconButton
-                  size="small"
-                  icon={<InboxOutlined />}
-                  tooltip="Archive — hide from default view"
-                  confirmTitle="Archive this invalid task?"
-                  onConfirm={() => handleArchive(record.id)}
-                />
-              )}
-              {record.archived && (
-                <Tooltip title="Unarchive (return to default view)">
-                  <Button
-                    size="small"
-                    icon={<UndoOutlined />}
-                    onClick={() => handleUnarchive(record.id)}
-                  />
-                </Tooltip>
-              )}
             </Space>
           );
         },
       },
     ];
   }, [
-    compactView,
     deferredFilteredInfo,
     sortedInfo,
-    pinnedIds,
     avMap,
     simMap,
     samplerMap,
     planMap,
-    setPinnedIds,
     openLog,
     handleRun,
     handleStop,
-    handleArchive,
-    handleUnarchive,
   ]);
 
   const selectionBar = (
@@ -1069,10 +686,73 @@ export default function Tasks() {
       setSelectedRowKeys={setSelectedRowKeys}
       onBulkRun={handleBulkRun}
       onBulkStop={handleBulkStop}
-      onBulkArchive={handleBulkArchive}
-      onBulkUnarchive={handleBulkUnarchive}
       onBulkDelete={handleBulkDelete}
     />
+  );
+
+  // --- Memoized Table props (stable refs so AntD skips row re-render
+  //     when nothing relevant changed). ---
+  const tableScroll = useMemo(() => ({ x: 1000 }), []);
+  const tablePagination = useMemo(
+    () => ({
+      current: currentPage,
+      pageSize,
+      showSizeChanger: true,
+      showTotal: (t: number) => `${t} tasks`,
+      onChange: (p: number, s: number) => {
+        setCurrentPage(p);
+        setPageSize(s);
+      },
+    }),
+    [currentPage, pageSize, setPageSize],
+  );
+  const tableRowSelection = useMemo(
+    () => ({
+      selectedRowKeys,
+      onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
+    }),
+    [selectedRowKeys],
+  );
+  const tableOnChange = useCallback(
+    (
+      _p: unknown,
+      filters: Record<string, FilterValue | null>,
+      sorter:
+        | { columnKey?: React.Key; order?: SortOrder }
+        | { columnKey?: React.Key; order?: SortOrder }[],
+    ) => {
+      setFilteredInfo((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(filters)) next[key] = filters[key] ?? null;
+        return next;
+      });
+      if (!Array.isArray(sorter)) {
+        setSortedInfo({
+          key: sorter.columnKey ? String(sorter.columnKey) : undefined,
+          order: sorter.order ?? undefined,
+        });
+      }
+    },
+    [setFilteredInfo, setSortedInfo],
+  );
+  const tableExpandable = useMemo(
+    () => ({
+      expandedRowRender: (r: TaskResponse) => (
+        <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+          <TaskRunsPanel
+            key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+            taskId={r.id}
+            onOpenLog={openLog}
+          />
+        </div>
+      ),
+      expandedRowKeys: expandedRows,
+      showExpandColumn: false,
+      expandRowByClick: true,
+      onExpandedRowsChange: (keys: readonly React.Key[]) =>
+        handleExpandedChange(keys as React.Key[]),
+    }),
+    [expandedRows, expansionCounts, openLog, handleExpandedChange],
   );
 
   return (
@@ -1085,34 +765,9 @@ export default function Tasks() {
         >
           Clear Filters
         </Button>
-        <Dropdown
-          trigger={["click"]}
-          menu={{
-            items: [
-              {
-                key: "compact",
-                icon: compactView ? <CheckOutlined /> : <span style={{ width: 14 }} />,
-                label: "Compact rows",
-                onClick: () => setCompactView(!compactView),
-              },
-              {
-                key: "archived",
-                icon: showArchived ? <CheckOutlined /> : <span style={{ width: 14 }} />,
-                label: "Include archived",
-                onClick: () => setShowArchived(!showArchived),
-              },
-              { type: "divider" as const },
-              {
-                key: "refresh",
-                icon: <ReloadOutlined />,
-                label: "Refresh",
-                onClick: load,
-              },
-            ],
-          }}
-        >
-          <Button icon={<EyeOutlined />}>View</Button>
-        </Dropdown>
+        <Button icon={<ReloadOutlined />} onClick={load}>
+          Refresh
+        </Button>
         <Button
           type="primary"
           icon={<ThunderboltOutlined />}
@@ -1126,18 +781,13 @@ export default function Tasks() {
 
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
-          <TasksFilters
-            tasks={tasks}
-            quickFilter={quickFilter}
-            onChange={setQuickFilter}
-            includeArchived={showArchived}
-          />
+          <TasksFilters tasks={tasks} quickFilter={quickFilter} onChange={setQuickFilter} />
           <TasksFilterBar
             avs={avs}
             simulators={simulators}
             samplers={samplers}
             monitors={monitors}
-            availableTags={tagCounts.map(([tag]) => tag)}
+            availableTags={availableTagNames}
             filteredInfo={filteredInfo}
             setFilteredInfo={setFilteredInfo}
             tagFilter={tagFilter}
@@ -1157,70 +807,12 @@ export default function Tasks() {
         rowKey="id"
         loading={loading}
         size="small"
-        // Fixed column widths from the column defs — keeps row widths
-        // stable across pinned/non-pinned rows, expanded rows, and
-        // SSE refreshes. scroll.x matches the actual column sum so
-        // there's no blank space to the right of the action column.
-        // (Selection col ≈ 32 + cols total: 1024 compact / 1084
-        // expanded.)
-        scroll={{ x: compactView ? 1000 : 1060 }}
+        scroll={tableScroll}
         tableLayout="fixed"
-        pagination={{
-          current: currentPage,
-          pageSize,
-          showSizeChanger: true,
-          showTotal: (t) => `${t} tasks`,
-          onChange: (p, s) => {
-            setCurrentPage(p);
-            setPageSize(s);
-          },
-        }}
-        rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-        onChange={(_p, filters, sorter) => {
-          // Merge: AntD only knows about the columns that own a
-          // filterDropdown (Plan, ID). Status / AV / Sim / Sampler /
-          // Monitor / Tag come from the filter bar above the table —
-          // overwriting filteredInfo with `filters` from AntD would
-          // wipe those externally-managed keys on every sort click.
-          setFilteredInfo((prev) => {
-            const next = { ...prev };
-            for (const key of Object.keys(filters)) next[key] = filters[key] ?? null;
-            return next;
-          });
-          if (!Array.isArray(sorter)) {
-            setSortedInfo({
-              key: sorter.columnKey ? String(sorter.columnKey) : undefined,
-              order: sorter.order ?? undefined,
-            });
-          }
-        }}
-        rowClassName={(r) => {
-          const cls: string[] = [];
-          if (pinnedIds.has(r.id)) cls.push("tasks-row-pinned");
-          if (r.id === cursorId) cls.push("tasks-row-cursor");
-          return cls.join(" ");
-        }}
-        onRow={(r) => ({
-          style: r.archived ? { opacity: 0.55 } : undefined,
-          onMouseDown: () => setCursorId(r.id),
-        })}
-        expandable={{
-          expandedRowRender: (r: TaskResponse) => (
-            // Wrap the panel with a width cap so a long-error attempt
-            // row can't widen the expanded TD beyond the data columns.
-            <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
-              <TaskRunsPanel
-                key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-                taskId={r.id}
-                onOpenLog={openLog}
-              />
-            </div>
-          ),
-          expandedRowKeys: expandedRows,
-          showExpandColumn: false,
-          expandRowByClick: true,
-          onExpandedRowsChange: (keys) => handleExpandedChange(keys as React.Key[]),
-        }}
+        pagination={tablePagination}
+        rowSelection={tableRowSelection}
+        onChange={tableOnChange}
+        expandable={tableExpandable}
       />
 
       <CreateTaskModal
@@ -1241,23 +833,6 @@ export default function Tasks() {
         executor={logExecutor}
         onClose={() => setLogRun(null)}
       />
-
-      <style>{`
-        .tasks-row-cursor > td {
-          background: var(--ant-color-primary-bg, #e6f4ff) !important;
-          box-shadow: inset 2px 0 0 var(--ant-color-primary, #1677ff);
-        }
-        /* Pinned rows: subtle left accent stripe instead of a full yellow
-           wash so the cursor's primary-bg highlight wins when both apply. */
-        .tasks-row-pinned > td:first-child {
-          box-shadow: inset 3px 0 0 var(--ant-color-warning, #faad14);
-        }
-        /* Mark the boundary between pinned and non-pinned rows so users
-           see "stuff above the line is sticky-of-interest". */
-        .tasks-row-pinned + tr:not(.tasks-row-pinned):not(.ant-table-expanded-row) > td {
-          border-top: 1px solid var(--ant-color-warning-border, #ffe58f);
-        }
-      `}</style>
     </>
   );
 }

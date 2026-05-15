@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useLocalStorageState, useLocalStorageSet } from "../useLocalStorageState";
+import { useLocalStorageState } from "../useLocalStorageState";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -39,17 +39,3 @@ describe("useLocalStorageState", () => {
   });
 });
 
-describe("useLocalStorageSet", () => {
-  it("round-trips Set<number> through localStorage", () => {
-    const { result, rerender } = renderHook(() => useLocalStorageSet("ids"));
-    act(() => result.current[1](new Set([1, 2, 3])));
-
-    expect(result.current[0]).toEqual(new Set([1, 2, 3]));
-    expect(window.localStorage.getItem("ids")).toBe("[1,2,3]");
-
-    // Re-mount: the new hook reads from storage.
-    rerender();
-    const { result: result2 } = renderHook(() => useLocalStorageSet("ids"));
-    expect(result2.current[0]).toEqual(new Set([1, 2, 3]));
-  });
-});

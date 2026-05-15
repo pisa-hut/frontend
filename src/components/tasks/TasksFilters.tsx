@@ -1,86 +1,102 @@
+import { memo, useCallback, useMemo } from "react";
 import { Space, Tag, Typography } from "antd";
 import type { TaskResponse, TaskStatus } from "../../api/types";
 
-/** Quick-filter scope shown above the Tasks table.
- *
- *  - `all` — every chip-matching row (archived included only when
- *    the page-level "Show archived" toggle is on; otherwise excluded)
- *  - `triage` — invalid (chip's archived behaviour follows the toggle
- *    above; defaults to non-archived only)
- *  - `archived` — archived rows only (the chip itself IS the toggle)
- *  - any `TaskStatus` — that status (archived behaviour follows the toggle)
- */
-export type QuickFilter = "all" | "triage" | "archived" | TaskStatus;
+export type QuickFilter = "all" | TaskStatus;
 
 export const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "triage", label: "Triage" },
   { value: "idle", label: "Idle" },
   { value: "running", label: "Running" },
   { value: "queued", label: "Queued" },
   { value: "completed", label: "Completed" },
   { value: "invalid", label: "Invalid" },
   { value: "aborted", label: "Aborted" },
-  { value: "archived", label: "Archived" },
 ];
 
-function countFor(value: QuickFilter, tasks: TaskResponse[], includeArchived: boolean): number {
-  const passesArchive = (t: TaskResponse) => includeArchived || !t.archived;
-  switch (value) {
-    case "all":
-      return tasks.filter(passesArchive).length;
-    case "triage":
-      return tasks.filter((t) => t.task_status === "invalid" && passesArchive(t)).length;
-    case "archived":
-      return tasks.filter((t) => t.archived).length;
-    default:
-      return tasks.filter((t) => t.task_status === value && passesArchive(t)).length;
-  }
-}
+const CHIP_STYLE = { padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 };
+const CHIP_COUNT_STYLE = {
+  marginLeft: 6,
+  opacity: 0.65,
+  fontVariantNumeric: "tabular-nums" as const,
+  fontSize: 11,
+};
+const ROW_STYLE = { display: "flex", alignItems: "flex-start", gap: 12 };
+const LABEL_STYLE = {
+  fontSize: 12,
+  minWidth: 64,
+  paddingTop: 4,
+  textAlign: "right" as const,
+};
+const CHIPS_BOX_STYLE = { flex: 1, minWidth: 0 };
+
+const StatusChip = memo(function StatusChip({
+  value,
+  label,
+  count,
+  active,
+  onToggle,
+}: {
+  value: QuickFilter;
+  label: string;
+  count: number;
+  active: boolean;
+  onToggle: (v: QuickFilter) => void;
+}) {
+  return (
+    <Tag.CheckableTag checked={active} onChange={() => onToggle(value)} style={CHIP_STYLE}>
+      {label}
+      <span style={CHIP_COUNT_STYLE}>{count}</span>
+    </Tag.CheckableTag>
+  );
+});
 
 interface Props {
   tasks: TaskResponse[];
   quickFilter: QuickFilter;
   onChange: (q: QuickFilter) => void;
-  /** Whether the page-level "Show archived" toggle is on. Counts must
-   *  agree with the actual rendered row count. */
-  includeArchived: boolean;
 }
 
-export default function TasksFilters({ tasks, quickFilter, onChange, includeArchived }: Props) {
+export default function TasksFilters({ tasks, quickFilter, onChange }: Props) {
+  // One pass for all status counts.
+  const counts = useMemo(() => {
+    let all = 0;
+    const byStatus: Record<TaskStatus, number> = {
+      idle: 0,
+      queued: 0,
+      running: 0,
+      completed: 0,
+      invalid: 0,
+      aborted: 0,
+    };
+    for (const t of tasks) {
+      all++;
+      byStatus[t.task_status]++;
+    }
+    return { all, byStatus };
+  }, [tasks]);
+
+  const countFor = (q: QuickFilter): number =>
+    q === "all" ? counts.all : counts.byStatus[q];
+
+  const handleToggle = useCallback((q: QuickFilter) => onChange(q), [onChange]);
+
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-      <Typography.Text
-        type="secondary"
-        style={{ fontSize: 12, minWidth: 64, paddingTop: 4, textAlign: "right" }}
-      >
+    <div style={ROW_STYLE}>
+      <Typography.Text type="secondary" style={LABEL_STYLE}>
         Status
       </Typography.Text>
-      <Space size={[6, 6]} wrap style={{ flex: 1, minWidth: 0 }}>
-        {QUICK_FILTERS.map((q) => {
-          const count = countFor(q.value, tasks, includeArchived);
-          const active = quickFilter === q.value;
-          return (
-            <Tag.CheckableTag
-              key={q.value}
-              checked={active}
-              onChange={() => onChange(q.value)}
-              style={{ padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 }}
-            >
-              {q.label}
-              <span
-                style={{
-                  marginLeft: 6,
-                  opacity: 0.65,
-                  fontVariantNumeric: "tabular-nums",
-                  fontSize: 11,
-                }}
-              >
-                {count}
-              </span>
-            </Tag.CheckableTag>
-          );
-        })}
+      <Space size={[6, 6]} wrap style={CHIPS_BOX_STYLE}>
+        {QUICK_FILTERS.map((q) => (
+          <StatusChip
+            key={q.value}
+            value={q.value}
+            label={q.label}
+            count={countFor(q.value)}
+            active={quickFilter === q.value}
+            onToggle={handleToggle}
+          />
+        ))}
       </Space>
     </div>
   );

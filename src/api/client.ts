@@ -275,11 +275,6 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to abort task runs: ${res.status}: ${await res.text()}`);
     await pgUpdate<TaskResponse>("task", id, { task_status: "aborted" });
   },
-  // Soft-hide / unhide. Triage flow for `invalid` tasks the user has
-  // decided aren't theirs to fix: archive=true keeps the row + history
-  // but drops it from the default Tasks view.
-  archiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: true }),
-  unarchiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: false }),
   deleteTask: async (id: number) => {
     await pgDeleteWhere(`task_run?task_id=eq.${id}`);
     await pgDelete("task", id);
@@ -310,10 +305,6 @@ export const api = {
     }
     await pgBatchUpdate<TaskResponse>("task", ids, { task_status: "aborted" });
   },
-  batchArchiveTasks: (ids: number[]) =>
-    pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
-  batchUnarchiveTasks: (ids: number[]) =>
-    pgBatchUpdate<TaskResponse>("task", ids, { archived: false }),
   batchDeleteTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {

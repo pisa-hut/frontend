@@ -1,11 +1,5 @@
 import { Affix, Button, Popconfirm, Space, Typography } from "antd";
-import {
-  CaretRightOutlined,
-  DeleteOutlined,
-  InboxOutlined,
-  StopOutlined,
-  UndoOutlined,
-} from "@ant-design/icons";
+import { CaretRightOutlined, DeleteOutlined, StopOutlined } from "@ant-design/icons";
 import type { TaskResponse, TaskStatus } from "../../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../../api/types";
 
@@ -22,20 +16,9 @@ interface Props {
   setSelectedRowKeys: (keys: React.Key[]) => void;
   onBulkRun: () => void;
   onBulkStop: () => void;
-  onBulkArchive: () => void;
-  onBulkUnarchive: () => void;
   onBulkDelete: () => void;
 }
 
-/** Affix-pinned bottom bar that appears when at least one task is
- *  selected. Shows the selection count, "Select all filtered" /
- *  "Deselect all" toggle, and bulk-action buttons (Run / Stop /
- *  Archive / Unarchive / Delete) gated by which actions are valid
- *  for the currently selected statuses.
- *
- *  Returns `null` when nothing is selected — the bar's existence is
- *  itself part of the visual feedback for "you're in selection mode".
- */
 export default function TasksSelectionBar({
   tasks,
   visibleTasks,
@@ -43,8 +26,6 @@ export default function TasksSelectionBar({
   setSelectedRowKeys,
   onBulkRun,
   onBulkStop,
-  onBulkArchive,
-  onBulkUnarchive,
   onBulkDelete,
 }: Props) {
   if (selectedRowKeys.length === 0) return null;
@@ -57,8 +38,6 @@ export default function TasksSelectionBar({
     RUNNABLE_TASK_STATUSES.includes(t.task_status),
   ).length;
   const stoppableCount = selected.filter((t) => STOPPABLE_STATUSES.includes(t.task_status)).length;
-  const archivableCount = selected.filter((t) => !t.archived).length;
-  const unarchivableCount = selected.filter((t) => t.archived).length;
 
   return (
     <Affix
@@ -117,20 +96,6 @@ export default function TasksSelectionBar({
             <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={onBulkStop}>
               <Button size="small" icon={<StopOutlined />}>
                 Stop {stoppableCount}
-              </Button>
-            </Popconfirm>
-          )}
-          {archivableCount > 0 && (
-            <Popconfirm title={`Archive ${archivableCount}?`} onConfirm={onBulkArchive}>
-              <Button size="small" icon={<InboxOutlined />}>
-                Archive {archivableCount}
-              </Button>
-            </Popconfirm>
-          )}
-          {unarchivableCount > 0 && (
-            <Popconfirm title={`Unarchive ${unarchivableCount}?`} onConfirm={onBulkUnarchive}>
-              <Button size="small" icon={<UndoOutlined />}>
-                Unarchive {unarchivableCount}
               </Button>
             </Popconfirm>
           )}

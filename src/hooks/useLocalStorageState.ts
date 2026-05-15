@@ -53,14 +53,3 @@ export function useLocalStorageState<T>(
 
   return [state, set];
 }
-
-/** Specialisation for Set<number> — common for "selected IDs" / pinned. */
-export function useLocalStorageSet(
-  key: string,
-  initial: Set<number> = new Set(),
-): [Set<number>, (v: Set<number> | ((prev: Set<number>) => Set<number>)) => void] {
-  return useLocalStorageState<Set<number>>(key, initial, {
-    serialize: (s) => JSON.stringify([...s]),
-    deserialize: (raw) => new Set<number>(JSON.parse(raw)),
-  });
-}
