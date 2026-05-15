@@ -247,7 +247,10 @@ export default function Plans() {
 
   return (
     <>
-      <PageHeader title="Plans">
+      <PageHeader
+        title="Plans"
+        subtitle="A plan pairs a map with a scenario. Tag plans to group them on the dashboard and filter on Tasks."
+      >
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           Create
         </Button>
@@ -262,6 +265,7 @@ export default function Plans() {
         loading={loading}
         size="small"
         scroll={{ x: "max-content" }}
+        pagination={{ pageSize: 20, showTotal: (t) => `${t} plans` }}
       />
       <Modal
         title={editing ? "Edit Plan" : "Create Plan"}

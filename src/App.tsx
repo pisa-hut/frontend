@@ -30,6 +30,19 @@ function AppInner() {
     <ConfigProvider
       theme={{
         algorithm: mode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: {
+          borderRadius: 8,
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
+          fontSize: 14,
+        },
+        components: {
+          Card: { borderRadiusLG: 10 },
+          Table: { headerBg: mode === "dark" ? "#1f1f1f" : "#fafafa" },
+          Tag: { borderRadiusSM: 6 },
+          Button: { borderRadius: 6, controlHeight: 32 },
+          Modal: { borderRadiusLG: 12 },
+        },
       }}
     >
       <BrowserRouter>

@@ -545,7 +545,10 @@ function MapsTab() {
 export default function Resources() {
   return (
     <>
-      <PageHeader title="Resources" />
+      <PageHeader
+        title="Resources"
+        subtitle="The building blocks of a task — AVs, Simulators, Samplers, Monitors, and Maps."
+      />
       <Tabs
         items={[
           { key: "avs", label: "AVs", children: <AvsTab /> },

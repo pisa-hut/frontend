@@ -226,7 +226,10 @@ export default function Scenarios() {
 
   return (
     <>
-      <PageHeader title="Scenarios">
+      <PageHeader
+        title="Scenarios"
+        subtitle="Uploaded scenario folders. Click a row to preview its XOSC and storyboard."
+      >
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           Create
         </Button>
