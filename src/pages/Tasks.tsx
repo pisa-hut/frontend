@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Tag,
@@ -151,6 +151,18 @@ export default function Tasks() {
       tagFilter.length > 0 || Object.values(filteredInfo).some((v) => v != null && v.length > 0),
     [filteredInfo, tagFilter],
   );
+
+  // Defer the heavy-consumer view of the filter state. The chip
+  // components keep reading the live values so their checked state
+  // flips instantly on click; the filteredTasks / filterCounts memos
+  // and the Table read these deferred copies, letting React schedule
+  // the heavy table re-render at lower priority. Click → INP drops
+  // because the next paint only carries the chip update; the row
+  // re-render lands in the next idle frame.
+  const deferredFilteredInfo = useDeferredValue(filteredInfo);
+  const deferredTagFilter = useDeferredValue(tagFilter);
+  const deferredQuickFilter = useDeferredValue(quickFilter);
+  const deferredShowArchived = useDeferredValue(showArchived);
 
   // Reset to page 1 whenever the filter set changes — controlled
   // currentPage doesn't auto-snap when the filter narrows the row
@@ -399,8 +411,8 @@ export default function Tasks() {
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
     for (const t of tasks) {
-      if (!showArchived && quickFilter !== "archived" && t.archived) continue;
-      if (quickFilter === "archived" && !t.archived) continue;
+      if (!deferredShowArchived && deferredQuickFilter !== "archived" && t.archived) continue;
+      if (deferredQuickFilter === "archived" && !t.archived) continue;
       av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
       sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
       sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
@@ -409,7 +421,7 @@ export default function Tasks() {
       for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [tasks, planTagsMap, showArchived, quickFilter]);
+  }, [tasks, planTagsMap, deferredShowArchived, deferredQuickFilter]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -441,8 +453,8 @@ export default function Tasks() {
   // outside the active filter must NOT be swept into a bulk delete.
   const filteredTasks = useMemo(() => {
     const archivedFilter = (t: TaskResponse) => {
-      if (quickFilter === "archived") return t.archived;
-      if (showArchived) return true;
+      if (deferredQuickFilter === "archived") return t.archived;
+      if (deferredShowArchived) return true;
       return !t.archived;
     };
     const colFilters = (t: TaskResponse) => {
@@ -452,7 +464,7 @@ export default function Tasks() {
       // Plan column (search text vs. raw plan_id) and the ID column
       // (comma-separated parser), and made the table show "no data"
       // even when matching rows existed.
-      for (const [key, vals] of Object.entries(filteredInfo)) {
+      for (const [key, vals] of Object.entries(deferredFilteredInfo)) {
         if (!vals || vals.length === 0) continue;
         switch (key) {
           case "id": {
@@ -494,7 +506,7 @@ export default function Tasks() {
     // pass-through. Plans with no tags only pass when the filter
     // is empty (so picking a tag never silently excludes the
     // user's untagged work without a deliberate click).
-    const tagSet = new Set(tagFilter);
+    const tagSet = new Set(deferredTagFilter);
     const tagFilterFn = (t: TaskResponse) => {
       if (tagSet.size === 0) return true;
       const tags = planTagsMap.get(t.plan_id) ?? [];
@@ -502,7 +514,15 @@ export default function Tasks() {
       return false;
     };
     return tasks.filter((t) => archivedFilter(t) && colFilters(t) && tagFilterFn(t));
-  }, [tasks, quickFilter, showArchived, filteredInfo, tagFilter, planTagsMap, planMap]);
+  }, [
+    tasks,
+    deferredQuickFilter,
+    deferredShowArchived,
+    deferredFilteredInfo,
+    deferredTagFilter,
+    planTagsMap,
+    planMap,
+  ]);
 
   // Rows actually rendered by the table = filtered scope ∪ pinned rows.
   // Pinned rows always render regardless of chip / archived toggle /
