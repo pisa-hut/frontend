@@ -4,7 +4,6 @@ import {
   CaretRightOutlined,
   CopyOutlined,
   DownloadOutlined,
-  InboxOutlined,
   StopOutlined,
   SyncOutlined,
 } from "@ant-design/icons";
@@ -60,10 +59,6 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
       run.task_run_status === "failed" ||
       run.task_run_status === "aborted");
   const canRun = runIsTerminal && task != null && RUNNABLE_TASK_STATUSES.includes(task.task_status);
-  // Mirror the per-row Archive trigger: only meaningful for invalid
-  // tasks the user hasn't already triaged.
-  const canArchive = task != null && task.task_status === "invalid" && !task.archived;
-
   const doStop = useCallback(() => {
     if (!run) return;
     api
@@ -86,17 +81,6 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
       .catch((e) => message.error(String(e)));
   }, [run, onClose]);
 
-  const doArchive = useCallback(() => {
-    if (!task) return;
-    api
-      .archiveTask(task.id)
-      .then(() => {
-        message.success(`Task #${task.id} archived`);
-        onClose();
-      })
-      .catch((e) => message.error(String(e)));
-  }, [task, onClose]);
-
   // Title is computed eagerly so it's visible the instant the drawer
   // animates in — no waiting for the log fetch to populate context.
   const title = useMemo(() => {
@@ -109,11 +93,6 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
             <Tag color={TASK_STATUS_TAG_COLOR[task.task_status]} style={{ marginInline: 0 }}>
               {task.task_status}
             </Tag>
-            {task.archived && (
-              <Tag color="default" style={{ marginInline: 0 }}>
-                archived
-              </Tag>
-            )}
           </>
         )}
         {taskLabel && (
@@ -156,13 +135,6 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
               <Popconfirm title="Re-run this task?" onConfirm={doRun}>
                 <Button size="small" type="primary" icon={<CaretRightOutlined />}>
                   Run
-                </Button>
-              </Popconfirm>
-            )}
-            {canArchive && (
-              <Popconfirm title="Archive this invalid task?" onConfirm={doArchive}>
-                <Button size="small" icon={<InboxOutlined />}>
-                  Archive
                 </Button>
               </Popconfirm>
             )}

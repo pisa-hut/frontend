@@ -119,12 +119,53 @@ export interface TaskResponse {
   task_status: TaskStatus;
   created_at: string;
   attempt_count: number;
-  /** Soft-hide flag, orthogonal to task_status. Triage of an `invalid`
-   *  task that the user decided isn't theirs to fix flips this to true
-   *  so the row drops out of the default Tasks view. */
+  /** Denormalised "started_at of the latest task_run" — kept current
+   *  by a Postgres trigger added in m20260516. NULL when the task has
+   *  never run. Server-side sortable so PostgREST can do
+   *  `?order=last_run_at.desc.nullslast`. */
+  last_run_at: string | null;
+  /** Soft-hide flag (server-side; not exposed in the UI any more). */
   archived: boolean;
   /** The most recent attempt; populated by listTasks via a nested select. */
   task_run?: TaskRunResponse[];
+}
+
+/** Lightweight projection of `task` for chip-count badges and
+ *  "select-all-filtered" computation. Drops `task_run` and other
+ *  heavy fields so the all-rows fetch is small even at 5000+ rows. */
+export interface TaskSummary {
+  id: number;
+  task_status: TaskStatus;
+  av_id: number;
+  simulator_id: number;
+  sampler_id: number;
+  monitor_id: number;
+  plan_id: number;
+}
+
+export interface TasksPageQuery {
+  page: number; // 1-indexed
+  pageSize: number;
+  sort: { key: "id" | "attempt_count" | "last_run_at"; order: "asc" | "desc" };
+  status?: TaskStatus[];
+  avIds?: number[];
+  simIds?: number[];
+  samplerIds?: number[];
+  monitorIds?: number[];
+  /** Plan-tag filter — OR semantics: any of these. */
+  tags?: string[];
+  /** Exact-id filter from the ID column dropdown. */
+  ids?: number[];
+  /** Plan-name substring search (ilike). */
+  planSearch?: string;
+  /** Cancellation handle so a stale fetch doesn't clobber a fresh one. */
+  signal?: AbortSignal;
+}
+
+export interface TasksPage {
+  rows: TaskResponse[];
+  /** Total matching rows server-side, regardless of page. */
+  total: number;
 }
 
 export interface TaskRunResponse {

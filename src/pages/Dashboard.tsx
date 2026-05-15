@@ -256,14 +256,8 @@ export default function Dashboard() {
     return c;
   }, [tasks]);
 
-  // "Needs your attention" surface: pulls users into the right view
-  // instead of leaving them to count tiles. Triage = invalid+!archived
-  // (matches the chip on the Tasks page). Stuck = currently running
-  // for over 2h, often a SLURM job that never reached the executor.
-  const triageCount = useMemo(
-    () => tasks.filter((t) => t.task_status === "invalid" && !t.archived).length,
-    [tasks],
-  );
+  // Stuck = currently running for over 2h, often a SLURM job that
+  // never reached the executor.
   const stuckCount = useMemo(() => {
     const cutoff = Date.now() - 2 * 3600 * 1000;
     return tasks.filter((t) => {
@@ -330,7 +324,6 @@ export default function Dashboard() {
       }
     >();
     for (const t of tasks) {
-      if (t.archived) continue;
       const key = `${t.av_id}-${t.simulator_id}-${t.sampler_id}`;
       let g = map.get(key);
       if (!g) {
@@ -369,7 +362,6 @@ export default function Dashboard() {
   const tagGroups = useMemo(() => {
     const byTag = new Map<string, Map<string, SetupBucket>>();
     for (const t of tasks) {
-      if (t.archived) continue;
       const tags = planTagsMap.get(t.plan_id) ?? [];
       const tagsForBucket = tags.length > 0 ? tags : ["(untagged)"];
       for (const tag of tagsForBucket) {
@@ -419,49 +411,25 @@ export default function Dashboard() {
     <>
       <PageHeader title="Dashboard" />
 
-      {(triageCount > 0 || stuckCount > 0) && (
-        <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 12 }}>
-          {triageCount > 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              message={
-                <Space>
-                  <Typography.Text strong>
-                    {triageCount} invalid task{triageCount === 1 ? "" : "s"}
-                  </Typography.Text>
-                  <Typography.Text>
-                    waiting for triage — fix the root cause and re-Run, or Archive.
-                  </Typography.Text>
-                </Space>
-              }
-              action={
-                <Button size="small" type="primary" onClick={() => navigate("/tasks?triage=1")}>
-                  Triage now
-                </Button>
-              }
-            />
-          )}
-          {stuckCount > 0 && (
-            <Alert
-              type="info"
-              showIcon
-              message={
-                <Space>
-                  <Typography.Text strong>
-                    {stuckCount} task{stuckCount === 1 ? "" : "s"}
-                  </Typography.Text>
-                  <Typography.Text>running for &gt; 2h — possibly stuck.</Typography.Text>
-                </Space>
-              }
-              action={
-                <Button size="small" onClick={() => navigate("/tasks?status=running")}>
-                  Show
-                </Button>
-              }
-            />
-          )}
-        </Space>
+      {stuckCount > 0 && (
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="info"
+          showIcon
+          message={
+            <Space>
+              <Typography.Text strong>
+                {stuckCount} task{stuckCount === 1 ? "" : "s"}
+              </Typography.Text>
+              <Typography.Text>running for &gt; 2h — possibly stuck.</Typography.Text>
+            </Space>
+          }
+          action={
+            <Button size="small" onClick={() => navigate("/tasks?status=running")}>
+              Show
+            </Button>
+          }
+        />
       )}
 
       <Row gutter={[12, 12]}>

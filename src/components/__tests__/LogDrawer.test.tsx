@@ -30,6 +30,7 @@ const sampleTask: TaskResponse = {
   task_status: "completed",
   created_at: "2026-05-01T00:00:00Z",
   attempt_count: 2,
+  last_run_at: "2026-05-01T00:00:00Z",
   archived: false,
 };
 
