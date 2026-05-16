@@ -316,24 +316,38 @@ export default function Tasks() {
   //     for the 20 visible rows current enough to feel "live".
   //   - summaries refetch every 5s — chip count badges drift slowly
   //     so a few seconds of staleness isn't user-visible.
-  // 250ms (the previous value) under heavy task_run SSE pressure was
-  // firing 4 refetches/sec, each re-rendering the Table.
+  //
+  // Hold the fetchers in refs so the setTimeout always invokes the
+  // *latest* version, not the closure that existed when the timer was
+  // scheduled. Without this, a timer scheduled while currentPage=1
+  // would later fire with the stale `loadPage` (still parameterised
+  // for page 1) and overwrite the page-2 rows the user just navigated
+  // to. Refs decouple "when the timer fires" from "what state the
+  // fetcher closed over".
+  const loadPageRef = useRef(loadPage);
+  const loadSummariesRef = useRef(loadSummaries);
+  useEffect(() => {
+    loadPageRef.current = loadPage;
+  }, [loadPage]);
+  useEffect(() => {
+    loadSummariesRef.current = loadSummaries;
+  }, [loadSummaries]);
   const pageRefetchTimer = useRef<number | null>(null);
   const summariesRefetchTimer = useRef<number | null>(null);
   const scheduleRefetch = useCallback(() => {
     if (pageRefetchTimer.current === null) {
       pageRefetchTimer.current = window.setTimeout(() => {
         pageRefetchTimer.current = null;
-        loadPage();
+        loadPageRef.current();
       }, 750);
     }
     if (summariesRefetchTimer.current === null) {
       summariesRefetchTimer.current = window.setTimeout(() => {
         summariesRefetchTimer.current = null;
-        loadSummaries();
+        loadSummariesRef.current();
       }, 5000);
     }
-  }, [loadPage, loadSummaries]);
+  }, []);
   usePisaEvents(
     useCallback(
       (ev) => {
