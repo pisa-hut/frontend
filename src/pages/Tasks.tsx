@@ -745,21 +745,34 @@ export default function Tasks() {
         | { columnKey?: React.Key; order?: SortOrder }
         | { columnKey?: React.Key; order?: SortOrder }[],
     ) => {
+      // AntD fires onChange for *every* table state change — sort,
+      // filter, AND pagination. We must return `prev` (same ref) when
+      // no filter actually changed, otherwise the page-reset useEffect
+      // sees a new filteredInfo reference on every pagination click
+      // and snaps the user back to page 1.
       setFilteredInfo((prev) => {
+        let changed = false;
         const next = { ...prev };
-        for (const key of Object.keys(filters)) next[key] = filters[key] ?? null;
-        return next;
+        for (const key of Object.keys(filters)) {
+          const newVal = filters[key] ?? null;
+          const prevVal = prev[key] ?? null;
+          if (JSON.stringify(prevVal) !== JSON.stringify(newVal)) {
+            next[key] = newVal;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
       });
       if (!Array.isArray(sorter)) {
         const k = sorter.columnKey ? String(sorter.columnKey) : undefined;
-        if (isSortKey(k) && sorter.order != null) {
-          setSortedInfo({ key: k, order: sorter.order });
-        } else {
-          // user cleared the sort — fall back to the default rather
-          // than letting AntD send us undefined (which would mean "no
-          // order=" on the next query).
-          setSortedInfo({ key: "last_run_at", order: "descend" });
-        }
+        const nextKey: SortKey = isSortKey(k) && sorter.order != null ? k : "last_run_at";
+        const nextOrder: SortOrder =
+          isSortKey(k) && sorter.order != null ? sorter.order : "descend";
+        setSortedInfo((prev) =>
+          prev.key === nextKey && prev.order === nextOrder
+            ? prev
+            : { key: nextKey, order: nextOrder },
+        );
       }
     },
     [setFilteredInfo, setSortedInfo],
