@@ -1,5 +1,17 @@
 import { useState } from "react";
-import { Tabs, Button, Modal, Form, Input, Switch, Space, Table, Dropdown } from "antd";
+import {
+  Tabs,
+  Button,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Switch,
+  Space,
+  Table,
+  Dropdown,
+  Typography,
+} from "antd";
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -25,6 +37,15 @@ import { useResourceTab } from "../hooks/useResourceTab";
 
 // --- Shared columns for AV/Simulator (image + runtimes). Config upload is a
 //     row-level action rendered by each tab so it can call `load()` on change.
+
+// Compact "—" for zero so the columns read as "unset, not edited yet"
+// rather than a real zero-CPU job.
+const renderResource = (v: number | null | undefined) =>
+  v && v > 0 ? (
+    <Typography.Text style={{ fontVariantNumeric: "tabular-nums" }}>{v}</Typography.Text>
+  ) : (
+    <Typography.Text type="secondary">—</Typography.Text>
+  );
 
 const imageColumns = [
   {
@@ -56,6 +77,27 @@ const imageColumns = [
     width: 50,
     render: (v: boolean) => (v ? "Y" : ""),
   },
+  {
+    title: "CPU",
+    dataIndex: "cpu_count",
+    key: "cpu_count",
+    width: 60,
+    render: renderResource,
+  },
+  {
+    title: "Mem (GB)",
+    dataIndex: "memory_gb",
+    key: "memory_gb",
+    width: 80,
+    render: renderResource,
+  },
+  {
+    title: "GPU",
+    dataIndex: "gpu_count",
+    key: "gpu_count",
+    width: 60,
+    render: renderResource,
+  },
 ];
 
 interface ImageFormValues {
@@ -64,6 +106,9 @@ interface ImageFormValues {
   nv_runtime: boolean;
   carla_runtime: boolean;
   ros_runtime: boolean;
+  cpu_count: number;
+  memory_gb: number;
+  gpu_count: number;
 }
 
 interface ImagePayload {
@@ -72,6 +117,9 @@ interface ImagePayload {
   nv_runtime: boolean;
   carla_runtime: boolean;
   ros_runtime: boolean;
+  cpu_count: number;
+  memory_gb: number;
+  gpu_count: number;
 }
 
 function ImageForm({
@@ -90,7 +138,14 @@ function ImageForm({
       form={form}
       layout="vertical"
       onFinish={onFinish}
-      initialValues={{ nv_runtime: false, carla_runtime: false, ros_runtime: false }}
+      initialValues={{
+        nv_runtime: false,
+        carla_runtime: false,
+        ros_runtime: false,
+        cpu_count: 0,
+        memory_gb: 0,
+        gpu_count: 0,
+      }}
     >
       <Form.Item name="name" label="Name" rules={[{ required: true }]}>
         <Input />
@@ -130,6 +185,17 @@ function ImageForm({
       <Form.Item name="ros_runtime" label="ROS Runtime" valuePropName="checked">
         <Switch />
       </Form.Item>
+      <Space size={12} style={{ display: "flex" }} align="end">
+        <Form.Item name="cpu_count" label="CPU" help="Per-task SLURM CPU hint (summed AV + Sim)">
+          <InputNumber min={0} max={256} style={{ width: 120 }} />
+        </Form.Item>
+        <Form.Item name="memory_gb" label="Memory (GB)">
+          <InputNumber min={0} max={2048} style={{ width: 140 }} />
+        </Form.Item>
+        <Form.Item name="gpu_count" label="GPU">
+          <InputNumber min={0} max={8} style={{ width: 100 }} />
+        </Form.Item>
+      </Space>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={saving} block>
           {editing ? "Save" : "Create"}
