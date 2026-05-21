@@ -213,7 +213,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {timeAgo(run.started_at)}
                 {dur ? ` · ${dur}` : ""}
-                {exec ? ` · ${exec.hostname}` : ""}
+                {exec ? ` · ${exec.hostname} · job ${exec.slurm_job_id}` : ""}
               </Typography.Text>
               {run.error_message && (
                 <div
