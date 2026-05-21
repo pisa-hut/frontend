@@ -102,7 +102,8 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
         )}
         <Typography.Text type="secondary">·</Typography.Text>
         <Typography.Text>
-          Attempt #{run.attempt} · {executor?.hostname ?? "executor"}
+          Attempt #{run.attempt} ·{" "}
+          {executor ? `${executor.hostname} · job ${executor.slurm_job_id}` : "executor"}
         </Typography.Text>
         {isLive && (
           <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
