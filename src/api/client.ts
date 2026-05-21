@@ -264,10 +264,15 @@ export const api = {
   // chip-count badges and "select all filtered" computation. Replaces
   // the all-rich-rows fetch that was costing 1-2 MB / 50-100 ms parse
   // every time SSE fired.
+  //
+  // `cache: 'no-store'` is critical here: PostgREST doesn't send
+  // Cache-Control, the URL is identical on every call, and browsers
+  // happily serve stale chip-count payloads from memory cache —
+  // exactly the "Refresh doesn't update counts" symptom users hit.
   listTaskSummaries: async (): Promise<TaskSummary[]> => {
     const res = await fetch(
       `${POSTGREST_URL}/task?select=id,task_status,av_id,simulator_id,sampler_id,monitor_id,plan_id&order=id.desc`,
-      { headers: { Accept: "application/json" } },
+      { headers: { Accept: "application/json" }, cache: "no-store" },
     );
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.json();
@@ -312,6 +317,7 @@ export const api = {
     const res = await fetch(url, {
       headers: { Accept: "application/json", Prefer: "count=exact" },
       signal: q.signal,
+      cache: "no-store",
     });
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     const rows = (await res.json()) as TaskResponse[];
