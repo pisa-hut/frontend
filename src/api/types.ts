@@ -36,6 +36,12 @@ export interface AvResponse {
   carla_runtime: boolean;
   ros_runtime: boolean;
   config_sha256?: string | null;
+  /** SLURM resource hint. Summed with the simulator's value when the
+   *  scheduler sizes the per-task sbatch. 0 = "unset" (clamped to 1
+   *  CPU minimum at submit time). */
+  cpu_count: number;
+  memory_gb: number;
+  gpu_count: number;
 }
 
 export interface SimulatorResponse {
@@ -47,6 +53,9 @@ export interface SimulatorResponse {
   carla_runtime: boolean;
   ros_runtime: boolean;
   config_sha256?: string | null;
+  cpu_count: number;
+  memory_gb: number;
+  gpu_count: number;
 }
 
 export interface SamplerResponse {
