@@ -250,6 +250,16 @@ export const api = {
     for (const row of rows) for (const tag of row.tags ?? []) seen.add(tag);
     return [...seen].sort();
   },
+  /** Distinct tags with usage counts. Backed by `GET /plan/tag` which
+   *  aggregates server-side, so it stays cheap as the plan count grows. */
+  listPlanTagCounts: () => managerGetJson<{ name: string; count: number }[]>("/plan/tag"),
+  /** Strip a tag from every plan that has it. */
+  removePlanTag: (name: string) =>
+    managerPost<{ plans_updated: number }>("/plan/tag/remove", { name }),
+  /** Rename a tag across every plan. Duplicates that would result when
+   *  a plan already had both names are collapsed server-side. */
+  renamePlanTag: (from: string, to: string) =>
+    managerPost<{ plans_updated: number }>("/plan/tag/rename", { from, to }),
 
   // Tasks
   // Latest task_run fields are embedded so the row-level Log button can
