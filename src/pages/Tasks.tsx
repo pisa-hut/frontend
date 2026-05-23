@@ -15,6 +15,7 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
+import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
@@ -232,6 +233,11 @@ export default function Tasks() {
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
 
+  // Plan name click → open the scenario this task's plan is bound to.
+  // plan.scenario_id is 1:1 with plan; we resolve it from `plans` rather
+  // than fetching a separate /scenario/{id} so the drawer opens instantly.
+  const [scenarioDrawer, setScenarioDrawer] = useState<{ id: number; title: string } | null>(null);
+
   // --- Build the server-side query from chip + sort + page state. ---
 
   const query: TasksPageQuery = useMemo(() => {
@@ -397,6 +403,10 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
+  const planScenarioMap = useMemo(
+    () => new Map(plans.map((p) => [p.id, p.scenario_id])),
+    [plans],
+  );
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
   // Per-axis chip counts from the lightweight summary in one pass.
   const filterCounts = useMemo(() => {
@@ -568,7 +578,24 @@ export default function Tasks() {
         key: "plan_id",
         width: 250,
         ellipsis: true,
-        render: (id: number) => planMap.get(id) ?? `#${id}`,
+        render: (id: number) => {
+          const name = planMap.get(id) ?? `#${id}`;
+          const scenarioId = planScenarioMap.get(id);
+          if (scenarioId == null) {
+            return <Typography.Text ellipsis>{name}</Typography.Text>;
+          }
+          return (
+            <Typography.Link
+              ellipsis
+              onClick={(e) => {
+                e.stopPropagation();
+                setScenarioDrawer({ id: scenarioId, title: name });
+              }}
+            >
+              {name}
+            </Typography.Link>
+          );
+        },
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
         filteredValue: deferredFilteredInfo.plan_id ?? null,
       },
@@ -706,6 +733,7 @@ export default function Tasks() {
     simMap,
     samplerMap,
     planMap,
+    planScenarioMap,
     openLog,
     handleRun,
     handleStop,
@@ -895,6 +923,13 @@ export default function Tasks() {
         taskLabel={logTaskLabel}
         executor={logExecutor}
         onClose={() => setLogRun(null)}
+      />
+
+      <ScenarioDetailDrawer
+        open={scenarioDrawer !== null}
+        scenarioId={scenarioDrawer?.id ?? null}
+        title={scenarioDrawer?.title ?? ""}
+        onClose={() => setScenarioDrawer(null)}
       />
     </>
   );
