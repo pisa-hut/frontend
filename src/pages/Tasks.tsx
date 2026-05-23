@@ -421,10 +421,7 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
-  const planScenarioMap = useMemo(
-    () => new Map(plans.map((p) => [p.id, p.scenario_id])),
-    [plans],
-  );
+  const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
   // Per-axis chip counts from the lightweight summary in one pass.
   const filterCounts = useMemo(() => {
