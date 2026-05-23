@@ -21,8 +21,9 @@ import {
   WarningOutlined,
   StopOutlined,
 } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -170,6 +171,7 @@ function StatusDonut({
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [aborted, setAborted] = useState<AbortedStats>({ total: 0, last24h: 0 });
   const [executors, setExecutors] = useState<ExecutorResponse[]>([]);
@@ -178,6 +180,42 @@ export default function Dashboard() {
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Tag filter scopes the top section (status cards, totals, setup
+  // breakdown, currently-running list) to tasks whose plan carries at
+  // least one of the selected tags. Multi-select with OR semantics so
+  // the dashboard matches the Tasks page tag filter.
+  const defaultTagFilter = useMemo(() => {
+    const all = searchParams.getAll("tag");
+    if (all.length > 1) return all;
+    const single = all[0];
+    return single ? single.split(",").filter(Boolean) : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [tagFilter, setTagFilterRaw] = useLocalStorageState<string[]>(
+    "dashboard.tagFilter",
+    defaultTagFilter,
+  );
+  const setTagFilter = useCallback(
+    (next: string[]) => {
+      setTagFilterRaw(next);
+      setSearchParams((prev) => {
+        const out = new URLSearchParams(prev);
+        out.delete("tag");
+        if (next.length > 0) out.set("tag", next.join(","));
+        return out;
+      });
+    },
+    [setTagFilterRaw, setSearchParams],
+  );
+  const toggleTag = useCallback(
+    (tag: string) => {
+      setTagFilter(
+        tagFilter.includes(tag) ? tagFilter.filter((t) => t !== tag) : [...tagFilter, tag],
+      );
+    },
+    [tagFilter, setTagFilter],
+  );
   // Tick once a minute so the "Runtime" column ages without needing
   // a full refetch. (Cheap — only the running-tasks table re-renders.)
   const [, setNow] = useState(0);
@@ -243,6 +281,23 @@ export default function Dashboard() {
   // a hook-count mismatch the first time `loading` flips false. The
   // earlier version put useMemo *after* the loading guard and broke
   // the page on first SSE refresh.
+
+  // `planTagsMap` is also used by the bottom per-tag breakdown — declare
+  // it here so the top-section filter can reuse it.
+  const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
+
+  // Top-section scope: tasks whose plan carries any selected tag.
+  // Empty tagFilter → no scoping. The bottom per-tag card always
+  // operates on the full task set so users can compare experiments.
+  const filteredTasks = useMemo(() => {
+    if (tagFilter.length === 0) return tasks;
+    const want = new Set(tagFilter);
+    return tasks.filter((t) => {
+      const tags = planTagsMap.get(t.plan_id) ?? [];
+      return tags.some((x) => want.has(x));
+    });
+  }, [tasks, tagFilter, planTagsMap]);
+
   const counts: Record<TaskStatus, number> = useMemo(() => {
     const c: Record<TaskStatus, number> = {
       idle: 0,
@@ -252,21 +307,22 @@ export default function Dashboard() {
       invalid: 0,
       aborted: 0,
     };
-    for (const t of tasks) c[t.task_status]++;
+    for (const t of filteredTasks) c[t.task_status]++;
     return c;
-  }, [tasks]);
+  }, [filteredTasks]);
 
   // Stuck = currently running for over 2h, often a SLURM job that
-  // never reached the executor.
+  // never reached the executor. Respects the tag filter so the alert
+  // only fires for the experiment the user is scoped to.
   const stuckCount = useMemo(() => {
     const cutoff = Date.now() - 2 * 3600 * 1000;
-    return tasks.filter((t) => {
+    return filteredTasks.filter((t) => {
       if (t.task_status !== "running") return false;
       const startedAt = t.task_run?.[0]?.started_at;
       if (!startedAt) return false;
       return new Date(startedAt).getTime() < cutoff;
     }).length;
-  }, [tasks]);
+  }, [filteredTasks]);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
@@ -279,7 +335,7 @@ export default function Dashboard() {
   // longest-running first because that's the row most likely to be
   // stuck and most worth glancing at.
   const runningRows = useMemo(() => {
-    return tasks
+    return filteredTasks
       .filter((t) => t.task_status === "running" && t.task_run?.[0])
       .map((t) => {
         const run = t.task_run![0];
@@ -296,7 +352,7 @@ export default function Dashboard() {
         };
       })
       .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-  }, [tasks, planMap, avMap, simMap, samplerMap, executorMap]);
+  }, [filteredTasks, planMap, avMap, simMap, samplerMap, executorMap]);
 
   // Distinct executors actually serving a running task right now —
   // gives a quick "how many machines are busy" glance without
@@ -323,7 +379,7 @@ export default function Dashboard() {
         total: number;
       }
     >();
-    for (const t of tasks) {
+    for (const t of filteredTasks) {
       const key = `${t.av_id}-${t.simulator_id}-${t.sampler_id}`;
       let g = map.get(key);
       if (!g) {
@@ -341,7 +397,7 @@ export default function Dashboard() {
       g.total++;
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [tasks]);
+  }, [filteredTasks]);
   const visibleSetupGroups = setupGroups.slice(0, SETUP_DONUT_LIMIT);
   const hiddenSetupCount = Math.max(0, setupGroups.length - SETUP_DONUT_LIMIT);
 
@@ -349,8 +405,8 @@ export default function Dashboard() {
   // counts). Tags live on plans, so we resolve each task's tags
   // via plan_id. Tasks whose plan has no tags bucket as "(untagged)".
   // Same SETUP_DONUT_LIMIT rule per tag so a single noisy tag
-  // can't blow up the page height.
-  const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
+  // can't blow up the page height. Uses the full `tasks` set (not
+  // `filteredTasks`) — the per-tag card is the unscoped overview.
   type SetupBucket = {
     key: string;
     avId: number;
@@ -402,14 +458,62 @@ export default function Dashboard() {
       });
   }, [tasks, planTagsMap]);
 
+  // All distinct tag names currently in use across plans, sorted by
+  // popularity so the chips at the top mirror what the tag manager
+  // shows. Derived from the in-memory plans we already loaded, so no
+  // extra round-trip. Must sit above the early-return loading guard so
+  // the hook order stays stable across renders.
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of plans) for (const t of p.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  }, [plans]);
+
   if (loading)
     return (
       <Spin size="large" style={{ display: "flex", justifyContent: "center", marginTop: 80 }} />
     );
 
+  const scopeQuery = (extra: string) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of extra ? new URLSearchParams(extra).entries() : []) params.set(k, v);
+    if (tagFilter.length > 0) params.set("tag", tagFilter.join(","));
+    return params.toString();
+  };
+
   return (
     <>
       <PageHeader title="Dashboard" />
+
+      {allTags.length > 0 && (
+        <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: "10px 12px" } }}>
+          <Space size={[6, 6]} wrap>
+            <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 4 }}>
+              Scope:
+            </Typography.Text>
+            <Tag
+              color={tagFilter.length === 0 ? "blue" : "default"}
+              style={{ cursor: "pointer", userSelect: "none" }}
+              onClick={() => setTagFilter([])}
+            >
+              All
+            </Tag>
+            {allTags.map((tag) => {
+              const active = tagFilter.includes(tag);
+              return (
+                <Tag
+                  key={tag}
+                  color={active ? "blue" : "default"}
+                  style={{ cursor: "pointer", userSelect: "none" }}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </Tag>
+              );
+            })}
+          </Space>
+        </Card>
+      )}
 
       {stuckCount > 0 && (
         <Alert
@@ -425,7 +529,7 @@ export default function Dashboard() {
             </Space>
           }
           action={
-            <Button size="small" onClick={() => navigate("/tasks?status=running")}>
+            <Button size="small" onClick={() => navigate(`/tasks?${scopeQuery("status=running")}`)}>
               Show
             </Button>
           }
@@ -438,7 +542,7 @@ export default function Dashboard() {
             <Card
               hoverable
               size="small"
-              onClick={() => navigate(`/tasks?status=${status}`)}
+              onClick={() => navigate(`/tasks?${scopeQuery(`status=${status}`)}`)}
               style={{ cursor: "pointer", textAlign: "center" }}
               styles={{ body: { padding: "12px 8px" } }}
             >
@@ -455,7 +559,17 @@ export default function Dashboard() {
       <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
         <Col xs={24} md={12}>
           <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-            <Statistic title="Total Tasks" value={tasks.length} />
+            <Statistic
+              title={tagFilter.length > 0 ? `Total Tasks (${tagFilter.join(", ")})` : "Total Tasks"}
+              value={filteredTasks.length}
+              suffix={
+                tagFilter.length > 0 ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 13, marginLeft: 8 }}>
+                    / {tasks.length} total
+                  </Typography.Text>
+                ) : null
+              }
+            />
           </Card>
         </Col>
         <Col xs={24} md={12}>
@@ -465,6 +579,9 @@ export default function Dashboard() {
                 <span>
                   <StopOutlined style={{ marginRight: 4 }} />
                   Aborted runs (last 24 h)
+                  <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
+                    · all tags
+                  </Typography.Text>
                 </span>
               }
               value={aborted.last24h}
