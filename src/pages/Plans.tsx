@@ -19,9 +19,11 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
+import TagManagerModal from "../components/TagManagerModal";
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
 
@@ -122,6 +124,7 @@ export default function Plans() {
   // Suggestions for the inline tag editor — refreshed alongside the
   // plan list so newly-added tags become suggestions for sibling rows.
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -254,10 +257,19 @@ export default function Plans() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           Create
         </Button>
+        <Button icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>
+          Manage tags
+        </Button>
         <Button icon={<ReloadOutlined />} onClick={load}>
           Refresh
         </Button>
       </PageHeader>
+
+      <TagManagerModal
+        open={tagManagerOpen}
+        onClose={() => setTagManagerOpen(false)}
+        onChanged={load}
+      />
       <Table
         dataSource={data}
         columns={columns}
