@@ -210,7 +210,9 @@ export default function Dashboard() {
   );
   const toggleTag = useCallback(
     (tag: string) => {
-      setTagFilter(tagFilter.includes(tag) ? tagFilter.filter((t) => t !== tag) : [...tagFilter, tag]);
+      setTagFilter(
+        tagFilter.includes(tag) ? tagFilter.filter((t) => t !== tag) : [...tagFilter, tag],
+      );
     },
     [tagFilter, setTagFilter],
   );
