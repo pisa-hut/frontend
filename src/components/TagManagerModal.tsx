@@ -141,8 +141,8 @@ export default function TagManagerModal({ open, onClose, onChanged }: Props) {
         width={720}
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Tags live inline on each plan. Rename or remove them across every plan that uses them
-          in a single operation.
+          Tags live inline on each plan. Rename or remove them across every plan that uses them in a
+          single operation.
         </Typography.Paragraph>
         <Table
           dataSource={rows}
@@ -170,7 +170,10 @@ export default function TagManagerModal({ open, onClose, onChanged }: Props) {
           placeholder="New tag name"
           autoFocus
         />
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}
+        >
           If a plan already has both the old and new tag, the duplicate is collapsed.
         </Typography.Paragraph>
       </Modal>
