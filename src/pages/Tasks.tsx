@@ -225,6 +225,24 @@ export default function Tasks() {
     setExpandedRows(keys);
   }, []);
 
+  const toggleExpanded = useCallback(
+    (id: number) => {
+      setExpandedRows((prev) => {
+        const has = prev.includes(id);
+        const next = has ? prev.filter((k) => k !== id) : [...prev, id];
+        if (!has) {
+          setExpansionCounts((counts) => {
+            const out = new Map(counts);
+            out.set(id, (out.get(id) ?? 0) + 1);
+            return out;
+          });
+        }
+        return next;
+      });
+    },
+    [setExpandedRows, setExpansionCounts],
+  );
+
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
@@ -650,9 +668,23 @@ export default function Tasks() {
         title: "Attempts",
         dataIndex: "attempt_count",
         key: "attempt_count",
-        width: 70,
+        width: 80,
         sorter: true,
         sortOrder: orderFor("attempt_count"),
+        render: (n: number, r: TaskResponse) => {
+          if (!n) return <Typography.Text type="secondary">0</Typography.Text>;
+          return (
+            <Typography.Link
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpanded(r.id);
+              }}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {n}
+            </Typography.Link>
+          );
+        },
       },
       {
         title: "Last Run",
@@ -737,6 +769,7 @@ export default function Tasks() {
     openLog,
     handleRun,
     handleStop,
+    toggleExpanded,
   ]);
 
   const selectionBar = (
@@ -831,8 +864,12 @@ export default function Tasks() {
         </div>
       ),
       expandedRowKeys: expandedRows,
-      showExpandColumn: false,
-      expandRowByClick: true,
+      // Whole-row click was triggering accidental expansions when users
+      // were trying to read a cell or copy text. Show the chevron column
+      // as the explicit, familiar affordance instead, and let the
+      // Attempts cell double as a discoverable trigger.
+      showExpandColumn: true,
+      expandRowByClick: false,
       onExpandedRowsChange: (keys: readonly React.Key[]) =>
         handleExpandedChange(keys as React.Key[]),
     }),
