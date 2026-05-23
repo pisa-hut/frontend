@@ -30,16 +30,21 @@ export interface FileEntry {
   content_sha256: string;
 }
 
-interface Props {
-  open: boolean;
-  title: string;
-  onClose: () => void;
+interface BodyProps {
   listFiles: () => Promise<FileEntry[]>;
   fileUrl: (rel: string) => string;
   uploadFile?: (rel: string, data: Blob) => Promise<void>;
   deleteFile?: (rel: string) => Promise<void>;
   defaultUploadPrefix?: string;
   uploadAccept?: string;
+  /** Bumped by the parent to force a refresh (e.g. when a Drawer reopens). */
+  reloadToken?: unknown;
+}
+
+interface Props extends BodyProps {
+  open: boolean;
+  title: string;
+  onClose: () => void;
 }
 
 // Extensions that render as text. Anything else is treated as binary — we
@@ -74,17 +79,15 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-export default function FileBrowser({
-  open,
-  title,
-  onClose,
+export function FileBrowserBody({
   listFiles,
   fileUrl,
   uploadFile,
   deleteFile,
   defaultUploadPrefix = "",
   uploadAccept,
-}: Props) {
+  reloadToken,
+}: BodyProps) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [listing, setListing] = useState(false);
   const [selected, setSelected] = useState<FileEntry | null>(null);
@@ -106,15 +109,13 @@ export default function FileBrowser({
   };
 
   useEffect(() => {
-    if (open) {
-      setSelected(null);
-      setPreviewText("");
-      setPreviewError("");
-      setUploadPrefix(defaultUploadPrefix);
-      load();
-    }
+    setSelected(null);
+    setPreviewText("");
+    setPreviewError("");
+    setUploadPrefix(defaultUploadPrefix);
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [reloadToken]);
 
   const openPreview = async (f: FileEntry) => {
     setSelected(f);
@@ -207,7 +208,7 @@ export default function FileBrowser({
   const isText = selected ? isTextPath(selected.relative_path) : false;
 
   return (
-    <Modal title={title} open={open} onCancel={onClose} footer={null} width="90%">
+    <>
       <Space style={{ marginBottom: 12 }} wrap>
         <Button icon={<ReloadOutlined />} onClick={load} loading={listing}>
           Refresh
@@ -327,6 +328,14 @@ export default function FileBrowser({
           </Col>
         )}
       </Row>
+    </>
+  );
+}
+
+export default function FileBrowser({ open, title, onClose, ...body }: Props) {
+  return (
+    <Modal title={title} open={open} onCancel={onClose} footer={null} width="90%">
+      <FileBrowserBody {...body} reloadToken={open} />
     </Modal>
   );
 }

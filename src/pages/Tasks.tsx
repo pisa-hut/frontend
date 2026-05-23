@@ -15,6 +15,7 @@ import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
 import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
+import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
@@ -224,6 +225,24 @@ export default function Tasks() {
     setExpandedRows(keys);
   }, []);
 
+  const toggleExpanded = useCallback(
+    (id: number) => {
+      setExpandedRows((prev) => {
+        const has = prev.includes(id);
+        const next = has ? prev.filter((k) => k !== id) : [...prev, id];
+        if (!has) {
+          setExpansionCounts((counts) => {
+            const out = new Map(counts);
+            out.set(id, (out.get(id) ?? 0) + 1);
+            return out;
+          });
+        }
+        return next;
+      });
+    },
+    [setExpandedRows, setExpansionCounts],
+  );
+
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
@@ -231,6 +250,11 @@ export default function Tasks() {
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
+
+  // Plan name click → open the scenario this task's plan is bound to.
+  // plan.scenario_id is 1:1 with plan; we resolve it from `plans` rather
+  // than fetching a separate /scenario/{id} so the drawer opens instantly.
+  const [scenarioDrawer, setScenarioDrawer] = useState<{ id: number; title: string } | null>(null);
 
   // --- Build the server-side query from chip + sort + page state. ---
 
@@ -397,6 +421,7 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
+  const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
   // Per-axis chip counts from the lightweight summary in one pass.
   const filterCounts = useMemo(() => {
@@ -568,7 +593,24 @@ export default function Tasks() {
         key: "plan_id",
         width: 250,
         ellipsis: true,
-        render: (id: number) => planMap.get(id) ?? `#${id}`,
+        render: (id: number) => {
+          const name = planMap.get(id) ?? `#${id}`;
+          const scenarioId = planScenarioMap.get(id);
+          if (scenarioId == null) {
+            return <Typography.Text ellipsis>{name}</Typography.Text>;
+          }
+          return (
+            <Typography.Link
+              ellipsis
+              onClick={(e) => {
+                e.stopPropagation();
+                setScenarioDrawer({ id: scenarioId, title: name });
+              }}
+            >
+              {name}
+            </Typography.Link>
+          );
+        },
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
         filteredValue: deferredFilteredInfo.plan_id ?? null,
       },
@@ -623,9 +665,23 @@ export default function Tasks() {
         title: "Attempts",
         dataIndex: "attempt_count",
         key: "attempt_count",
-        width: 70,
+        width: 80,
         sorter: true,
         sortOrder: orderFor("attempt_count"),
+        render: (n: number, r: TaskResponse) => {
+          if (!n) return <Typography.Text type="secondary">0</Typography.Text>;
+          return (
+            <Typography.Link
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpanded(r.id);
+              }}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {n}
+            </Typography.Link>
+          );
+        },
       },
       {
         title: "Last Run",
@@ -706,9 +762,11 @@ export default function Tasks() {
     simMap,
     samplerMap,
     planMap,
+    planScenarioMap,
     openLog,
     handleRun,
     handleStop,
+    toggleExpanded,
   ]);
 
   const selectionBar = (
@@ -803,8 +861,12 @@ export default function Tasks() {
         </div>
       ),
       expandedRowKeys: expandedRows,
-      showExpandColumn: false,
-      expandRowByClick: true,
+      // Whole-row click was triggering accidental expansions when users
+      // were trying to read a cell or copy text. Show the chevron column
+      // as the explicit, familiar affordance instead, and let the
+      // Attempts cell double as a discoverable trigger.
+      showExpandColumn: true,
+      expandRowByClick: false,
       onExpandedRowsChange: (keys: readonly React.Key[]) =>
         handleExpandedChange(keys as React.Key[]),
     }),
@@ -895,6 +957,13 @@ export default function Tasks() {
         taskLabel={logTaskLabel}
         executor={logExecutor}
         onClose={() => setLogRun(null)}
+      />
+
+      <ScenarioDetailDrawer
+        open={scenarioDrawer !== null}
+        scenarioId={scenarioDrawer?.id ?? null}
+        title={scenarioDrawer?.title ?? ""}
+        onClose={() => setScenarioDrawer(null)}
       />
     </>
   );
