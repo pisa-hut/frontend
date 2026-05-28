@@ -372,6 +372,11 @@ export default function Tasks() {
       }, 5000);
     }
   }, []);
+  // Narrow at the dispatcher: this listener only ever cares about row
+  // events for the two relevant tables. With many parallel task_runs
+  // emitting log chunks the broadcast volume is dominated by `log`
+  // events that this page would otherwise wake for and immediately
+  // discard.
   usePisaEvents(
     useCallback(
       (ev) => {
@@ -380,6 +385,7 @@ export default function Tasks() {
       },
       [scheduleRefetch],
     ),
+    useMemo(() => ({ kinds: ["row"] as const, rowTables: ["task", "task_run"] as const }), []),
   );
   useEffect(() => {
     return () => {
