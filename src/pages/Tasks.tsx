@@ -423,23 +423,43 @@ export default function Tasks() {
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
   const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
-  // Per-axis chip counts from the lightweight summary in one pass.
+
+  // Summaries scoped to the active tag filter. The status chips and
+  // the av/sim/sampler/monitor axis counts read from this so the
+  // displayed numbers match what the table is actually showing after
+  // the tag filter is applied server-side. Tag chips themselves stay
+  // on the unscoped `summaries` so other tags remain navigable.
+  const tagScopedSummaries = useMemo(() => {
+    if (tagFilter.length === 0) return summaries;
+    const want = new Set(tagFilter);
+    return summaries.filter((t) => {
+      const tags = planTagsMap.get(t.plan_id) ?? [];
+      return tags.some((x) => want.has(x));
+    });
+  }, [summaries, tagFilter, planTagsMap]);
+
+  // Per-axis chip counts. AV/Sim/Sampler/Monitor counts come from the
+  // tag-scoped slice so the chip number tracks the table. Tag counts
+  // come from the unscoped summaries so picking tag A doesn't blank
+  // out the count next to tag B.
   const filterCounts = useMemo(() => {
     const av = new Map<number, number>();
     const sim = new Map<number, number>();
     const sampler = new Map<number, number>();
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
-    for (const t of summaries) {
+    for (const t of tagScopedSummaries) {
       av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
       sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
       sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
       if (t.monitor_id != null) monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
+    }
+    for (const t of summaries) {
       const tags = planTagsMap.get(t.plan_id) ?? [];
       for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [summaries, planTagsMap]);
+  }, [summaries, tagScopedSummaries, planTagsMap]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -905,7 +925,11 @@ export default function Tasks() {
 
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
-          <TasksFilters summaries={summaries} quickFilter={quickFilter} onChange={setQuickFilter} />
+          <TasksFilters
+            summaries={tagScopedSummaries}
+            quickFilter={quickFilter}
+            onChange={setQuickFilter}
+          />
           <TasksFilterBar
             avs={avs}
             simulators={simulators}
