@@ -368,14 +368,22 @@ export const api = {
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
   batchArchiveTasks: (ids: number[]) =>
     pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
-  /** Every invalid task plus its latest task_run (so the modal can group
-   *  by `task_run.error_message`). One-shot fetch with a large limit —
-   *  even with thousands of invalid tasks the payload is small enough
-   *  to be cheaper than paginating + grouping incrementally. */
-  listInvalidTasksWithLatestRun: () =>
-    pgList<TaskResponse>(
-      "task?task_status=eq.invalid&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.asc&limit=20000",
-    ),
+  /** Tasks with their latest task_run, restricted to a caller-supplied
+   *  id list. Used by the triage modal so the workflow respects any
+   *  active page filters (status, av, sim, sampler, monitor, tag).
+   *  Chunked so the PostgREST URL stays under the typical 8 KB limit
+   *  even with thousands of ids. */
+  listTasksByIdsWithLatestRun: async (ids: number[]): Promise<TaskResponse[]> => {
+    if (ids.length === 0) return [];
+    const out: TaskResponse[] = [];
+    for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+      const rows = await pgList<TaskResponse>(
+        `task?id=in.(${batch.join(",")})&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1`,
+      );
+      out.push(...rows);
+    }
+    return out;
+  },
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     const abortData = {

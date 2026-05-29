@@ -25,6 +25,16 @@ import type { TaskResponse } from "../api/types";
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** Task ids to triage. The parent (Tasks page) computes this from
+   *  the active page filter so the modal honours the same scope the
+   *  table is showing — typically the set of invalid tasks inside the
+   *  selected tag / setup / etc. Empty array → modal renders an empty
+   *  state and reports "nothing to triage". */
+  taskIds: number[];
+  /** Optional human-readable description of the active scope shown in
+   *  the modal title (e.g. "tag: 0522v3-HetroD"). Omitted when no
+   *  filter is active. */
+  scopeLabel?: string;
   /** Called after a successful re-run / archive so the parent can
    *  refresh its list. */
   onChanged?: () => void;
@@ -67,15 +77,26 @@ function signatureOf(msg: string | null | undefined): string {
   return s.length > 240 ? s.slice(0, 240) + "…" : s;
 }
 
-export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSampleLog }: Props) {
+export default function TriageInvalidModal({
+  open,
+  onClose,
+  taskIds,
+  scopeLabel,
+  onChanged,
+  onOpenSampleLog,
+}: Props) {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const load = async () => {
+    if (taskIds.length === 0) {
+      setTasks([]);
+      return;
+    }
     setLoading(true);
     try {
-      setTasks(await api.listInvalidTasksWithLatestRun());
+      setTasks(await api.listTasksByIdsWithLatestRun(taskIds));
     } catch (e) {
       message.error(`Failed to load invalid tasks: ${e}`);
     } finally {
@@ -83,9 +104,15 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
     }
   };
 
+  // Reload when the modal opens or the scope changes while it's open
+  // (e.g. the user changes a filter chip without closing the modal).
+  // `taskIds.join(',')` stabilises the dep so a freshly-built array
+  // with identical content doesn't refetch.
+  const idsKey = taskIds.join(",");
   useEffect(() => {
     if (open) load();
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, idsKey]);
 
   const groups = useMemo<ErrorGroup[]>(() => {
     const map = new Map<string, ErrorGroup>();
@@ -235,8 +262,13 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
   return (
     <Modal
       title={
-        <Space>
+        <Space size={6} wrap>
           <Typography.Text strong>Triage invalid tasks</Typography.Text>
+          {scopeLabel && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              · scoped to {scopeLabel}
+            </Typography.Text>
+          )}
           {!loading && total > 0 && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               · {total} task(s) across {distinctSignatures} error group(s)
