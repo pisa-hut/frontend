@@ -150,6 +150,7 @@ export interface TaskSummary {
   sampler_id: number;
   monitor_id: number;
   plan_id: number;
+  archived: boolean;
 }
 
 export interface TasksPageQuery {
@@ -167,6 +168,9 @@ export interface TasksPageQuery {
   ids?: number[];
   /** Plan-name substring search (ilike). */
   planSearch?: string;
+  /** When true, the query omits the default `archived=false` filter so
+   *  the page also returns archived tasks. Default false. */
+  includeArchived?: boolean;
   /** Cancellation handle so a stale fetch doesn't clobber a fresh one. */
   signal?: AbortSignal;
 }

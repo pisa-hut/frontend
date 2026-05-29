@@ -11,6 +11,8 @@ import {
   ClearOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
+  InboxOutlined,
+  RollbackOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -156,6 +158,32 @@ export default function Tasks() {
   const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: SortKey; order?: SortOrder }>(
     "tasks.sortedInfo",
     { key: "last_run_at", order: "descend" },
+  );
+
+  // "Show archived" toggle. Default off — the queries filter
+  // `archived=eq.false` server-side so soft-archived rows stay out of
+  // the way until the user opts in. SessionStorage so the choice
+  // sticks across in-tab navigation but resets next session, same as
+  // the other filter knobs.
+  const defaultIncludeArchived = useMemo(() => {
+    return searchParams.get("archived") === "1";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [includeArchived, setIncludeArchivedRaw] = useSessionStorageState<boolean>(
+    "tasks.includeArchived",
+    defaultIncludeArchived,
+  );
+  const setIncludeArchived = useCallback(
+    (next: boolean) => {
+      setIncludeArchivedRaw(next);
+      setSearchParams((prev) => {
+        const out = new URLSearchParams(prev);
+        if (next) out.set("archived", "1");
+        else out.delete("archived");
+        return out;
+      });
+    },
+    [setIncludeArchivedRaw, setSearchParams],
   );
   const hasActiveFilters = useMemo(
     () =>
@@ -339,8 +367,9 @@ export default function Tasks() {
       tags: tagFilter.length > 0 ? tagFilter : undefined,
       ids,
       planSearch,
+      includeArchived,
     };
-  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter]);
+  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter, includeArchived]);
 
   // --- Data loading ---
 
@@ -348,14 +377,14 @@ export default function Tasks() {
   const loadSummaries = useCallback(() => {
     if (summariesPromiseRef.current) return summariesPromiseRef.current;
     const p = api
-      .listTaskSummaries()
+      .listTaskSummaries(includeArchived)
       .then((rows) => setSummaries(rows))
       .finally(() => {
         summariesPromiseRef.current = null;
       });
     summariesPromiseRef.current = p;
     return p;
-  }, []);
+  }, [includeArchived]);
 
   // Fetch the current page whenever the query changes. AbortController
   // cancels in-flight fetches when the user clicks chips quickly so a
@@ -612,6 +641,12 @@ export default function Tasks() {
     return m;
   }, [summaries]);
 
+  const archivedById = useMemo(() => {
+    const m = new Map<number, boolean>();
+    for (const s of summaries) m.set(s.id, s.archived);
+    return m;
+  }, [summaries]);
+
   // IDs that match the current chip filter set, derived from
   // summaries (so it's the FULL filtered set, not just current page).
   const filteredSummaryIds = useMemo(() => {
@@ -659,6 +694,25 @@ export default function Tasks() {
       try {
         await api.stopTask(id);
         message.success(`Task #${id} stopped`);
+        loadPage();
+        loadSummaries();
+      } catch (e) {
+        message.error(String(e));
+      }
+    },
+    [loadPage, loadSummaries],
+  );
+
+  const handleArchive = useCallback(
+    async (id: number, archived: boolean) => {
+      try {
+        if (archived) {
+          await api.unarchiveTask(id);
+          message.success(`Task #${id} unarchived`);
+        } else {
+          await api.archiveTask(id);
+          message.success(`Task #${id} archived`);
+        }
         loadPage();
         loadSummaries();
       } catch (e) {
@@ -718,6 +772,32 @@ export default function Tasks() {
     try {
       await api.batchDeleteTasks(selectedRowKeys as number[]);
       message.success(`Deleted ${selectedRowKeys.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    loadPage();
+    loadSummaries();
+  };
+
+  const handleBulkArchive = async () => {
+    const ids = selectedRowKeys as number[];
+    try {
+      await api.batchArchiveTasks(ids);
+      message.success(`Archived ${ids.length} task(s)`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    loadPage();
+    loadSummaries();
+  };
+
+  const handleBulkUnarchive = async () => {
+    const ids = selectedRowKeys as number[];
+    try {
+      await api.batchUnarchiveTasks(ids);
+      message.success(`Unarchived ${ids.length} task(s)`);
     } catch (e) {
       message.error(String(e));
     }
@@ -790,32 +870,39 @@ export default function Tasks() {
         title: "Status",
         dataIndex: "task_status",
         key: "task_status",
-        width: 110,
-        render: (status: TaskStatus) => (
-          <Tag
-            color={TASK_STATUS_TAG_COLOR[status]}
-            icon={
-              status === "running" ? (
-                <SyncOutlined spin />
-              ) : (
-                <span
-                  aria-hidden
-                  style={{
-                    display: "inline-block",
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    background: TASK_STATUS_HEX[status],
-                    marginRight: 6,
-                    verticalAlign: "middle",
-                  }}
-                />
-              )
-            }
-            style={{ fontWeight: 500 }}
-          >
-            {TASK_STATUS_LABEL[status]}
-          </Tag>
+        width: 130,
+        render: (status: TaskStatus, r: TaskResponse) => (
+          <Space size={4} wrap>
+            <Tag
+              color={TASK_STATUS_TAG_COLOR[status]}
+              icon={
+                status === "running" ? (
+                  <SyncOutlined spin />
+                ) : (
+                  <span
+                    aria-hidden
+                    style={{
+                      display: "inline-block",
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      background: TASK_STATUS_HEX[status],
+                      marginRight: 6,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                )
+              }
+              style={{ fontWeight: 500, marginInlineEnd: 0 }}
+            >
+              {TASK_STATUS_LABEL[status]}
+            </Tag>
+            {r.archived && (
+              <Tag color="default" style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                archived
+              </Tag>
+            )}
+          </Space>
         ),
       },
       {
@@ -873,7 +960,7 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 120,
+        width: 150,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
@@ -914,6 +1001,13 @@ export default function Tasks() {
                   onConfirm={() => handleRun(record.id)}
                 />
               )}
+              <ConfirmIconButton
+                size="small"
+                icon={record.archived ? <RollbackOutlined /> : <InboxOutlined />}
+                tooltip={record.archived ? "Unarchive" : "Archive (soft-hide)"}
+                confirmTitle={record.archived ? "Unarchive?" : "Archive?"}
+                onConfirm={() => handleArchive(record.id, record.archived)}
+              />
             </Space>
           );
         },
@@ -930,6 +1024,7 @@ export default function Tasks() {
     openLog,
     handleRun,
     handleStop,
+    handleArchive,
     toggleExpanded,
     copyTaskLink,
   ]);
@@ -938,11 +1033,14 @@ export default function Tasks() {
     <TasksSelectionBar
       statusById={statusById}
       visibleIds={filteredSummaryIds}
+      archivedById={archivedById}
       selectedRowKeys={selectedRowKeys}
       setSelectedRowKeys={setSelectedRowKeys}
       onBulkRun={handleBulkRun}
       onBulkStop={handleBulkStop}
       onBulkDelete={handleBulkDelete}
+      onBulkArchive={handleBulkArchive}
+      onBulkUnarchive={handleBulkUnarchive}
     />
   );
 
@@ -1057,6 +1155,21 @@ export default function Tasks() {
         >
           Refresh
         </Button>
+        <Tooltip
+          title={
+            includeArchived
+              ? "Hide archived tasks from the list"
+              : "Include soft-archived tasks in the list"
+          }
+        >
+          <Button
+            icon={<InboxOutlined />}
+            onClick={() => setIncludeArchived(!includeArchived)}
+            type={includeArchived ? "primary" : "default"}
+          >
+            {includeArchived ? "Hide archived" : "Show archived"}
+          </Button>
+        </Tooltip>
         <Button
           icon={<ExclamationCircleOutlined />}
           onClick={() => setTriageOpen(true)}
