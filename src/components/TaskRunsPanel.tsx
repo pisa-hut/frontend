@@ -80,10 +80,17 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
     refetch().finally(() => setLoading(false));
   }, [refetch]);
 
-  // SSE: refetch on row changes for this task/its runs. (Log chunks are
-  // handled by LogDrawer — we don't care about them here.)
+  // SSE: refetch on row changes for this task/its runs. Log chunks are
+  // filtered out at the dispatcher (see filter below), so this callback
+  // only wakes for `row` events. `knownRunIds` lives in a ref so it
+  // doesn't churn the useCallback identity on every `runs` change —
+  // that thrash was re-subscribing this listener tens of times per
+  // second when many runs were live.
   const refetchTimer = useRef<number | null>(null);
-  const knownRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
+  const knownRunIdsRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    knownRunIdsRef.current = new Set(runs.map((r) => r.id));
+  }, [runs]);
   usePisaEvents(
     useCallback(
       (ev) => {
@@ -91,7 +98,7 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
         const row = ev.row;
         const concerns =
           (row.table === "task" && row.id === taskId) ||
-          (row.table === "task_run" && knownRunIds.has(row.id)) ||
+          (row.table === "task_run" && knownRunIdsRef.current.has(row.id)) ||
           (row.table === "task_run" && row.op === "insert"); // new run we don't yet know about
         if (!concerns) return;
         if (refetchTimer.current !== null) return;
@@ -100,8 +107,9 @@ export default function TaskRunsPanel({ taskId, onOpenLog }: Props) {
           refetch();
         }, 250);
       },
-      [taskId, knownRunIds, refetch],
+      [taskId, refetch],
     ),
+    useMemo(() => ({ kinds: ["row"] as const, rowTables: ["task", "task_run"] as const }), []),
   );
 
   useEffect(() => {
