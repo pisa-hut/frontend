@@ -9,6 +9,7 @@ import {
   SyncOutlined,
   FileTextOutlined,
   ClearOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -17,6 +18,7 @@ import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
 import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
 import TaskRunsPanel from "../components/TaskRunsPanel";
+import TriageInvalidModal from "../components/TriageInvalidModal";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
@@ -244,6 +246,11 @@ export default function Tasks() {
   );
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [triageOpen, setTriageOpen] = useState(false);
+  const invalidCount = useMemo(
+    () => summaries.reduce((n, t) => (t.task_status === "invalid" ? n + 1 : n), 0),
+    [summaries],
+  );
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
@@ -913,6 +920,13 @@ export default function Tasks() {
           Refresh
         </Button>
         <Button
+          icon={<ExclamationCircleOutlined />}
+          onClick={() => setTriageOpen(true)}
+          disabled={invalidCount === 0}
+        >
+          Triage invalid{invalidCount > 0 ? ` (${invalidCount})` : ""}
+        </Button>
+        <Button
           type="primary"
           icon={<ThunderboltOutlined />}
           onClick={() => {
@@ -973,6 +987,15 @@ export default function Tasks() {
         samplers={samplers}
         monitors={monitors}
         plans={plans}
+      />
+
+      <TriageInvalidModal
+        open={triageOpen}
+        onClose={() => setTriageOpen(false)}
+        onChanged={() => {
+          loadPage();
+          loadSummaries();
+        }}
       />
 
       <LogDrawer
