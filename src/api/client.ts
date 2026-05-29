@@ -366,6 +366,16 @@ export const api = {
   ) => pgBatchCreate<TaskResponse>("task", rows, onProgress),
   batchRunTasks: (ids: number[]) =>
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
+  batchArchiveTasks: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
+  /** Every invalid task plus its latest task_run (so the modal can group
+   *  by `task_run.error_message`). One-shot fetch with a large limit —
+   *  even with thousands of invalid tasks the payload is small enough
+   *  to be cheaper than paginating + grouping incrementally. */
+  listInvalidTasksWithLatestRun: () =>
+    pgList<TaskResponse>(
+      "task?task_status=eq.invalid&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.asc&limit=20000",
+    ),
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     const abortData = {
