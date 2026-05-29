@@ -9,6 +9,7 @@ import {
   SyncOutlined,
   FileTextOutlined,
   ClearOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -72,6 +73,15 @@ export default function Tasks() {
     return "all";
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // `?id=123` or `?id=123,456` scopes the table to specific task ids.
+  // Drives the same `filteredInfo.id` chip the column search produces,
+  // so the existing server query path works untouched. Empty string in
+  // the URL is treated as "no id filter".
+  const defaultIdFilter = useMemo(() => {
+    const raw = searchParams.get("id");
+    return raw ? [raw] : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Server-paginated rows for the Table; full-row TaskResponse with task_run.
   const [pageRows, setPageRows] = useState<TaskResponse[]>([]);
@@ -118,7 +128,10 @@ export default function Tasks() {
 
   const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
     "tasks.filteredInfo",
-    { task_status: defaultStatusFilter ?? null },
+    {
+      task_status: defaultStatusFilter ?? null,
+      ...(defaultIdFilter ? { id: defaultIdFilter as FilterValue } : {}),
+    },
   );
   // Sort is restricted to server-sortable columns (id, attempt_count,
   // last_run_at). The latter is the denormalised column added in
@@ -187,6 +200,26 @@ export default function Tasks() {
       tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
     if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
       setTagFilterRaw(tagsFromUrl);
+    }
+    // `?id=` overrides any cached filteredInfo.id from localStorage so a
+    // shared link always lands on the linked task, regardless of what
+    // the recipient's table state was. Also auto-expand the linked rows
+    // so the attempts panel is immediately visible.
+    const idRaw = searchParams.get("id");
+    if (idRaw != null) {
+      const cellValue = idRaw.trim();
+      const cached = (filteredInfo.id as (string | number)[] | undefined) ?? [];
+      if (cellValue && (cached.length !== 1 || String(cached[0]) !== cellValue)) {
+        setFilteredInfo((prev) => ({ ...prev, id: [cellValue] as FilterValue }));
+      }
+      const ids = parseIdSet(cellValue);
+      if (ids.size > 0) {
+        setExpandedRows((prev) => {
+          const next = new Set<React.Key>(prev);
+          for (const n of ids) next.add(n);
+          return [...next];
+        });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -546,6 +579,21 @@ export default function Tasks() {
     [loadPage, loadSummaries],
   );
 
+  // Build a shareable URL that pre-filters the Tasks table to one task
+  // id and auto-expands the runs panel. Same origin + path the user is
+  // looking at, so it works in dev, staging, and prod without
+  // configuration. Falls back to a manual prompt if the Clipboard API
+  // is blocked (non-https origins, certain browsers).
+  const copyTaskLink = useCallback((id: number) => {
+    const url = `${window.location.origin}/tasks?id=${id}`;
+    const done = () => message.success(`Link to task #${id} copied`);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link:", url));
+    } else {
+      window.prompt("Copy this link:", url);
+    }
+  }, []);
+
   const handleBulkRun = async () => {
     const ids = (selectedRowKeys as number[]).filter((id) =>
       RUNNABLE_STATUSES.includes(statusById.get(id) ?? "idle"),
@@ -736,13 +784,20 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 90,
+        width: 120,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
           const latestRun = record.task_run?.[0];
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
+              <Tooltip title="Copy shareable link to this task">
+                <Button
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={() => copyTaskLink(record.id)}
+                />
+              </Tooltip>
               <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
                 <Button
                   size="small"
@@ -787,6 +842,7 @@ export default function Tasks() {
     handleRun,
     handleStop,
     toggleExpanded,
+    copyTaskLink,
   ]);
 
   const selectionBar = (
