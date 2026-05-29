@@ -25,6 +25,11 @@ interface LogStreamState {
  *    is in flight. When the snapshot resolves we drop any chunk whose
  *    `end_offset` is already covered by the snapshot, trim the prefix
  *    of any partially-overlapping chunk, then append the rest.
+ *  - `pendingRef` accumulates chunks that arrived *after* the snapshot
+ *    is in place but haven't been flushed to React yet. A rAF-scheduled
+ *    flush merges them in one string append and one setState — keeps
+ *    a chatty live run from triggering a re-render per chunk and the
+ *    log string from being rebuilt O(n²) times.
  *
  *  Pass `null` for `runId` (e.g. drawer closed) to reset state and
  *  unsubscribe from new events.
@@ -36,19 +41,44 @@ export function useLogStream(runId: number | null): LogStreamState {
 
   const cursorRef = useRef<number>(0);
   const bufferRef = useRef<Array<{ chunk: string; end_offset: number }>>([]);
+  // Pending text + scheduled flush, used to coalesce bursts of chunks.
+  const pendingRef = useRef<string>("");
+  const flushHandleRef = useRef<number | null>(null);
+  // Loading lives in a ref too so the SSE callback identity doesn't
+  // change when the snapshot fetch flips it; otherwise every drawer
+  // open re-subscribes twice (true → false).
+  const loadingRef = useRef<boolean>(false);
   const utf8 = useMemo(() => new TextEncoder(), []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushHandleRef.current !== null) return;
+    flushHandleRef.current = window.requestAnimationFrame(() => {
+      flushHandleRef.current = null;
+      const text = pendingRef.current;
+      if (!text) return;
+      pendingRef.current = "";
+      setContent((prev) => (prev ?? "") + text);
+    });
+  }, []);
 
   useEffect(() => {
     if (runId == null) {
       setContent(null);
       setError(undefined);
+      pendingRef.current = "";
+      if (flushHandleRef.current !== null) {
+        window.cancelAnimationFrame(flushHandleRef.current);
+        flushHandleRef.current = null;
+      }
       return;
     }
     setLoading(true);
+    loadingRef.current = true;
     setContent(null);
     setError(undefined);
     cursorRef.current = 0;
     bufferRef.current = [];
+    pendingRef.current = "";
     api
       .getTaskRunLog(runId)
       .then((snapshot) => {
@@ -78,16 +108,30 @@ export function useLogStream(runId: number | null): LogStreamState {
         setContent(merged);
       })
       .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        loadingRef.current = false;
+      });
+    // Cancel any pending flush on unmount / runId change.
+    return () => {
+      if (flushHandleRef.current !== null) {
+        window.cancelAnimationFrame(flushHandleRef.current);
+        flushHandleRef.current = null;
+      }
+    };
   }, [runId, utf8]);
 
+  // SSE filter: only log events for this run. Cuts the per-event work
+  // for the drawer down to "nothing" when other tasks are noisy.
+  const filter = useMemo(
+    () => (runId == null ? undefined : { kinds: ["log"] as const, taskRunIds: [runId] }),
+    [runId],
+  );
   usePisaEvents(
     useCallback(
       (ev) => {
-        if (runId == null) return;
-        if (ev.kind !== "log") return;
-        if (ev.task_run_id !== runId) return;
-        if (loading) {
+        if (ev.kind !== "log") return; // dispatcher already guarantees this; defensive
+        if (loadingRef.current) {
           // Snapshot still in flight — buffer. We'll dedupe by offset
           // when the fetch resolves.
           bufferRef.current.push({ chunk: ev.chunk, end_offset: ev.end_offset });
@@ -103,10 +147,15 @@ export function useLogStream(runId: number | null): LogStreamState {
           toAppend = new TextDecoder("utf-8").decode(utf8.encode(ev.chunk).slice(skipBytes));
         }
         cursorRef.current = ev.end_offset;
-        setContent((prev) => (prev ?? "") + toAppend);
+        // Coalesce into the pending buffer and flush on next rAF. A
+        // burst of 50 chunks/sec collapses to ~60 setState calls/sec
+        // max, regardless of arrival rate.
+        pendingRef.current += toAppend;
+        scheduleFlush();
       },
-      [runId, loading, utf8],
+      [utf8, scheduleFlush],
     ),
+    filter,
   );
 
   return { content, loading, error };
