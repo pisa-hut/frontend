@@ -38,9 +38,6 @@ interface Props {
   /** Called after a successful re-run / archive so the parent can
    *  refresh its list. */
   onChanged?: () => void;
-  /** Hook so a parent (Tasks page) can open one of the linked task ids
-   *  in the log drawer when the user wants to inspect a sample. */
-  onOpenSampleLog?: (taskId: number) => void;
 }
 
 interface ErrorGroup {
@@ -83,7 +80,6 @@ export default function TriageInvalidModal({
   taskIds,
   scopeLabel,
   onChanged,
-  onOpenSampleLog,
 }: Props) {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(false);
@@ -162,20 +158,28 @@ export default function TriageInvalidModal({
       title: "Latest error",
       dataIndex: "signature",
       key: "signature",
+      // Without an explicit width Ant lets the cell grow to whatever
+      // the signature wants, blowing out the modal at the long-error
+      // end of the distribution. Fixed flex via maxWidth on the
+      // wrapper keeps the row inside the modal regardless of length.
+      ellipsis: true,
       render: (sig: string) => (
         <Tooltip
           title={<pre style={{ margin: 0, fontSize: 11, whiteSpace: "pre-wrap" }}>{sig}</pre>}
           placement="topLeft"
         >
-          <Typography.Text
+          <div
             style={{
               fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
               fontSize: 12,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: "100%",
             }}
-            ellipsis={{ tooltip: false }}
           >
             {sig}
-          </Typography.Text>
+          </div>
         </Tooltip>
       ),
     },
@@ -195,20 +199,25 @@ export default function TriageInvalidModal({
     {
       title: "Samples",
       key: "samples",
-      width: 200,
+      width: 220,
       render: (_: unknown, g) => {
         const sample = g.tasks.slice(0, 4);
         return (
           <Space size={4} wrap>
             {sample.map((t) => (
-              <Tag
-                key={t.id}
-                style={{ cursor: onOpenSampleLog ? "pointer" : undefined, marginInline: 0 }}
-                icon={<FileTextOutlined />}
-                onClick={() => onOpenSampleLog?.(t.id)}
-              >
-                #{t.id}
-              </Tag>
+              <Tooltip key={t.id} title={`Open task #${t.id} in a new tab`}>
+                <Tag
+                  style={{
+                    cursor: "pointer",
+                    marginInline: 0,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                  icon={<FileTextOutlined />}
+                  onClick={() => window.open(`/tasks?id=${t.id}`, "_blank", "noopener")}
+                >
+                  #{t.id}
+                </Tag>
+              </Tooltip>
             ))}
             {g.tasks.length > sample.length && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -278,7 +287,8 @@ export default function TriageInvalidModal({
       }
       open={open}
       onCancel={onClose}
-      width={1100}
+      width="90%"
+      styles={{ body: { overflow: "hidden" } }}
       footer={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
@@ -309,6 +319,47 @@ export default function TriageInvalidModal({
           rowKey="key"
           size="small"
           pagination={{ pageSize: 15, size: "small", showSizeChanger: false }}
+          scroll={{ x: "max-content" }}
+          // Expand a group to see every affected task id (the
+          // samples-column cap of 4 hides most of them) plus a
+          // Copy-all helper for pasting elsewhere.
+          expandable={{
+            rowExpandable: (g) => g.tasks.length > 0,
+            expandedRowRender: (g) => (
+              <div style={{ padding: "4px 0 8px 24px" }}>
+                <Space style={{ marginBottom: 6 }} size={6}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    All {g.tasks.length} task id{g.tasks.length === 1 ? "" : "s"}:
+                  </Typography.Text>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const text = g.tasks.map((t) => t.id).join(", ");
+                      navigator.clipboard.writeText(text);
+                      message.success(`Copied ${g.tasks.length} id(s)`);
+                    }}
+                  >
+                    Copy all
+                  </Button>
+                </Space>
+                <Space size={[4, 4]} wrap>
+                  {g.tasks.map((t) => (
+                    <Tag
+                      key={t.id}
+                      style={{
+                        cursor: "pointer",
+                        marginInline: 0,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                      onClick={() => window.open(`/tasks?id=${t.id}`, "_blank", "noopener")}
+                    >
+                      #{t.id}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+            ),
+          }}
         />
       )}
     </Modal>
