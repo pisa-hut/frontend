@@ -23,7 +23,7 @@ import {
 } from "@ant-design/icons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
-import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useSessionStorageState } from "../hooks/useSessionStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -192,10 +192,22 @@ export default function Dashboard() {
     return single ? single.split(",").filter(Boolean) : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [tagFilter, setTagFilterRaw] = useLocalStorageState<string[]>(
+  // sessionStorage so a tag selection sticks across in-tab refresh but
+  // doesn't silently carry over from yesterday's investigation — same
+  // rationale as the Tasks page's filter state migration.
+  const [tagFilter, setTagFilterRaw] = useSessionStorageState<string[]>(
     "dashboard.tagFilter",
     defaultTagFilter,
   );
+  // One-shot cleanup of the old localStorage key so users that hit the
+  // new build don't carry the stale selection forward via fallback.
+  useEffect(() => {
+    try {
+      localStorage.removeItem("dashboard.tagFilter");
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
