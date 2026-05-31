@@ -1,4 +1,13 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
 import {
@@ -17,11 +26,7 @@ import {
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import ConfirmIconButton from "../components/ConfirmIconButton";
-import LogDrawer from "../components/LogDrawer";
 import PageHeader from "../components/PageHeader";
-import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
-import TaskRunsPanel from "../components/TaskRunsPanel";
-import TriageInvalidModal from "../components/TriageInvalidModal";
 import { matchesTaskFilter, type TaskFilterCriteria } from "./tasksFilter";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { useSessionStorageState } from "../hooks/useSessionStorageState";
@@ -45,7 +50,16 @@ import { TASK_STATUS_TAG_COLOR, TASK_STATUS_LABEL, TASK_STATUS_HEX } from "../co
 import TasksFilters, { QUICK_FILTERS, type QuickFilter } from "../components/tasks/TasksFilters";
 import TasksFilterBar from "../components/tasks/TasksFilterBar";
 import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
-import CreateTaskModal from "../components/tasks/CreateTaskModal";
+
+// Heavy children rendered only after a user gesture (clicking a log
+// icon, the Triage button, etc.) — keep them out of the eager Tasks
+// chunk via React.lazy. `fallback={null}` because their visible
+// behaviour is "open=false → invisible" anyway; nothing to wait for.
+const LogDrawer = lazy(() => import("../components/LogDrawer"));
+const ScenarioDetailDrawer = lazy(() => import("../components/ScenarioDetailDrawer"));
+const TaskRunsPanel = lazy(() => import("../components/TaskRunsPanel"));
+const TriageInvalidModal = lazy(() => import("../components/TriageInvalidModal"));
+const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal"));
 
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
@@ -1154,11 +1168,13 @@ export default function Tasks() {
     () => ({
       expandedRowRender: (r: TaskResponse) => (
         <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
-          <TaskRunsPanel
-            key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-            taskId={r.id}
-            onOpenLog={openLog}
-          />
+          <Suspense fallback={null}>
+            <TaskRunsPanel
+              key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
+              taskId={r.id}
+              onOpenLog={openLog}
+            />
+          </Suspense>
         </div>
       ),
       expandedRowKeys: expandedRows,
@@ -1265,45 +1281,47 @@ export default function Tasks() {
         expandable={tableExpandable}
       />
 
-      <CreateTaskModal
-        open={bulkModalOpen}
-        onClose={() => setBulkModalOpen(false)}
-        onCreated={() => {
-          loadPage();
-          loadSummaries();
-        }}
-        avs={avs}
-        simulators={simulators}
-        samplers={samplers}
-        monitors={monitors}
-        plans={plans}
-      />
+      <Suspense fallback={null}>
+        <CreateTaskModal
+          open={bulkModalOpen}
+          onClose={() => setBulkModalOpen(false)}
+          onCreated={() => {
+            loadPage();
+            loadSummaries();
+          }}
+          avs={avs}
+          simulators={simulators}
+          samplers={samplers}
+          monitors={monitors}
+          plans={plans}
+        />
 
-      <TriageInvalidModal
-        open={triageOpen}
-        onClose={() => setTriageOpen(false)}
-        taskIds={filteredInvalidTaskIds}
-        scopeLabel={triageScopeLabel || undefined}
-        onChanged={() => {
-          loadPage();
-          loadSummaries();
-        }}
-      />
+        <TriageInvalidModal
+          open={triageOpen}
+          onClose={() => setTriageOpen(false)}
+          taskIds={filteredInvalidTaskIds}
+          scopeLabel={triageScopeLabel || undefined}
+          onChanged={() => {
+            loadPage();
+            loadSummaries();
+          }}
+        />
 
-      <LogDrawer
-        run={logRun}
-        task={logTask}
-        taskLabel={logTaskLabel}
-        executor={logExecutor}
-        onClose={() => setLogRun(null)}
-      />
+        <LogDrawer
+          run={logRun}
+          task={logTask}
+          taskLabel={logTaskLabel}
+          executor={logExecutor}
+          onClose={() => setLogRun(null)}
+        />
 
-      <ScenarioDetailDrawer
-        open={scenarioDrawer !== null}
-        scenarioId={scenarioDrawer?.id ?? null}
-        title={scenarioDrawer?.title ?? ""}
-        onClose={() => setScenarioDrawer(null)}
-      />
+        <ScenarioDetailDrawer
+          open={scenarioDrawer !== null}
+          scenarioId={scenarioDrawer?.id ?? null}
+          title={scenarioDrawer?.title ?? ""}
+          onClose={() => setScenarioDrawer(null)}
+        />
+      </Suspense>
     </>
   );
 }
