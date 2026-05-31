@@ -193,6 +193,15 @@ export interface TaskRunResponse {
   error_message: string | null;
   // Not fetched by listTaskRuns to keep payload small — use api.getTaskRunLog(id).
   log?: string | null;
+  /** Cumulative count of concrete scenarios across this task (every
+   *  attempt contributes). The latest task_run carries the latest
+   *  cumulative; older rows snapshot whatever the cumulative was at
+   *  the moment that attempt finalised. Optional on the type because
+   *  some select-clauses (`listTaskRuns`) omit them to keep payload
+   *  small. */
+  finished_concrete_runs?: number;
+  aborted_concrete_runs?: number;
+  skipped_concrete_runs?: number;
 }
 
 export interface ExecutorResponse {

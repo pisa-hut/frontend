@@ -267,7 +267,7 @@ export const api = {
   // excluded — it's pulled lazily by the drawer via getTaskRunLog().
   listTasks: () =>
     pgList<TaskResponse>(
-      "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
+      "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
     ),
 
   // Lightweight summary of every task: only the fields needed for
@@ -300,7 +300,7 @@ export const api = {
     const planEmbed = needsPlanInner ? "plan!inner(id,tags,name)" : "plan(id,tags,name)";
     p.set(
       "select",
-      `*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message),${planEmbed}`,
+      `*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs),${planEmbed}`,
     );
     p.set("task_run.order", "attempt.desc");
     p.set("task_run.limit", "1");
@@ -388,7 +388,7 @@ export const api = {
     const out: TaskResponse[] = [];
     for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
       const rows = await pgList<TaskResponse>(
-        `task?id=in.(${batch.join(",")})&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1`,
+        `task?id=in.(${batch.join(",")})&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs)&task_run.order=attempt.desc&task_run.limit=1`,
       );
       out.push(...rows);
     }
