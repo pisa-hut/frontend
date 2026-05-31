@@ -933,6 +933,39 @@ export default function Tasks() {
         },
       },
       {
+        title: (
+          <Tooltip title="Cumulative concrete-scenario counts: finished / aborted / skipped">
+            <span>Concretes</span>
+          </Tooltip>
+        ),
+        key: "concrete_counts",
+        width: 100,
+        render: (_: unknown, r: TaskResponse) => {
+          const run = r.task_run?.[0];
+          if (!run) return <Typography.Text type="secondary">—</Typography.Text>;
+          const f = run.finished_concrete_runs ?? 0;
+          const a = run.aborted_concrete_runs ?? 0;
+          const s = run.skipped_concrete_runs ?? 0;
+          if (f === 0 && a === 0 && s === 0) {
+            return <Typography.Text type="secondary">0 / 0 / 0</Typography.Text>;
+          }
+          return (
+            <Tooltip
+              title={`${f} finished · ${a} aborted · ${s} skipped`}
+              placement="topLeft"
+            >
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
+                <Typography.Text type="secondary"> / </Typography.Text>
+                <Typography.Text style={{ color: "var(--ant-color-warning)" }}>{a}</Typography.Text>
+                <Typography.Text type="secondary"> / </Typography.Text>
+                <Typography.Text type="secondary">{s}</Typography.Text>
+              </span>
+            </Tooltip>
+          );
+        },
+      },
+      {
         title: "Last Run",
         key: "last_run_at",
         dataIndex: "last_run_at",
