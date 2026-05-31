@@ -11,9 +11,9 @@ import { useCallback, useState } from "react";
  *  - JSON-serialised, so Map / Set / Date won't survive a round-trip.
  *    Wrap with a (de)serialiser pair for those — see the second
  *    overload signature.
- *  - Cross-tab sync is intentionally NOT implemented: the table view
- *    state we persist (filters, page size, pinned IDs) is per-tab
- *    by user expectation. Use plain useState if you need broadcast.
+ *  - Cross-tab sync is intentionally NOT implemented: the values we
+ *    persist (page size, column sort) are per-tab by user
+ *    expectation. Use plain useState if you need broadcast.
  */
 export function useLocalStorageState<T>(
   key: string,

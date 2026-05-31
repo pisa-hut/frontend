@@ -1,5 +1,11 @@
 import { Affix, Button, Popconfirm, Space, Typography } from "antd";
-import { CaretRightOutlined, DeleteOutlined, StopOutlined } from "@ant-design/icons";
+import {
+  CaretRightOutlined,
+  DeleteOutlined,
+  StopOutlined,
+  InboxOutlined,
+  RollbackOutlined,
+} from "@ant-design/icons";
 import type { TaskStatus } from "../../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../../api/types";
 
@@ -13,21 +19,31 @@ interface Props {
   /** IDs that match the current chip filter set (across all pages),
    *  used by "Select all N filtered". */
   visibleIds: number[];
+  /** Lookup of which selected ids are currently archived. Drives the
+   *  Archive/Unarchive button split: each one shows the count it would
+   *  affect, and both stay visible only when the selection actually
+   *  contains rows of that flavour. */
+  archivedById: Map<number, boolean>;
   selectedRowKeys: React.Key[];
   setSelectedRowKeys: (keys: React.Key[]) => void;
   onBulkRun: () => void;
   onBulkStop: () => void;
   onBulkDelete: () => void;
+  onBulkArchive: () => void;
+  onBulkUnarchive: () => void;
 }
 
 export default function TasksSelectionBar({
   statusById,
   visibleIds,
+  archivedById,
   selectedRowKeys,
   setSelectedRowKeys,
   onBulkRun,
   onBulkStop,
   onBulkDelete,
+  onBulkArchive,
+  onBulkUnarchive,
 }: Props) {
   if (selectedRowKeys.length === 0) return null;
 
@@ -35,11 +51,15 @@ export default function TasksSelectionBar({
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSet.has(id));
   let runnableCount = 0;
   let stoppableCount = 0;
+  let archivedCount = 0;
+  let liveCount = 0;
   for (const id of selectedSet) {
     const st = statusById.get(id);
     if (st == null) continue;
     if (RUNNABLE_TASK_STATUSES.includes(st)) runnableCount++;
     if (STOPPABLE_STATUSES.includes(st)) stoppableCount++;
+    if (archivedById.get(id)) archivedCount++;
+    else liveCount++;
   }
 
   return (
@@ -99,6 +119,20 @@ export default function TasksSelectionBar({
             <Popconfirm title={`Stop ${stoppableCount}?`} onConfirm={onBulkStop}>
               <Button size="small" icon={<StopOutlined />}>
                 Stop {stoppableCount}
+              </Button>
+            </Popconfirm>
+          )}
+          {liveCount > 0 && (
+            <Popconfirm title={`Archive ${liveCount}?`} onConfirm={onBulkArchive}>
+              <Button size="small" icon={<InboxOutlined />}>
+                Archive {liveCount}
+              </Button>
+            </Popconfirm>
+          )}
+          {archivedCount > 0 && (
+            <Popconfirm title={`Unarchive ${archivedCount}?`} onConfirm={onBulkUnarchive}>
+              <Button size="small" icon={<RollbackOutlined />}>
+                Unarchive {archivedCount}
               </Button>
             </Popconfirm>
           )}

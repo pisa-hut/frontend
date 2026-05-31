@@ -25,12 +25,19 @@ import type { TaskResponse } from "../api/types";
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** Task ids to triage. The parent (Tasks page) computes this from
+   *  the active page filter so the modal honours the same scope the
+   *  table is showing — typically the set of invalid tasks inside the
+   *  selected tag / setup / etc. Empty array → modal renders an empty
+   *  state and reports "nothing to triage". */
+  taskIds: number[];
+  /** Optional human-readable description of the active scope shown in
+   *  the modal title (e.g. "tag: 0522v3-HetroD"). Omitted when no
+   *  filter is active. */
+  scopeLabel?: string;
   /** Called after a successful re-run / archive so the parent can
    *  refresh its list. */
   onChanged?: () => void;
-  /** Hook so a parent (Tasks page) can open one of the linked task ids
-   *  in the log drawer when the user wants to inspect a sample. */
-  onOpenSampleLog?: (taskId: number) => void;
 }
 
 interface ErrorGroup {
@@ -67,15 +74,25 @@ function signatureOf(msg: string | null | undefined): string {
   return s.length > 240 ? s.slice(0, 240) + "…" : s;
 }
 
-export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSampleLog }: Props) {
+export default function TriageInvalidModal({
+  open,
+  onClose,
+  taskIds,
+  scopeLabel,
+  onChanged,
+}: Props) {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const load = async () => {
+    if (taskIds.length === 0) {
+      setTasks([]);
+      return;
+    }
     setLoading(true);
     try {
-      setTasks(await api.listInvalidTasksWithLatestRun());
+      setTasks(await api.listTasksByIdsWithLatestRun(taskIds));
     } catch (e) {
       message.error(`Failed to load invalid tasks: ${e}`);
     } finally {
@@ -83,9 +100,15 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
     }
   };
 
+  // Reload when the modal opens or the scope changes while it's open
+  // (e.g. the user changes a filter chip without closing the modal).
+  // Memoised so a freshly-built array with identical content doesn't
+  // refetch and so the join doesn't re-run on unrelated re-renders.
+  const idsKey = useMemo(() => taskIds.join(","), [taskIds]);
   useEffect(() => {
     if (open) load();
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, idsKey]);
 
   const groups = useMemo<ErrorGroup[]>(() => {
     const map = new Map<string, ErrorGroup>();
@@ -135,20 +158,28 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
       title: "Latest error",
       dataIndex: "signature",
       key: "signature",
+      // Without an explicit width Ant lets the cell grow to whatever
+      // the signature wants, blowing out the modal at the long-error
+      // end of the distribution. Fixed flex via maxWidth on the
+      // wrapper keeps the row inside the modal regardless of length.
+      ellipsis: true,
       render: (sig: string) => (
         <Tooltip
           title={<pre style={{ margin: 0, fontSize: 11, whiteSpace: "pre-wrap" }}>{sig}</pre>}
           placement="topLeft"
         >
-          <Typography.Text
+          <div
             style={{
               fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
               fontSize: 12,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: "100%",
             }}
-            ellipsis={{ tooltip: false }}
           >
             {sig}
-          </Typography.Text>
+          </div>
         </Tooltip>
       ),
     },
@@ -168,20 +199,25 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
     {
       title: "Samples",
       key: "samples",
-      width: 200,
+      width: 220,
       render: (_: unknown, g) => {
         const sample = g.tasks.slice(0, 4);
         return (
           <Space size={4} wrap>
             {sample.map((t) => (
-              <Tag
-                key={t.id}
-                style={{ cursor: onOpenSampleLog ? "pointer" : undefined, marginInline: 0 }}
-                icon={<FileTextOutlined />}
-                onClick={() => onOpenSampleLog?.(t.id)}
-              >
-                #{t.id}
-              </Tag>
+              <Tooltip key={t.id} title={`Open task #${t.id} in a new tab`}>
+                <Tag
+                  style={{
+                    cursor: "pointer",
+                    marginInline: 0,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                  icon={<FileTextOutlined />}
+                  onClick={() => window.open(`/tasks?id=${t.id}`, "_blank", "noopener")}
+                >
+                  #{t.id}
+                </Tag>
+              </Tooltip>
             ))}
             {g.tasks.length > sample.length && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -235,8 +271,13 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
   return (
     <Modal
       title={
-        <Space>
+        <Space size={6} wrap>
           <Typography.Text strong>Triage invalid tasks</Typography.Text>
+          {scopeLabel && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              · scoped to {scopeLabel}
+            </Typography.Text>
+          )}
           {!loading && total > 0 && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               · {total} task(s) across {distinctSignatures} error group(s)
@@ -246,7 +287,8 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
       }
       open={open}
       onCancel={onClose}
-      width={1100}
+      width="90%"
+      styles={{ body: { overflow: "hidden" } }}
       footer={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
@@ -277,6 +319,46 @@ export default function TriageInvalidModal({ open, onClose, onChanged, onOpenSam
           rowKey="key"
           size="small"
           pagination={{ pageSize: 15, size: "small", showSizeChanger: false }}
+          scroll={{ x: "max-content" }}
+          // Expand a group to see every affected task id (the
+          // samples-column cap of 4 hides most of them) plus a
+          // Copy-all helper for pasting elsewhere.
+          expandable={{
+            expandedRowRender: (g) => (
+              <div style={{ padding: "4px 0 8px 24px" }}>
+                <Space style={{ marginBottom: 6 }} size={6}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    All {g.tasks.length} task id{g.tasks.length === 1 ? "" : "s"}:
+                  </Typography.Text>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const text = g.tasks.map((t) => t.id).join(", ");
+                      navigator.clipboard.writeText(text);
+                      message.success(`Copied ${g.tasks.length} id(s)`);
+                    }}
+                  >
+                    Copy all
+                  </Button>
+                </Space>
+                <Space size={[4, 4]} wrap>
+                  {g.tasks.map((t) => (
+                    <Tag
+                      key={t.id}
+                      style={{
+                        cursor: "pointer",
+                        marginInline: 0,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                      onClick={() => window.open(`/tasks?id=${t.id}`, "_blank", "noopener")}
+                    >
+                      #{t.id}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+            ),
+          }}
         />
       )}
     </Modal>

@@ -11,6 +11,8 @@ import {
   ClearOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
+  InboxOutlined,
+  RollbackOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -20,7 +22,9 @@ import PageHeader from "../components/PageHeader";
 import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import TriageInvalidModal from "../components/TriageInvalidModal";
+import { matchesTaskFilter, type TaskFilterCriteria } from "./tasksFilter";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useSessionStorageState } from "../hooks/useSessionStorageState";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
 import type {
@@ -100,14 +104,29 @@ export default function Tasks() {
   const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
-  const [quickFilter, setQuickFilterRaw] = useLocalStorageState<QuickFilter>(
+  // Filter state lives in sessionStorage so it survives in-tab
+  // refreshes during an investigation but resets when the tab/browser
+  // closes — yesterday's filter ghosts no longer reappear on the
+  // morning's Tasks page. UI preferences (pageSize, sortedInfo) stay
+  // in localStorage.
+  const [quickFilter, setQuickFilterRaw] = useSessionStorageState<QuickFilter>(
     "tasks.quickFilter",
     defaultQuickFilter,
   );
 
-  // One-shot localStorage cleanup of orphaned keys for removed features.
+  // One-shot localStorage cleanup of orphaned keys for removed
+  // features plus the filter keys that moved to sessionStorage —
+  // otherwise migrating users would silently carry forward yesterday's
+  // filter state, which is exactly what the move was meant to fix.
   useEffect(() => {
-    for (const k of ["tasks.pinned", "tasks.compactView", "tasks.showArchived"]) {
+    for (const k of [
+      "tasks.pinned",
+      "tasks.compactView",
+      "tasks.showArchived",
+      "tasks.quickFilter",
+      "tasks.tagFilter",
+      "tasks.filteredInfo",
+    ]) {
       try {
         localStorage.removeItem(k);
       } catch {
@@ -123,24 +142,50 @@ export default function Tasks() {
     return single ? single.split(",").filter(Boolean) : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [tagFilter, setTagFilterRaw] = useLocalStorageState<string[]>(
+  const [tagFilter, setTagFilterRaw] = useSessionStorageState<string[]>(
     "tasks.tagFilter",
     defaultTagFilter,
   );
 
-  const [filteredInfo, setFilteredInfo] = useLocalStorageState<Record<string, FilterValue | null>>(
-    "tasks.filteredInfo",
-    {
-      task_status: defaultStatusFilter ?? null,
-      ...(defaultIdFilter ? { id: defaultIdFilter as FilterValue } : {}),
-    },
-  );
+  const [filteredInfo, setFilteredInfo] = useSessionStorageState<
+    Record<string, FilterValue | null>
+  >("tasks.filteredInfo", {
+    task_status: defaultStatusFilter ?? null,
+    ...(defaultIdFilter ? { id: defaultIdFilter as FilterValue } : {}),
+  });
   // Sort is restricted to server-sortable columns (id, attempt_count,
   // last_run_at). The latter is the denormalised column added in
   // manager m20260516 — kept fresh by a trigger on task_run.
   const [sortedInfo, setSortedInfo] = useLocalStorageState<{ key?: SortKey; order?: SortOrder }>(
     "tasks.sortedInfo",
     { key: "last_run_at", order: "descend" },
+  );
+
+  // "Show archived" toggle. Default off — the queries filter
+  // `archived=eq.false` server-side so soft-archived rows stay out of
+  // the way until the user opts in. SessionStorage so the choice
+  // sticks across in-tab navigation but resets next session, same as
+  // the other filter knobs.
+  const defaultIncludeArchived = useMemo(() => {
+    return searchParams.get("archived") === "1";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [includeArchived, setIncludeArchivedRaw] = useSessionStorageState<boolean>(
+    "tasks.includeArchived",
+    defaultIncludeArchived,
+  );
+  const setIncludeArchived = useCallback(
+    (next: boolean) => {
+      setIncludeArchivedRaw(next);
+      setCurrentPage(1);
+      setSearchParams((prev) => {
+        const out = new URLSearchParams(prev);
+        if (next) out.set("archived", "1");
+        else out.delete("archived");
+        return out;
+      });
+    },
+    [setIncludeArchivedRaw, setSearchParams],
   );
   const hasActiveFilters = useMemo(
     () =>
@@ -280,10 +325,6 @@ export default function Tasks() {
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [triageOpen, setTriageOpen] = useState(false);
-  const invalidCount = useMemo(
-    () => summaries.reduce((n, t) => (t.task_status === "invalid" ? n + 1 : n), 0),
-    [summaries],
-  );
 
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
@@ -328,8 +369,9 @@ export default function Tasks() {
       tags: tagFilter.length > 0 ? tagFilter : undefined,
       ids,
       planSearch,
+      includeArchived,
     };
-  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter]);
+  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter, includeArchived]);
 
   // --- Data loading ---
 
@@ -337,14 +379,14 @@ export default function Tasks() {
   const loadSummaries = useCallback(() => {
     if (summariesPromiseRef.current) return summariesPromiseRef.current;
     const p = api
-      .listTaskSummaries()
+      .listTaskSummaries(includeArchived)
       .then((rows) => setSummaries(rows))
       .finally(() => {
         summariesPromiseRef.current = null;
       });
     summariesPromiseRef.current = p;
     return p;
-  }, []);
+  }, [includeArchived]);
 
   // Fetch the current page whenever the query changes. AbortController
   // cancels in-flight fetches when the user clicks chips quickly so a
@@ -470,6 +512,56 @@ export default function Tasks() {
   const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
 
+  // Invalid task ids inside the active page filter. Reuses the table's
+  // own filter predicate but pins task_status to "invalid", so the
+  // Triage button counts and seeds itself with exactly the invalid
+  // slice the user is currently looking at — not the global pile.
+  // Status filter is ignored on purpose: a user looking at "All" or
+  // "Running" plus a tag still wants to triage that tag's invalids
+  // without flipping the status chip first.
+  const filteredInvalidTaskIds = useMemo(() => {
+    const idVals = filteredInfo.id as (string | number)[] | undefined;
+    let idSet: Set<number> | undefined;
+    if (idVals?.length) {
+      idSet = new Set<number>();
+      for (const v of idVals) for (const n of parseIdSet(v)) idSet.add(n);
+    }
+    const f: TaskFilterCriteria = {
+      status: ["invalid"],
+      avIds: (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number),
+      simIds: (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number),
+      samplerIds: (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number),
+      monitorIds: (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number),
+      ids: idSet,
+      tags: tagFilter.length > 0 ? new Set(tagFilter) : undefined,
+      planSearch:
+        (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString().toLowerCase() || undefined,
+    };
+    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
+  }, [summaries, filteredInfo, tagFilter, planTagsMap, planMap]);
+
+  // Short human description of the active scope, fed to the Triage
+  // modal title so the user can see WHY the count differs from the
+  // global invalid total. Empty string when no relevant filter active.
+  const triageScopeLabel = useMemo(() => {
+    const bits: string[] = [];
+    if (tagFilter.length > 0)
+      bits.push(`tag${tagFilter.length > 1 ? "s" : ""}: ${tagFilter.join(", ")}`);
+    const avIds = filteredInfo.av_id as (number | string)[] | undefined;
+    if (avIds?.length) bits.push(`${avIds.length} AV`);
+    const simIds = filteredInfo.simulator_id as (number | string)[] | undefined;
+    if (simIds?.length) bits.push(`${simIds.length} Sim`);
+    const samplerIds = filteredInfo.sampler_id as (number | string)[] | undefined;
+    if (samplerIds?.length) bits.push(`${samplerIds.length} Sampler`);
+    const monitorIds = filteredInfo.monitor_id as (number | string)[] | undefined;
+    if (monitorIds?.length) bits.push(`${monitorIds.length} Monitor`);
+    const planSearch = (filteredInfo.plan_id as string[] | undefined)?.[0];
+    if (planSearch) bits.push(`plan: "${planSearch}"`);
+    const idVals = filteredInfo.id as (string | number)[] | undefined;
+    if (idVals?.length) bits.push(`id: ${idVals.join(", ")}`);
+    return bits.join(" · ");
+  }, [tagFilter, filteredInfo]);
+
   // Summaries scoped to the active tag filter. The status chips and
   // the av/sim/sampler/monitor axis counts read from this so the
   // displayed numbers match what the table is actually showing after
@@ -536,30 +628,26 @@ export default function Tasks() {
     return m;
   }, [summaries]);
 
+  const archivedById = useMemo(() => {
+    const m = new Map<number, boolean>();
+    for (const s of summaries) m.set(s.id, s.archived);
+    return m;
+  }, [summaries]);
+
   // IDs that match the current chip filter set, derived from
   // summaries (so it's the FULL filtered set, not just current page).
   const filteredSummaryIds = useMemo(() => {
-    const idSet = query.ids ? new Set(query.ids) : null;
-    const tagSet = query.tags ? new Set(query.tags) : null;
-    const out: number[] = [];
-    for (const t of summaries) {
-      if (query.status && !query.status.includes(t.task_status)) continue;
-      if (query.avIds && !query.avIds.includes(t.av_id)) continue;
-      if (query.simIds && !query.simIds.includes(t.simulator_id)) continue;
-      if (query.samplerIds && !query.samplerIds.includes(t.sampler_id)) continue;
-      if (query.monitorIds && !query.monitorIds.includes(t.monitor_id)) continue;
-      if (idSet && !idSet.has(t.id)) continue;
-      if (tagSet) {
-        const tags = planTagsMap.get(t.plan_id) ?? [];
-        if (!tags.some((x) => tagSet.has(x))) continue;
-      }
-      if (query.planSearch) {
-        const name = (planMap.get(t.plan_id) ?? "").toLowerCase();
-        if (!name.includes(query.planSearch.toLowerCase())) continue;
-      }
-      out.push(t.id);
-    }
-    return out;
+    const f: TaskFilterCriteria = {
+      status: query.status,
+      avIds: query.avIds,
+      simIds: query.simIds,
+      samplerIds: query.samplerIds,
+      monitorIds: query.monitorIds,
+      ids: query.ids ? new Set(query.ids) : undefined,
+      tags: query.tags ? new Set(query.tags) : undefined,
+      planSearch: query.planSearch?.toLowerCase(),
+    };
+    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
   }, [summaries, query, planTagsMap, planMap]);
 
   // --- Actions ---
@@ -583,6 +671,25 @@ export default function Tasks() {
       try {
         await api.stopTask(id);
         message.success(`Task #${id} stopped`);
+        loadPage();
+        loadSummaries();
+      } catch (e) {
+        message.error(String(e));
+      }
+    },
+    [loadPage, loadSummaries],
+  );
+
+  const handleArchive = useCallback(
+    async (id: number, archived: boolean) => {
+      try {
+        if (archived) {
+          await api.unarchiveTask(id);
+          message.success(`Task #${id} unarchived`);
+        } else {
+          await api.archiveTask(id);
+          message.success(`Task #${id} archived`);
+        }
         loadPage();
         loadSummaries();
       } catch (e) {
@@ -642,6 +749,32 @@ export default function Tasks() {
     try {
       await api.batchDeleteTasks(selectedRowKeys as number[]);
       message.success(`Deleted ${selectedRowKeys.length} tasks`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    loadPage();
+    loadSummaries();
+  };
+
+  const handleBulkArchive = async () => {
+    const ids = selectedRowKeys as number[];
+    try {
+      await api.batchArchiveTasks(ids);
+      message.success(`Archived ${ids.length} task(s)`);
+    } catch (e) {
+      message.error(String(e));
+    }
+    setSelectedRowKeys([]);
+    loadPage();
+    loadSummaries();
+  };
+
+  const handleBulkUnarchive = async () => {
+    const ids = selectedRowKeys as number[];
+    try {
+      await api.batchUnarchiveTasks(ids);
+      message.success(`Unarchived ${ids.length} task(s)`);
     } catch (e) {
       message.error(String(e));
     }
@@ -714,32 +847,39 @@ export default function Tasks() {
         title: "Status",
         dataIndex: "task_status",
         key: "task_status",
-        width: 110,
-        render: (status: TaskStatus) => (
-          <Tag
-            color={TASK_STATUS_TAG_COLOR[status]}
-            icon={
-              status === "running" ? (
-                <SyncOutlined spin />
-              ) : (
-                <span
-                  aria-hidden
-                  style={{
-                    display: "inline-block",
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    background: TASK_STATUS_HEX[status],
-                    marginRight: 6,
-                    verticalAlign: "middle",
-                  }}
-                />
-              )
-            }
-            style={{ fontWeight: 500 }}
-          >
-            {TASK_STATUS_LABEL[status]}
-          </Tag>
+        width: 130,
+        render: (status: TaskStatus, r: TaskResponse) => (
+          <Space size={4} wrap>
+            <Tag
+              color={TASK_STATUS_TAG_COLOR[status]}
+              icon={
+                status === "running" ? (
+                  <SyncOutlined spin />
+                ) : (
+                  <span
+                    aria-hidden
+                    style={{
+                      display: "inline-block",
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      background: TASK_STATUS_HEX[status],
+                      marginRight: 6,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                )
+              }
+              style={{ fontWeight: 500, marginInlineEnd: 0 }}
+            >
+              {TASK_STATUS_LABEL[status]}
+            </Tag>
+            {r.archived && (
+              <Tag color="default" style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                archived
+              </Tag>
+            )}
+          </Space>
         ),
       },
       {
@@ -797,7 +937,7 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 120,
+        width: 150,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
@@ -838,6 +978,13 @@ export default function Tasks() {
                   onConfirm={() => handleRun(record.id)}
                 />
               )}
+              <ConfirmIconButton
+                size="small"
+                icon={record.archived ? <RollbackOutlined /> : <InboxOutlined />}
+                tooltip={record.archived ? "Unarchive" : "Archive (soft-hide)"}
+                confirmTitle={record.archived ? "Unarchive?" : "Archive?"}
+                onConfirm={() => handleArchive(record.id, record.archived)}
+              />
             </Space>
           );
         },
@@ -854,6 +1001,7 @@ export default function Tasks() {
     openLog,
     handleRun,
     handleStop,
+    handleArchive,
     toggleExpanded,
     copyTaskLink,
   ]);
@@ -862,11 +1010,14 @@ export default function Tasks() {
     <TasksSelectionBar
       statusById={statusById}
       visibleIds={filteredSummaryIds}
+      archivedById={archivedById}
       selectedRowKeys={selectedRowKeys}
       setSelectedRowKeys={setSelectedRowKeys}
       onBulkRun={handleBulkRun}
       onBulkStop={handleBulkStop}
       onBulkDelete={handleBulkDelete}
+      onBulkArchive={handleBulkArchive}
+      onBulkUnarchive={handleBulkUnarchive}
     />
   );
 
@@ -981,12 +1132,28 @@ export default function Tasks() {
         >
           Refresh
         </Button>
+        <Tooltip
+          title={
+            includeArchived
+              ? "Hide archived tasks from the list"
+              : "Include soft-archived tasks in the list"
+          }
+        >
+          <Button
+            icon={<InboxOutlined />}
+            onClick={() => setIncludeArchived(!includeArchived)}
+            type={includeArchived ? "primary" : "default"}
+          >
+            {includeArchived ? "Hide archived" : "Show archived"}
+          </Button>
+        </Tooltip>
         <Button
           icon={<ExclamationCircleOutlined />}
           onClick={() => setTriageOpen(true)}
-          disabled={invalidCount === 0}
+          disabled={filteredInvalidTaskIds.length === 0}
         >
-          Triage invalid{invalidCount > 0 ? ` (${invalidCount})` : ""}
+          Triage invalid
+          {filteredInvalidTaskIds.length > 0 ? ` (${filteredInvalidTaskIds.length})` : ""}
         </Button>
         <Button
           type="primary"
@@ -1054,6 +1221,8 @@ export default function Tasks() {
       <TriageInvalidModal
         open={triageOpen}
         onClose={() => setTriageOpen(false)}
+        taskIds={filteredInvalidTaskIds}
+        scopeLabel={triageScopeLabel || undefined}
         onChanged={() => {
           loadPage();
           loadSummaries();

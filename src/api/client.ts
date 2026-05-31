@@ -279,9 +279,10 @@ export const api = {
   // Cache-Control, the URL is identical on every call, and browsers
   // happily serve stale chip-count payloads from memory cache —
   // exactly the "Refresh doesn't update counts" symptom users hit.
-  listTaskSummaries: async (): Promise<TaskSummary[]> => {
+  listTaskSummaries: async (includeArchived = false): Promise<TaskSummary[]> => {
+    const archivedFilter = includeArchived ? "" : "&archived=eq.false";
     const res = await fetch(
-      `${POSTGREST_URL}/task?select=id,task_status,av_id,simulator_id,sampler_id,monitor_id,plan_id&order=id.desc`,
+      `${POSTGREST_URL}/task?select=id,task_status,av_id,simulator_id,sampler_id,monitor_id,plan_id,archived&order=id.desc${archivedFilter}`,
       { headers: { Accept: "application/json" }, cache: "no-store" },
     );
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
@@ -322,6 +323,11 @@ export const api = {
     }
     if (q.planSearch) {
       p.set("plan.name", `ilike.*${q.planSearch}*`);
+    }
+    if (!q.includeArchived) {
+      // Default: hide soft-archived rows from the table. Opt back in
+      // via the page-level "Show archived" toggle when triaging.
+      p.set("archived", "eq.false");
     }
     const url = `${POSTGREST_URL}/task?${p}`;
     const res = await fetch(url, {
@@ -368,14 +374,26 @@ export const api = {
     pgBatchUpdate<TaskResponse>("task", ids, { task_status: "queued" }),
   batchArchiveTasks: (ids: number[]) =>
     pgBatchUpdate<TaskResponse>("task", ids, { archived: true }),
-  /** Every invalid task plus its latest task_run (so the modal can group
-   *  by `task_run.error_message`). One-shot fetch with a large limit —
-   *  even with thousands of invalid tasks the payload is small enough
-   *  to be cheaper than paginating + grouping incrementally. */
-  listInvalidTasksWithLatestRun: () =>
-    pgList<TaskResponse>(
-      "task?task_status=eq.invalid&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1&order=id.asc&limit=20000",
-    ),
+  batchUnarchiveTasks: (ids: number[]) =>
+    pgBatchUpdate<TaskResponse>("task", ids, { archived: false }),
+  archiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: true }),
+  unarchiveTask: (id: number) => pgUpdate<TaskResponse>("task", id, { archived: false }),
+  /** Tasks with their latest task_run, restricted to a caller-supplied
+   *  id list. Used by the triage modal so the workflow respects any
+   *  active page filters (status, av, sim, sampler, monitor, tag).
+   *  Chunked so the PostgREST URL stays under the typical 8 KB limit
+   *  even with thousands of ids. */
+  listTasksByIdsWithLatestRun: async (ids: number[]): Promise<TaskResponse[]> => {
+    if (ids.length === 0) return [];
+    const out: TaskResponse[] = [];
+    for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+      const rows = await pgList<TaskResponse>(
+        `task?id=in.(${batch.join(",")})&select=id,plan_id,task_status,archived,attempt_count,task_run(id,task_id,attempt,task_run_status,error_message,finished_at)&task_run.order=attempt.desc&task_run.limit=1`,
+      );
+      out.push(...rows);
+    }
+    return out;
+  },
   batchStopTasks: async (ids: number[]) => {
     if (ids.length === 0) return;
     const abortData = {
