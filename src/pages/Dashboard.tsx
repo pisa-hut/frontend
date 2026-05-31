@@ -199,6 +199,13 @@ export default function Dashboard() {
     "dashboard.tagFilter",
     defaultTagFilter,
   );
+  // Default-all-tags init flag — see Tasks.tsx for rationale. Persisted
+  // so an explicit clear (e.g. the "All" chip) sticks across in-tab
+  // refresh rather than being silently re-filled.
+  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
+    "dashboard.tagFilterInitialised",
+    defaultTagFilter.length > 0,
+  );
   // One-shot cleanup of the old localStorage key so users that hit the
   // new build don't carry the stale selection forward via fallback.
   useEffect(() => {
@@ -211,6 +218,7 @@ export default function Dashboard() {
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
+      setTagFilterInitialised(true);
       setSearchParams((prev) => {
         const out = new URLSearchParams(prev);
         out.delete("tag");
@@ -218,7 +226,7 @@ export default function Dashboard() {
         return out;
       });
     },
-    [setTagFilterRaw, setSearchParams],
+    [setTagFilterRaw, setTagFilterInitialised, setSearchParams],
   );
   const toggleTag = useCallback(
     (tag: string) => {
@@ -480,6 +488,16 @@ export default function Dashboard() {
     for (const p of plans) for (const t of p.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
   }, [plans]);
+
+  // Pre-select every tag on first load so the dashboard starts scoped
+  // to "tagged plans only" (the new default). Skipped when the URL or
+  // sessionStorage already provided a selection.
+  useEffect(() => {
+    if (tagFilterInitialised) return;
+    if (allTags.length === 0) return;
+    setTagFilterRaw(allTags);
+    setTagFilterInitialised(true);
+  }, [tagFilterInitialised, allTags, setTagFilterRaw, setTagFilterInitialised]);
 
   if (loading)
     return (
