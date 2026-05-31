@@ -146,6 +146,14 @@ export default function Tasks() {
     "tasks.tagFilter",
     defaultTagFilter,
   );
+  // On first visit to a tab, we pre-select every available tag so the
+  // table starts filtered to "tagged tasks only" (the new default). The
+  // initialised flag persists in sessionStorage so a user who explicitly
+  // clears the filter doesn't get it re-filled on the next in-tab refresh.
+  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
+    "tasks.tagFilterInitialised",
+    defaultTagFilter.length > 0,
+  );
 
   const [filteredInfo, setFilteredInfo] = useSessionStorageState<
     Record<string, FilterValue | null>
@@ -208,12 +216,20 @@ export default function Tasks() {
     setFilteredInfo({});
     setQuickFilterRaw("all");
     setTagFilterRaw([]);
+    setTagFilterInitialised(true);
     setSearchParams({});
-  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw, setSearchParams]);
+  }, [
+    setFilteredInfo,
+    setQuickFilterRaw,
+    setTagFilterRaw,
+    setTagFilterInitialised,
+    setSearchParams,
+  ]);
 
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
+      setTagFilterInitialised(true);
       setSearchParams((prev) => {
         const out = new URLSearchParams(prev);
         out.delete("tag");
@@ -221,7 +237,7 @@ export default function Tasks() {
         return out;
       });
     },
-    [setTagFilterRaw, setSearchParams],
+    [setTagFilterRaw, setTagFilterInitialised, setSearchParams],
   );
 
   const setQuickFilter = useCallback(
@@ -247,6 +263,7 @@ export default function Tasks() {
       tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
     if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
       setTagFilterRaw(tagsFromUrl);
+      setTagFilterInitialised(true);
     }
     // `?id=` overrides any cached filteredInfo.id from localStorage so a
     // shared link always lands on the linked task, regardless of what
@@ -609,6 +626,17 @@ export default function Tasks() {
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
+
+  // Default-all-tags: once the plan/tag list has loaded for the first
+  // time, pre-select every tag so the table starts scoped to "tagged
+  // tasks only". Skipped when the URL or sessionStorage already
+  // provided a selection (`tagFilterInitialised`).
+  useEffect(() => {
+    if (tagFilterInitialised) return;
+    if (availableTagNames.length === 0) return;
+    setTagFilterRaw(availableTagNames);
+    setTagFilterInitialised(true);
+  }, [tagFilterInitialised, availableTagNames, setTagFilterRaw, setTagFilterInitialised]);
 
   const logTask = useMemo(
     () => (logRun ? pageRows.find((t) => t.id === logRun.task_id) : undefined),
