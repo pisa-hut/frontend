@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   AutoComplete,
   Button,
@@ -23,7 +23,9 @@ import {
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
-import TagManagerModal from "../components/TagManagerModal";
+
+// Lazy: only opened when the user clicks the "Manage tags" button.
+const TagManagerModal = lazy(() => import("../components/TagManagerModal"));
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
 
@@ -265,11 +267,13 @@ export default function Plans() {
         </Button>
       </PageHeader>
 
-      <TagManagerModal
-        open={tagManagerOpen}
-        onClose={() => setTagManagerOpen(false)}
-        onChanged={load}
-      />
+      <Suspense fallback={null}>
+        <TagManagerModal
+          open={tagManagerOpen}
+          onClose={() => setTagManagerOpen(false)}
+          onChanged={load}
+        />
+      </Suspense>
       <Table
         dataSource={data}
         columns={columns}

@@ -244,6 +244,24 @@ export default function Dashboard() {
     return () => window.clearInterval(id);
   }, []);
 
+  // Idle-prefetch the Tasks chunk: most operators arrive at Dashboard
+  // and click through to Tasks within a few seconds, so warming the
+  // route's code before they do removes the chunk-fetch latency from
+  // that navigation. Uses requestIdleCallback when available so we
+  // never compete with the Dashboard's own paint. Same dynamic import
+  // path as App.tsx's React.lazy, so the chunk is shared, not a copy.
+  useEffect(() => {
+    const prefetch = () => {
+      void import("./Tasks");
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(prefetch);
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(prefetch, 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
   const load = useCallback(() => {
     return Promise.all([
       api.listTasks(),
