@@ -22,6 +22,7 @@ import PageHeader from "../components/PageHeader";
 import ScenarioDetailDrawer from "../components/ScenarioDetailDrawer";
 import TaskRunsPanel from "../components/TaskRunsPanel";
 import TriageInvalidModal from "../components/TriageInvalidModal";
+import { matchesTaskFilter, type TaskFilterCriteria } from "./tasksFilter";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { useSessionStorageState } from "../hooks/useSessionStorageState";
 import { api } from "../api/client";
@@ -176,6 +177,7 @@ export default function Tasks() {
   const setIncludeArchived = useCallback(
     (next: boolean) => {
       setIncludeArchivedRaw(next);
+      setCurrentPage(1);
       setSearchParams((prev) => {
         const out = new URLSearchParams(prev);
         if (next) out.set("archived", "1");
@@ -510,47 +512,32 @@ export default function Tasks() {
   const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
 
-  // Invalid task ids inside the active page filter. Mirrors the same
-  // predicate the table uses but pins task_status to "invalid" so the
+  // Invalid task ids inside the active page filter. Reuses the table's
+  // own filter predicate but pins task_status to "invalid", so the
   // Triage button counts and seeds itself with exactly the invalid
   // slice the user is currently looking at — not the global pile.
-  // Ignores the status filter on purpose: a user looking at "All" or
+  // Status filter is ignored on purpose: a user looking at "All" or
   // "Running" plus a tag still wants to triage that tag's invalids
   // without flipping the status chip first.
   const filteredInvalidTaskIds = useMemo(() => {
-    const tagSet = tagFilter.length > 0 ? new Set(tagFilter) : null;
-    const avIds = (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number);
-    const simIds = (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number);
-    const samplerIds = (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number);
-    const monitorIds = (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number);
     const idVals = filteredInfo.id as (string | number)[] | undefined;
-    let idSet: Set<number> | null = null;
+    let idSet: Set<number> | undefined;
     if (idVals?.length) {
-      const set = new Set<number>();
-      for (const v of idVals) for (const n of parseIdSet(v)) set.add(n);
-      idSet = set;
+      idSet = new Set<number>();
+      for (const v of idVals) for (const n of parseIdSet(v)) idSet.add(n);
     }
-    const planSearch =
-      (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString().toLowerCase() || null;
-    const out: number[] = [];
-    for (const t of summaries) {
-      if (t.task_status !== "invalid") continue;
-      if (avIds && !avIds.includes(t.av_id)) continue;
-      if (simIds && !simIds.includes(t.simulator_id)) continue;
-      if (samplerIds && !samplerIds.includes(t.sampler_id)) continue;
-      if (monitorIds && t.monitor_id != null && !monitorIds.includes(t.monitor_id)) continue;
-      if (idSet && !idSet.has(t.id)) continue;
-      if (tagSet) {
-        const tags = planTagsMap.get(t.plan_id) ?? [];
-        if (!tags.some((x) => tagSet.has(x))) continue;
-      }
-      if (planSearch) {
-        const name = (planMap.get(t.plan_id) ?? "").toLowerCase();
-        if (!name.includes(planSearch)) continue;
-      }
-      out.push(t.id);
-    }
-    return out;
+    const f: TaskFilterCriteria = {
+      status: ["invalid"],
+      avIds: (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number),
+      simIds: (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number),
+      samplerIds: (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number),
+      monitorIds: (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number),
+      ids: idSet,
+      tags: tagFilter.length > 0 ? new Set(tagFilter) : undefined,
+      planSearch:
+        (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString().toLowerCase() || undefined,
+    };
+    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
   }, [summaries, filteredInfo, tagFilter, planTagsMap, planMap]);
 
   // Short human description of the active scope, fed to the Triage
@@ -650,27 +637,17 @@ export default function Tasks() {
   // IDs that match the current chip filter set, derived from
   // summaries (so it's the FULL filtered set, not just current page).
   const filteredSummaryIds = useMemo(() => {
-    const idSet = query.ids ? new Set(query.ids) : null;
-    const tagSet = query.tags ? new Set(query.tags) : null;
-    const out: number[] = [];
-    for (const t of summaries) {
-      if (query.status && !query.status.includes(t.task_status)) continue;
-      if (query.avIds && !query.avIds.includes(t.av_id)) continue;
-      if (query.simIds && !query.simIds.includes(t.simulator_id)) continue;
-      if (query.samplerIds && !query.samplerIds.includes(t.sampler_id)) continue;
-      if (query.monitorIds && !query.monitorIds.includes(t.monitor_id)) continue;
-      if (idSet && !idSet.has(t.id)) continue;
-      if (tagSet) {
-        const tags = planTagsMap.get(t.plan_id) ?? [];
-        if (!tags.some((x) => tagSet.has(x))) continue;
-      }
-      if (query.planSearch) {
-        const name = (planMap.get(t.plan_id) ?? "").toLowerCase();
-        if (!name.includes(query.planSearch.toLowerCase())) continue;
-      }
-      out.push(t.id);
-    }
-    return out;
+    const f: TaskFilterCriteria = {
+      status: query.status,
+      avIds: query.avIds,
+      simIds: query.simIds,
+      samplerIds: query.samplerIds,
+      monitorIds: query.monitorIds,
+      ids: query.ids ? new Set(query.ids) : undefined,
+      tags: query.tags ? new Set(query.tags) : undefined,
+      planSearch: query.planSearch?.toLowerCase(),
+    };
+    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
   }, [summaries, query, planTagsMap, planMap]);
 
   // --- Actions ---

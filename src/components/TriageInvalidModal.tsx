@@ -102,9 +102,9 @@ export default function TriageInvalidModal({
 
   // Reload when the modal opens or the scope changes while it's open
   // (e.g. the user changes a filter chip without closing the modal).
-  // `taskIds.join(',')` stabilises the dep so a freshly-built array
-  // with identical content doesn't refetch.
-  const idsKey = taskIds.join(",");
+  // Memoised so a freshly-built array with identical content doesn't
+  // refetch and so the join doesn't re-run on unrelated re-renders.
+  const idsKey = useMemo(() => taskIds.join(","), [taskIds]);
   useEffect(() => {
     if (open) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -324,7 +324,6 @@ export default function TriageInvalidModal({
           // samples-column cap of 4 hides most of them) plus a
           // Copy-all helper for pasting elsewhere.
           expandable={{
-            rowExpandable: (g) => g.tasks.length > 0,
             expandedRowRender: (g) => (
               <div style={{ padding: "4px 0 8px 24px" }}>
                 <Space style={{ marginBottom: 6 }} size={6}>
