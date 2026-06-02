@@ -62,14 +62,12 @@ export interface SamplerResponse {
   id: number;
   name: string;
   config_path?: string | null;
-  module_path: string;
   config_sha256?: string | null;
 }
 
 export interface MonitorResponse {
   id: number;
   name: string;
-  module_path: string;
   config_sha256?: string | null;
 }
 
