@@ -8,13 +8,40 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      # AUTO_FORMAT_TOKEN re-triggers CI on the auto-format commit
+      # (default GITHUB_TOKEN pushes don't, by GitHub policy). Use it
+      # for checkout too so the same credential round-trips through
+      # `git push` below.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.AUTO_FORMAT_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      # Auto-format on PR events: if prettier --write changes anything,
+      # commit + push. The push starts a fresh CI run on the formatted
+      # commit; this run exits early so we don't double-spend lint /
+      # test / build against the pre-format tree. On push-to-main we
+      # skip this and rely on `format:check` to keep main clean.
+      - name: Auto-format (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          npm run format
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: prettier --write"
+            git push
+            echo "Auto-formatted; a fresh CI run will continue."
+            exit 0
+          fi
       - run: npm run lint
       - run: npm run format:check
       - run: npm run test
