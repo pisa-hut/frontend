@@ -399,7 +399,6 @@ function SamplersTab() {
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
-    { title: "Module", dataIndex: "module_path", key: "module_path", ellipsis: true },
     {
       title: "Config",
       key: "config",
@@ -442,9 +441,6 @@ function SamplersTab() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="module_path" label="Module Path" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={tab.saving} block>
               {tab.editing ? "Save" : "Create"}
@@ -456,10 +452,9 @@ function SamplersTab() {
   );
 }
 
-// --- Monitors (per-task condition tree: timeout, custom monitors). Same
-//     shape as Samplers — name + module_path + nullable config bytes. The
-//     monitor_id on a task is optional; null means executor falls back
-//     to its bundled default.
+// --- Monitors (per-task condition tree: timeout, custom monitors).
+//     Name + nullable config bytes. The monitor_id on a task is
+//     optional; null means executor falls back to its bundled default.
 
 function MonitorsTab() {
   const tab = useResourceTab<MonitorResponse>({
@@ -472,7 +467,6 @@ function MonitorsTab() {
   const columns = [
     { title: "ID", dataIndex: "id", key: "id", width: 50 },
     { title: "Name", dataIndex: "name", key: "name", width: 120, ...getColumnSearchProps("name") },
-    { title: "Module", dataIndex: "module_path", key: "module_path", ellipsis: true },
     {
       title: "Config",
       key: "config",
@@ -513,14 +507,6 @@ function MonitorsTab() {
       >
         <Form form={tab.form} layout="vertical" onFinish={tab.handleSave}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="module_path"
-            label="Module Path"
-            rules={[{ required: true }]}
-            initialValue="simcore.monitor.base:Monitor"
-          >
             <Input />
           </Form.Item>
           <Form.Item>
