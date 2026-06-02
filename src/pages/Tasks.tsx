@@ -847,7 +847,7 @@ export default function Tasks() {
         title: "Plan",
         dataIndex: "plan_id",
         key: "plan_id",
-        width: 250,
+        width: 180,
         ellipsis: true,
         render: (id: number) => {
           const name = planMap.get(id) ?? `#${id}`;
@@ -1012,7 +1012,7 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 150,
+        width: 130,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
