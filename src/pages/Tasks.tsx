@@ -847,7 +847,7 @@ export default function Tasks() {
         title: "Plan",
         dataIndex: "plan_id",
         key: "plan_id",
-        width: 180,
+        width: 250,
         ellipsis: true,
         render: (id: number) => {
           const name = planMap.get(id) ?? `#${id}`;
@@ -873,7 +873,7 @@ export default function Tasks() {
       {
         title: "Setup",
         key: "setup",
-        width: 220,
+        width: 170,
         ellipsis: true,
         render: (_: unknown, r: TaskResponse) => (
           <Typography.Text style={{ fontSize: 12 }} ellipsis>
