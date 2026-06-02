@@ -32,12 +32,10 @@ describe("matchesTaskFilter", () => {
 
   it("filters by status when provided", () => {
     const t = makeTask({ task_status: "running" });
-    expect(
-      matchesTaskFilter(t, { status: ["invalid"] }, planTagsMap, planMap),
-    ).toBe(false);
-    expect(
-      matchesTaskFilter(t, { status: ["running", "queued"] }, planTagsMap, planMap),
-    ).toBe(true);
+    expect(matchesTaskFilter(t, { status: ["invalid"] }, planTagsMap, planMap)).toBe(false);
+    expect(matchesTaskFilter(t, { status: ["running", "queued"] }, planTagsMap, planMap)).toBe(
+      true,
+    );
   });
 
   it("filters by each resource axis", () => {
@@ -59,21 +57,19 @@ describe("matchesTaskFilter", () => {
 
   it("matches when any of the requested tags is on the task's plan", () => {
     const t = makeTask();
-    expect(
-      matchesTaskFilter(t, { tags: new Set(["nightly"]) }, planTagsMap, planMap),
-    ).toBe(true);
-    expect(
-      matchesTaskFilter(t, { tags: new Set(["does-not-exist"]) }, planTagsMap, planMap),
-    ).toBe(false);
+    expect(matchesTaskFilter(t, { tags: new Set(["nightly"]) }, planTagsMap, planMap)).toBe(true);
+    expect(matchesTaskFilter(t, { tags: new Set(["does-not-exist"]) }, planTagsMap, planMap)).toBe(
+      false,
+    );
   });
 
   it("matches plan-name substring case-insensitively", () => {
-    expect(
-      matchesTaskFilter(makeTask(), { planSearch: "regression" }, planTagsMap, planMap),
-    ).toBe(true);
-    expect(
-      matchesTaskFilter(makeTask(), { planSearch: "smoke" }, planTagsMap, planMap),
-    ).toBe(false);
+    expect(matchesTaskFilter(makeTask(), { planSearch: "regression" }, planTagsMap, planMap)).toBe(
+      true,
+    );
+    expect(matchesTaskFilter(makeTask(), { planSearch: "smoke" }, planTagsMap, planMap)).toBe(
+      false,
+    );
   });
 
   it("filters by id-set", () => {

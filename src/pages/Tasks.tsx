@@ -964,10 +964,7 @@ export default function Tasks() {
             return <Typography.Text type="secondary">0 / 0 / 0</Typography.Text>;
           }
           return (
-            <Tooltip
-              title={`${f} finished · ${a} aborted · ${s} skipped`}
-              placement="topLeft"
-            >
+            <Tooltip title={`${f} finished · ${a} aborted · ${s} skipped`} placement="topLeft">
               <span style={{ fontVariantNumeric: "tabular-nums" }}>
                 <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
                 <Typography.Text type="secondary"> / </Typography.Text>
