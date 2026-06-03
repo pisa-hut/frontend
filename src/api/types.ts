@@ -14,6 +14,8 @@ export type TaskRunStatus =
   | "failed" // exec() raised
   | "aborted"; // cancelled (SIGTERM / scancel / user Stop)
 export type ScenarioFormat = "open_scenario1" | "open_scenario2" | "carla_lb_route";
+export type ConcreteRunStatus = "finished" | "failed" | "aborted" | "skipped";
+export type ConcreteTestOutcome = "success" | "fail" | "invalid" | "unknown";
 
 /** Task states the user can re-Run from. Anything not in this set is
  *  either already in flight (queued/running) or, well, idle/aborted/etc.
@@ -200,6 +202,22 @@ export interface TaskRunResponse {
   finished_concrete_runs?: number;
   aborted_concrete_runs?: number;
   skipped_concrete_runs?: number;
+}
+
+export interface ConcreteRunResponse {
+  id: number;
+  task_id: number;
+  task_run_id: number;
+  concrete_key: string;
+  status: ConcreteRunStatus;
+  test_outcome: ConcreteTestOutcome;
+  reason: string | null;
+  stop_condition: string | null;
+  params: Record<string, unknown> | null;
+  final_sim_time_ms: number | null;
+  wall_time_ms: number | null;
+  total_steps: number | null;
+  created_at: string;
 }
 
 export interface ExecutorResponse {

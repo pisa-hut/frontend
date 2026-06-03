@@ -8,6 +8,7 @@ import type {
   PlanResponse,
   TaskResponse,
   TaskRunResponse,
+  ConcreteRunResponse,
   TaskSummary,
   TasksPage,
   TasksPageQuery,
@@ -269,6 +270,12 @@ export const api = {
     pgList<TaskResponse>(
       "task?select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs)&task_run.order=attempt.desc&task_run.limit=1&order=id.desc",
     ),
+  getTask: async (id: number): Promise<TaskResponse | null> => {
+    const rows = await pgList<TaskResponse>(
+      `task?id=eq.${id}&select=*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs)&task_run.order=attempt.desc&task_run.limit=1`,
+    );
+    return rows[0] ?? null;
+  },
 
   // Lightweight summary of every task: only the fields needed for
   // chip-count badges and "select all filtered" computation. Replaces
@@ -432,6 +439,8 @@ export const api = {
     const rows = await pgList<{ log: string | null }>(`task_run?id=eq.${runId}&select=log`);
     return rows[0]?.log ?? null;
   },
+  listConcreteRunsForTask: (taskId: number) =>
+    pgList<ConcreteRunResponse>(`concrete_run?task_id=eq.${taskId}&order=created_at.desc,id.desc`),
 
   // Executors
   listExecutors: () => pgList<ExecutorResponse>("executor"),
