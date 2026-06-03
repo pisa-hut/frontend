@@ -54,7 +54,10 @@ export default function ScenarioDetailDrawer({ open, onClose, scenarioId, title 
       const files = await api.listScenarioFiles(id);
       const xosc = files
         .filter((f) => f.relative_path.endsWith(".xosc"))
-        .filter((f) => !f.relative_path.endsWith("_param.xosc"))
+        .filter((f) => {
+          const name = f.relative_path.split("/").pop() ?? f.relative_path;
+          return name !== "param.xosc" && !name.endsWith("_param.xosc");
+        })
         .sort((a, b) => a.relative_path.localeCompare(b.relative_path))
         .slice(0, 1);
       if (!xosc.length) throw new Error("No scenario .xosc file in this scenario");
