@@ -14,7 +14,7 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, EyeOutlined, ReloadOutlined } from "@ant-design/icons";
 import PageHeader from "../components/PageHeader";
 import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
@@ -34,6 +34,7 @@ import { TASK_STATUS_TAG_COLOR, TASK_STATUS_LABEL } from "../constants/status";
 
 const TaskRunsPanel = lazy(() => import("../components/TaskRunsPanel"));
 const LogDrawer = lazy(() => import("../components/LogDrawer"));
+const ScenarioDetailDrawer = lazy(() => import("../components/ScenarioDetailDrawer"));
 
 const CONCRETE_STATUS_COLOR: Record<ConcreteRunStatus, string> = {
   finished: "success",
@@ -64,6 +65,7 @@ export default function TaskDetail() {
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
   const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
   const [logExecutor, setLogExecutor] = useState<ExecutorResponse | undefined>();
+  const [scenarioOpen, setScenarioOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -128,6 +130,11 @@ export default function TaskDetail() {
       monitors: byId(monitors),
     };
   }, [plans, avs, simulators, samplers, monitors]);
+
+  const currentPlan = useMemo(
+    () => plans.find((p) => p.id === task?.plan_id) ?? null,
+    [plans, task?.plan_id],
+  );
 
   const counts = useMemo(() => {
     const out = { finished: 0, failed: 0, aborted: 0, skipped: 0 };
@@ -208,6 +215,21 @@ export default function TaskDetail() {
               <Descriptions.Item label="Plan">
                 {names.plans.get(task.plan_id) ?? `#${task.plan_id}`}
               </Descriptions.Item>
+              <Descriptions.Item label="Scenario">
+                <Space size={8} wrap>
+                  <Typography.Text>
+                    {currentPlan ? `#${currentPlan.scenario_id}` : "-"}
+                  </Typography.Text>
+                  <Button
+                    size="small"
+                    icon={<EyeOutlined />}
+                    disabled={!currentPlan}
+                    onClick={() => setScenarioOpen(true)}
+                  >
+                    Preview
+                  </Button>
+                </Space>
+              </Descriptions.Item>
               <Descriptions.Item label="AV">
                 {names.avs.get(task.av_id) ?? `#${task.av_id}`}
               </Descriptions.Item>
@@ -271,6 +293,12 @@ export default function TaskDetail() {
           task={task ?? undefined}
           taskLabel={task ? (names.plans.get(task.plan_id) ?? `#${task.plan_id}`) : undefined}
           onClose={() => setLogRun(null)}
+        />
+        <ScenarioDetailDrawer
+          open={scenarioOpen}
+          scenarioId={currentPlan?.scenario_id ?? null}
+          title={currentPlan ? `Scenario #${currentPlan.scenario_id}` : "Scenario"}
+          onClose={() => setScenarioOpen(false)}
         />
       </Suspense>
     </div>
