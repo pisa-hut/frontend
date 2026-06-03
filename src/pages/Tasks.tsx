@@ -855,6 +855,30 @@ export default function Tasks() {
         filteredValue: deferredFilteredInfo.plan_id ?? null,
       },
       {
+        title: "Tags",
+        key: "plan_tags",
+        width: 180,
+        render: (_: unknown, r: TaskResponse) => {
+          const tags = planTagsMap.get(r.plan_id) ?? [];
+          if (tags.length === 0) {
+            return (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                untagged
+              </Typography.Text>
+            );
+          }
+          return (
+            <Space size={4} wrap>
+              {tags.map((tag) => (
+                <Tag key={tag} style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                  {tag}
+                </Tag>
+              ))}
+            </Space>
+          );
+        },
+      },
+      {
         title: "Setup",
         key: "setup",
         width: 170,
@@ -1053,6 +1077,7 @@ export default function Tasks() {
     simMap,
     samplerMap,
     planMap,
+    planTagsMap,
     openLog,
     handleRun,
     handleStop,
