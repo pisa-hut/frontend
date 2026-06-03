@@ -215,6 +215,19 @@ export default function TaskDetail() {
               <Descriptions.Item label="Plan">
                 {names.plans.get(task.plan_id) ?? `#${task.plan_id}`}
               </Descriptions.Item>
+              <Descriptions.Item label="Plan Tags">
+                {(currentPlan?.tags ?? []).length === 0 ? (
+                  <Typography.Text type="secondary">untagged</Typography.Text>
+                ) : (
+                  <Space size={4} wrap>
+                    {(currentPlan?.tags ?? []).map((tag) => (
+                      <Tag key={tag} style={{ marginInlineEnd: 0 }}>
+                        {tag}
+                      </Tag>
+                    ))}
+                  </Space>
+                )}
+              </Descriptions.Item>
               <Descriptions.Item label="Scenario">
                 <Space size={8} wrap>
                   <Typography.Text>
