@@ -6,7 +6,7 @@ export type PisaEvent =
   | {
       kind: "row";
       row: {
-        table: "task" | "task_run";
+        table: "task" | "task_run" | "concrete_run";
         op: "insert" | "update" | "delete";
         id: number;
       };
@@ -31,7 +31,7 @@ export interface EventFilter {
   /** For `log` events, only invoke when `task_run_id` matches. */
   taskRunIds?: ReadonlyArray<number>;
   /** For `row` events, only invoke when `row.table` matches. */
-  rowTables?: ReadonlyArray<"task" | "task_run">;
+  rowTables?: ReadonlyArray<"task" | "task_run" | "concrete_run">;
 }
 
 interface Subscription {

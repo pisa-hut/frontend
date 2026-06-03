@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
 import {
   ReloadOutlined,
@@ -56,7 +56,6 @@ import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 // chunk via React.lazy. `fallback={null}` because their visible
 // behaviour is "open=false → invisible" anyway; nothing to wait for.
 const LogDrawer = lazy(() => import("../components/LogDrawer"));
-const ScenarioDetailDrawer = lazy(() => import("../components/ScenarioDetailDrawer"));
 const TaskRunsPanel = lazy(() => import("../components/TaskRunsPanel"));
 const TriageInvalidModal = lazy(() => import("../components/TriageInvalidModal"));
 const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal"));
@@ -363,11 +362,6 @@ export default function Tasks() {
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
 
-  // Plan name click → open the scenario this task's plan is bound to.
-  // plan.scenario_id is 1:1 with plan; we resolve it from `plans` rather
-  // than fetching a separate /scenario/{id} so the drawer opens instantly.
-  const [scenarioDrawer, setScenarioDrawer] = useState<{ id: number; title: string } | null>(null);
-
   // --- Build the server-side query from chip + sort + page state. ---
 
   const query: TasksPageQuery = useMemo(() => {
@@ -540,7 +534,6 @@ export default function Tasks() {
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
-  const planScenarioMap = useMemo(() => new Map(plans.map((p) => [p.id, p.scenario_id])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
 
   // Invalid task ids inside the active page filter. Reuses the table's
@@ -741,13 +734,11 @@ export default function Tasks() {
     [loadPage, loadSummaries],
   );
 
-  // Build a shareable URL that pre-filters the Tasks table to one task
-  // id and auto-expands the runs panel. Same origin + path the user is
-  // looking at, so it works in dev, staging, and prod without
-  // configuration. Falls back to a manual prompt if the Clipboard API
-  // is blocked (non-https origins, certain browsers).
+  // The task detail route is now the canonical share target. Same
+  // origin works in dev, staging, and prod without configuration.
+  // Falls back to a manual prompt if Clipboard is blocked.
   const copyTaskLink = useCallback((id: number) => {
-    const url = `${window.location.origin}/tasks?id=${id}`;
+    const url = `${window.location.origin}/tasks/${id}`;
     const done = () => message.success(`Link to task #${id} copied`);
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link:", url));
@@ -840,6 +831,13 @@ export default function Tasks() {
         ellipsis: true,
         sorter: true,
         sortOrder: orderFor("id"),
+        render: (id: number) => (
+          <Tooltip title="Open task details">
+            <Link to={`/tasks/${id}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+              #{id}
+            </Link>
+          </Tooltip>
+        ),
         ...getColumnSearchProps<TaskResponse>("id"),
         filteredValue: deferredFilteredInfo.id ?? null,
       },
@@ -851,21 +849,7 @@ export default function Tasks() {
         ellipsis: true,
         render: (id: number) => {
           const name = planMap.get(id) ?? `#${id}`;
-          const scenarioId = planScenarioMap.get(id);
-          if (scenarioId == null) {
-            return <Typography.Text ellipsis>{name}</Typography.Text>;
-          }
-          return (
-            <Typography.Link
-              ellipsis
-              onClick={(e) => {
-                e.stopPropagation();
-                setScenarioDrawer({ id: scenarioId, title: name });
-              }}
-            >
-              {name}
-            </Typography.Link>
-          );
+          return <Typography.Text ellipsis>{name}</Typography.Text>;
         },
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
         filteredValue: deferredFilteredInfo.plan_id ?? null,
@@ -1069,7 +1053,6 @@ export default function Tasks() {
     simMap,
     samplerMap,
     planMap,
-    planScenarioMap,
     openLog,
     handleRun,
     handleStop,
@@ -1310,13 +1293,6 @@ export default function Tasks() {
           taskLabel={logTaskLabel}
           executor={logExecutor}
           onClose={() => setLogRun(null)}
-        />
-
-        <ScenarioDetailDrawer
-          open={scenarioDrawer !== null}
-          scenarioId={scenarioDrawer?.id ?? null}
-          title={scenarioDrawer?.title ?? ""}
-          onClose={() => setScenarioDrawer(null)}
         />
       </Suspense>
     </>

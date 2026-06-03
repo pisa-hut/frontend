@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 // visit. Each page becomes its own chunk in the build output, served
 // only when its route is navigated to.
 const Tasks = lazy(() => import("./pages/Tasks"));
+const TaskDetail = lazy(() => import("./pages/TaskDetail"));
 const Scenarios = lazy(() => import("./pages/Scenarios"));
 const Plans = lazy(() => import("./pages/Plans"));
 const Resources = lazy(() => import("./pages/Resources"));
@@ -54,6 +55,14 @@ function AppInner() {
               element={
                 <Suspense fallback={<PageLoading />}>
                   <Tasks />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/tasks/:taskId"
+              element={
+                <Suspense fallback={<PageLoading />}>
+                  <TaskDetail />
                 </Suspense>
               }
             />
