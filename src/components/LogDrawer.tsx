@@ -118,7 +118,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
     <Drawer
       title={title}
       placement="right"
-      width={760}
+      width="min(1200px, 90vw)"
       open={run !== null}
       onClose={onClose}
       styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
