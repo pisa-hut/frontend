@@ -64,6 +64,10 @@ const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal")
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
+// Mirrors the filter-bar's CHIP_STYLE so per-row tag chips and the
+// top-bar tag filter chips share dimensions. Display-only (no toggle).
+const ROW_TAG_STYLE = { padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 } as const;
+
 type SortKey = TasksPageQuery["sort"]["key"];
 const VALID_SORT_KEYS: SortKey[] = ["id", "attempt_count", "last_run_at"];
 
@@ -890,9 +894,9 @@ export default function Tasks() {
             );
           }
           return (
-            <Space size={4} wrap>
+            <Space size={[6, 6]} wrap>
               {tags.map((tag) => (
-                <Tag key={tag} style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                <Tag key={tag} style={ROW_TAG_STYLE}>
                   {tag}
                 </Tag>
               ))}

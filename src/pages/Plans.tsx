@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AutoComplete,
   Button,
@@ -19,10 +19,13 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
+import ChipRow from "../components/ChipRow";
+import { useSessionStorageState } from "../hooks/useSessionStorageState";
 
 // Lazy: only opened when the user clicks the "Manage tags" button.
 const TagManagerModal = lazy(() => import("../components/TagManagerModal"));
@@ -128,6 +131,17 @@ export default function Plans() {
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
 
+  // Filter state mirrors the Tasks-page conventions: sessionStorage so
+  // it survives in-tab refreshes but resets across sessions; tags
+  // default to all-selected on first visit (an explicit clear sticks
+  // via the *_initialised flag).
+  const [tagFilter, setTagFilter] = useSessionStorageState<string[]>("plans.tagFilter", []);
+  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
+    "plans.tagFilterInitialised",
+    false,
+  );
+  const [nameSearch, setNameSearch] = useSessionStorageState<string>("plans.nameSearch", "");
+
   const load = () => {
     setLoading(true);
     Promise.all([api.listPlans(), api.listPlanTags()])
@@ -176,6 +190,56 @@ export default function Plans() {
     }
   };
 
+  // Auto-fill the tag filter with every available tag on first visit,
+  // so untagged plans stay out of the way until the operator
+  // explicitly broadens the scope. Same pattern as Tasks/Dashboard.
+  useEffect(() => {
+    if (tagFilterInitialised) return;
+    if (tagSuggestions.length === 0) return;
+    setTagFilter(tagSuggestions);
+    setTagFilterInitialised(true);
+  }, [tagFilterInitialised, tagSuggestions, setTagFilter, setTagFilterInitialised]);
+
+  // Per-tag count: total plans (unscoped by name search) carrying that
+  // tag. Mirrors Tasks' counting strategy so picking tag A doesn't
+  // blank out tag B's count.
+  const tagCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of data) for (const t of p.tags ?? []) m.set(t, (m.get(t) ?? 0) + 1);
+    return m;
+  }, [data]);
+
+  const tagOptions = useMemo(
+    () => tagSuggestions.map((t) => ({ label: t, value: t })),
+    [tagSuggestions],
+  );
+
+  const toggleTag = useCallback(
+    (v: string) => {
+      setTagFilter(tagFilter.includes(v) ? tagFilter.filter((x) => x !== v) : [...tagFilter, v]);
+      setTagFilterInitialised(true);
+    },
+    [setTagFilter, setTagFilterInitialised, tagFilter],
+  );
+  const clearTagFilter = useCallback(() => {
+    setTagFilter([]);
+    setTagFilterInitialised(true);
+  }, [setTagFilter, setTagFilterInitialised]);
+
+  const filteredData = useMemo(() => {
+    const needle = nameSearch.trim().toLowerCase();
+    const tagSet = tagFilter.length ? new Set(tagFilter) : null;
+    return data.filter((p) => {
+      if (needle && !p.name.toLowerCase().includes(needle)) return false;
+      if (tagSet) {
+        const tags = p.tags ?? [];
+        if (tags.length === 0) return false;
+        if (!tags.some((t) => tagSet.has(t))) return false;
+      }
+      return true;
+    });
+  }, [data, nameSearch, tagFilter]);
+
   const handleDelete = async (id: number) => {
     try {
       await api.deletePlan(id);
@@ -212,13 +276,13 @@ export default function Plans() {
       title: "Scenario",
       dataIndex: "scenario_id",
       key: "scenario_id",
-      width: 100,
+      width: 80,
       ...getColumnSearchProps<PlanResponse>("scenario_id"),
     },
     {
       title: "Tags",
       key: "tags",
-      width: 280,
+      width: 360,
       render: (_: unknown, r: PlanResponse) => (
         <TagsCell plan={r} suggestions={tagSuggestions} onChange={load} />
       ),
@@ -274,8 +338,26 @@ export default function Plans() {
           onChanged={load}
         />
       </Suspense>
+      <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 12 }}>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="Search by name"
+          value={nameSearch}
+          onChange={(e) => setNameSearch(e.target.value)}
+          style={{ maxWidth: 360 }}
+        />
+        <ChipRow
+          label="Tags"
+          options={tagOptions}
+          counts={tagCounts}
+          selected={tagFilter}
+          onToggle={toggleTag}
+          onClear={clearTagFilter}
+        />
+      </Space>
       <Table
-        dataSource={data}
+        dataSource={filteredData}
         columns={columns}
         rowKey="id"
         loading={loading}
