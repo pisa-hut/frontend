@@ -32,6 +32,8 @@ const sampleTask: TaskResponse = {
   attempt_count: 2,
   last_run_at: "2026-05-01T00:00:00Z",
   archived: false,
+  queue_priority: 0,
+  queued_at: null,
 };
 
 const sampleRun: TaskRunResponse = {

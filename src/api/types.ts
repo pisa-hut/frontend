@@ -135,6 +135,15 @@ export interface TaskResponse {
   last_run_at: string | null;
   /** Soft-hide flag (server-side; not exposed in the UI any more). */
   archived: boolean;
+  /** Boost lever for "Run next". 0 = normal, 100 = boosted; claim
+   *  ordering puts higher priority first. Always set by the writer
+   *  (Run resets to 0, Run-next sets to 100). */
+  queue_priority: number;
+  /** Time the row entered the `queued` state (or had its
+   *  queue_priority bumped while queued). Maintained by a trigger in
+   *  m20260604; nullable for tasks that have never been queued. Used
+   *  as the FIFO tiebreaker in claim ordering. */
+  queued_at: string | null;
   /** The most recent attempt; populated by listTasks via a nested select. */
   task_run?: TaskRunResponse[];
 }
