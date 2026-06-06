@@ -9,7 +9,18 @@ import {
   useState,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Tag, Button, Card, Dropdown, message, Modal, Typography, Space, Table, Tooltip } from "antd";
+import {
+  Tag,
+  Button,
+  Card,
+  Dropdown,
+  message,
+  Modal,
+  Typography,
+  Space,
+  Table,
+  Tooltip,
+} from "antd";
 import type { MenuProps } from "antd";
 import {
   ReloadOutlined,
@@ -1030,7 +1041,10 @@ export default function Tasks() {
             return `${Math.floor(h / 24)}d ago`;
           })();
           return (
-            <span title={`${d.toISOString()} · ${rel}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+            <span
+              title={`${d.toISOString()} · ${rel}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
               {shortLabel}
             </span>
           );
@@ -1069,7 +1083,8 @@ export default function Tasks() {
                   icon: <StopOutlined />,
                   label: "Stop",
                   danger: true,
-                  onClick: () => modal.confirm({ title: "Stop?", onOk: () => handleStop(record.id) }),
+                  onClick: () =>
+                    modal.confirm({ title: "Stop?", onOk: () => handleStop(record.id) }),
                 }
               : {
                   key: "run",
