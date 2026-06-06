@@ -970,6 +970,9 @@ export default function Tasks() {
       selectedRowKeys,
       onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
       preserveSelectedRowKeys: true,
+      // Pin the checkbox column width — without it the selection column
+      // stretches on non-Chromium engines (Edge/Safari/Firefox-based).
+      columnWidth: 40,
     }),
     [selectedRowKeys],
   );
@@ -1098,7 +1101,7 @@ export default function Tasks() {
 
       <Table
         virtual
-        scroll={{ x: 1184, y: tableBodyHeight }}
+        scroll={{ x: 1192, y: tableBodyHeight }}
         dataSource={viewRows}
         columns={columns}
         rowKey="id"
