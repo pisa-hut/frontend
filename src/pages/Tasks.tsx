@@ -63,6 +63,14 @@ const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal")
 const RUNNABLE_STATUSES = RUNNABLE_TASK_STATUSES;
 const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
+// Cadence for the SSE-driven refetch of the full task-summaries blob
+// (every task row, used only for chip-count badges + select-all/triage
+// scope). Those numbers drift slowly, so on a busy cluster — where
+// task/task_run row events fire constantly — refetching the whole table
+// every few seconds is wasted bandwidth and client recompute. The
+// visible page still refetches at 750ms, so the live table stays fresh.
+const SUMMARIES_REFETCH_MS = 30_000;
+
 // Mirrors the filter-bar's CHIP_STYLE so per-row tag chips and the
 // top-bar tag filter chips share dimensions. Display-only (no toggle).
 const ROW_TAG_STYLE = { padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 } as const;
@@ -449,8 +457,8 @@ export default function Tasks() {
   // SSE-driven refetch is split across two cadences:
   //   - page refetch every 750ms — keeps Last Run / Status / Attempts
   //     for the 20 visible rows current enough to feel "live".
-  //   - summaries refetch every 5s — chip count badges drift slowly
-  //     so a few seconds of staleness isn't user-visible.
+  //   - summaries refetch every SUMMARIES_REFETCH_MS — chip count badges
+  //     drift slowly so a few seconds of staleness isn't user-visible.
   //
   // Hold the fetchers in refs so the setTimeout always invokes the
   // *latest* version, not the closure that existed when the timer was
@@ -480,7 +488,7 @@ export default function Tasks() {
       summariesRefetchTimer.current = window.setTimeout(() => {
         summariesRefetchTimer.current = null;
         loadSummariesRef.current();
-      }, 5000);
+      }, SUMMARIES_REFETCH_MS);
     }
   }, []);
   // Narrow at the dispatcher: this listener only ever cares about row
