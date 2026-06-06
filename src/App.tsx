@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ConfigProvider, Spin, theme } from "antd";
-import { ThemeProvider, useTheme } from "./components/ThemeContext";
+import { ThemeProvider } from "./components/ThemeContext";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 
@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 // doesn't have to wait on the bundle for a page the user may never
 // visit. Each page becomes its own chunk in the build output, served
 // only when its route is navigated to.
+const Control = lazy(() => import("./pages/Control"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const TaskDetail = lazy(() => import("./pages/TaskDetail"));
 const Scenarios = lazy(() => import("./pages/Scenarios"));
@@ -25,24 +26,55 @@ function PageLoading() {
   );
 }
 
+// Console design language. PISA is a dark-only ground-control deck: a
+// near-black slate canvas, a single cyan-phosphor accent, square-ish
+// radii, hairline cool borders, and a characterful display font
+// (Chakra Petch) paired with IBM Plex Mono for IDs/numerics. These
+// tokens flow through every AntD surface, so the whole app inherits the
+// look — the page-level markup barely changes. The HUD chrome (corner
+// brackets, scanlines, glow) lives in index.css, keyed off AntD classes.
+const ACCENT = "#38bdf8";
+const DISPLAY_FONT =
+  '"Chakra Petch", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
 function AppInner() {
-  const { mode } = useTheme();
   return (
     <ConfigProvider
       theme={{
-        algorithm: mode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        algorithm: theme.darkAlgorithm,
         token: {
-          borderRadius: 8,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
+          colorPrimary: ACCENT,
+          colorInfo: ACCENT,
+          colorBgBase: "#070b11",
+          colorBgLayout: "#070b11",
+          colorBgContainer: "#0c131c",
+          colorBgElevated: "#0f1822",
+          colorBorder: "rgba(120,160,200,0.18)",
+          colorBorderSecondary: "rgba(120,160,200,0.10)",
+          colorText: "#c8d6e5",
+          colorTextSecondary: "#7d8fa1",
+          borderRadius: 4,
+          fontFamily: DISPLAY_FONT,
           fontSize: 14,
         },
         components: {
-          Card: { borderRadiusLG: 10 },
-          Table: { headerBg: mode === "dark" ? "#1f1f1f" : "#fafafa" },
-          Tag: { borderRadiusSM: 6 },
-          Button: { borderRadius: 6, controlHeight: 32 },
-          Modal: { borderRadiusLG: 12 },
+          Layout: {
+            siderBg: "#070b11",
+            headerBg: "#0c131c",
+            bodyBg: "#070b11",
+          },
+          Menu: {
+            darkItemBg: "#070b11",
+            darkItemSelectedBg: "rgba(56,189,248,0.16)",
+            darkItemSelectedColor: ACCENT,
+            darkItemHoverBg: "rgba(120,160,200,0.08)",
+          },
+          Card: { borderRadiusLG: 4 },
+          Table: { headerBg: "#101a25", borderColor: "rgba(120,160,200,0.12)" },
+          Tag: { borderRadiusSM: 3 },
+          Button: { borderRadius: 4, controlHeight: 32 },
+          Modal: { borderRadiusLG: 6, contentBg: "#0c131c", headerBg: "#0c131c" },
+          Statistic: { contentFontSize: 24 },
         },
       }}
     >
@@ -50,6 +82,14 @@ function AppInner() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Dashboard />} />
+            <Route
+              path="/control"
+              element={
+                <Suspense fallback={<PageLoading />}>
+                  <Control />
+                </Suspense>
+              }
+            />
             <Route
               path="/tasks"
               element={

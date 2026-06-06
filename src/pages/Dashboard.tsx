@@ -7,46 +7,20 @@ import {
   Empty,
   Row,
   Space,
-  Statistic,
   Spin,
-  Table,
+  Statistic,
   Tag,
   Typography,
 } from "antd";
-import {
-  CheckCircleOutlined,
-  SyncOutlined,
-  ClockCircleOutlined,
-  PlusCircleOutlined,
-  WarningOutlined,
-  StopOutlined,
-} from "@ant-design/icons";
+import { SyncOutlined, StopOutlined } from "@ant-design/icons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import StatusTiles from "../components/StatusTiles";
+import { useFleetData } from "../hooks/useFleetData";
 import { useSessionStorageState } from "../hooks/useSessionStorageState";
-import { api } from "../api/client";
 import { usePisaEvents } from "../api/events";
-import type {
-  TaskResponse,
-  TaskStatus,
-  ExecutorResponse,
-  AvResponse,
-  SimulatorResponse,
-  SamplerResponse,
-  PlanResponse,
-} from "../api/types";
+import type { TaskStatus } from "../api/types";
 import { TASK_STATUS_HEX, TASK_STATUS_LABEL } from "../constants/status";
-
-// Hex colour and label come from the shared constants; the icon is a
-// React node so it stays here (constants are plain TS).
-const statusIcon: Record<TaskStatus, React.ReactNode> = {
-  idle: <PlusCircleOutlined />,
-  queued: <ClockCircleOutlined />,
-  running: <SyncOutlined spin />,
-  completed: <CheckCircleOutlined />,
-  invalid: <WarningOutlined />,
-  aborted: <StopOutlined />,
-};
 
 interface AbortedStats {
   total: number;
@@ -87,24 +61,34 @@ async function fetchAbortedStats(): Promise<AbortedStats> {
     ),
   ]);
 
-  return {
-    total,
-    last24h,
-  };
-}
-
-function formatRuntime(startedAt: string): string {
-  const ms = Date.now() - new Date(startedAt).getTime();
-  if (ms < 0) return "-";
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return { total, last24h };
 }
 
 const STATUS_ORDER: TaskStatus[] = ["completed", "running", "queued", "idle", "invalid", "aborted"];
+
+/** Colour key shown in the `extra` slot of the donut breakdown cards. */
+function StatusLegend() {
+  return (
+    <Space size={12} wrap>
+      {STATUS_ORDER.map((s) => (
+        <Space key={s} size={4}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 10,
+              height: 10,
+              borderRadius: 2,
+              background: TASK_STATUS_HEX[s],
+            }}
+          />
+          <Typography.Text style={{ fontSize: 11 }} type="secondary">
+            {TASK_STATUS_LABEL[s]}
+          </Typography.Text>
+        </Space>
+      ))}
+    </Space>
+  );
+}
 
 /** Inline SVG donut. Segments are drawn in `STATUS_ORDER` so the
  *  same colour always sits in the same position around the ring,
@@ -172,19 +156,47 @@ function StatusDonut({
 export default function Dashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tasks, setTasks] = useState<TaskResponse[]>([]);
+  // Core fleet data + realtime core refetch is shared with Control.
+  const { tasks, plans, executors, loading, avMap, simMap, samplerMap } = useFleetData();
   const [aborted, setAborted] = useState<AbortedStats>({ total: 0, last24h: 0 });
-  const [executors, setExecutors] = useState<ExecutorResponse[]>([]);
-  const [plans, setPlans] = useState<PlanResponse[]>([]);
-  const [avs, setAvs] = useState<AvResponse[]>([]);
-  const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
-  const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Aborted-run stats are Dashboard-specific. They only move on task_run
+  // changes, so load on mount and debounce-refresh on those SSE rows.
+  const refreshAborted = useCallback(() => {
+    fetchAbortedStats()
+      .then(setAborted)
+      .catch(() => {
+        /* transient; next event retries */
+      });
+  }, []);
+  useEffect(() => {
+    refreshAborted();
+  }, [refreshAborted]);
+  const abortedTimer = useRef<number | null>(null);
+  const scheduleAborted = useCallback(() => {
+    if (abortedTimer.current !== null) return;
+    abortedTimer.current = window.setTimeout(() => {
+      abortedTimer.current = null;
+      refreshAborted();
+    }, 400);
+  }, [refreshAborted]);
+  usePisaEvents(
+    useCallback(
+      (ev) => {
+        if (ev.kind === "row" && ev.row.table === "task_run") scheduleAborted();
+      },
+      [scheduleAborted],
+    ),
+    useMemo(() => ({ kinds: ["row"] as const, rowTables: ["task_run"] as const }), []),
+  );
+  useEffect(() => {
+    return () => {
+      if (abortedTimer.current !== null) window.clearTimeout(abortedTimer.current);
+    };
+  }, []);
 
   // Tag filter scopes the top section (status cards, totals, setup
-  // breakdown, currently-running list) to tasks whose plan carries at
-  // least one of the selected tags. Multi-select with OR semantics so
-  // the dashboard matches the Tasks page tag filter.
+  // breakdown) to tasks whose plan carries at least one selected tag.
   const defaultTagFilter = useMemo(() => {
     const all = searchParams.getAll("tag");
     if (all.length > 1) return all;
@@ -192,22 +204,15 @@ export default function Dashboard() {
     return single ? single.split(",").filter(Boolean) : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // sessionStorage so a tag selection sticks across in-tab refresh but
-  // doesn't silently carry over from yesterday's investigation — same
-  // rationale as the Tasks page's filter state migration.
   const [tagFilter, setTagFilterRaw] = useSessionStorageState<string[]>(
     "dashboard.tagFilter",
     defaultTagFilter,
   );
-  // Default-all-tags init flag — see Tasks.tsx for rationale. Persisted
-  // so an explicit clear (e.g. the "All" chip) sticks across in-tab
-  // refresh rather than being silently re-filled.
   const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
     "dashboard.tagFilterInitialised",
     defaultTagFilter.length > 0,
   );
-  // One-shot cleanup of the old localStorage key so users that hit the
-  // new build don't carry the stale selection forward via fallback.
+  // One-shot cleanup of the old localStorage key.
   useEffect(() => {
     try {
       localStorage.removeItem("dashboard.tagFilter");
@@ -236,20 +241,9 @@ export default function Dashboard() {
     },
     [tagFilter, setTagFilter],
   );
-  // Tick once a minute so the "Runtime" column ages without needing
-  // a full refetch. (Cheap — only the running-tasks table re-renders.)
-  const [, setNow] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setNow((n) => n + 1), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
-  // Idle-prefetch the Tasks chunk: most operators arrive at Dashboard
-  // and click through to Tasks within a few seconds, so warming the
-  // route's code before they do removes the chunk-fetch latency from
-  // that navigation. Uses requestIdleCallback when available so we
-  // never compete with the Dashboard's own paint. Same dynamic import
-  // path as App.tsx's React.lazy, so the chunk is shared, not a copy.
+  // Idle-prefetch the Tasks chunk: most operators click through within a
+  // few seconds, so warm the route's code before they do.
   useEffect(() => {
     const prefetch = () => {
       void import("./Tasks");
@@ -262,71 +256,10 @@ export default function Dashboard() {
     return () => window.clearTimeout(id);
   }, []);
 
-  const load = useCallback(() => {
-    return Promise.all([
-      api.listTasks(),
-      fetchAbortedStats(),
-      api.listExecutors(),
-      api.listPlans(),
-      api.listAvs(),
-      api.listSimulators(),
-      api.listSamplers(),
-    ]).then(([t, a, e, p, av, sim, sam]) => {
-      setTasks(t);
-      setAborted(a);
-      setExecutors(e);
-      setPlans(p);
-      setAvs(av);
-      setSimulators(sim);
-      setSamplers(sam);
-    });
-  }, []);
-
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, [load]);
-
-  // SSE: debounced refetch on any task / task_run change.
-  const refetchTimer = useRef<number | null>(null);
-  const scheduleRefetch = useCallback(() => {
-    if (refetchTimer.current !== null) return;
-    refetchTimer.current = window.setTimeout(() => {
-      refetchTimer.current = null;
-      load();
-    }, 250);
-  }, [load]);
-  usePisaEvents(
-    useCallback(
-      (ev) => {
-        if (ev.kind !== "row") return;
-        if (ev.row.table === "task" || ev.row.table === "task_run") {
-          scheduleRefetch();
-        }
-      },
-      [scheduleRefetch],
-    ),
-  );
-  useEffect(() => {
-    return () => {
-      if (refetchTimer.current !== null) {
-        window.clearTimeout(refetchTimer.current);
-        refetchTimer.current = null;
-      }
-    };
-  }, []);
-
-  // ALL hooks must be called before any early return, or React detects
-  // a hook-count mismatch the first time `loading` flips false. The
-  // earlier version put useMemo *after* the loading guard and broke
-  // the page on first SSE refresh.
-
-  // `planTagsMap` is also used by the bottom per-tag breakdown — declare
-  // it here so the top-section filter can reuse it.
+  // `planTagsMap` is reused by the bottom per-tag breakdown.
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
 
   // Top-section scope: tasks whose plan carries any selected tag.
-  // Empty tagFilter → no scoping. The bottom per-tag card always
-  // operates on the full task set so users can compare experiments.
   const filteredTasks = useMemo(() => {
     if (tagFilter.length === 0) return tasks;
     const want = new Set(tagFilter);
@@ -349,9 +282,8 @@ export default function Dashboard() {
     return c;
   }, [filteredTasks]);
 
-  // Stuck = currently running for over 2h, often a SLURM job that
-  // never reached the executor. Respects the tag filter so the alert
-  // only fires for the experiment the user is scoped to.
+  // Stuck = running for over 2h, often a SLURM job that never reached the
+  // executor. Respects the tag filter.
   const stuckCount = useMemo(() => {
     const cutoff = Date.now() - 2 * 3600 * 1000;
     return filteredTasks.filter((t) => {
@@ -362,48 +294,19 @@ export default function Dashboard() {
     }).length;
   }, [filteredTasks]);
 
-  const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
-  const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
-  const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
-  const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
-  const executorMap = useMemo(() => new Map(executors.map((e) => [e.id, e])), [executors]);
+  // Distinct executors serving a running task right now (scoped). Drives
+  // the compact "live" pointer into Control.
+  const busyExecutorCount = useMemo(() => {
+    const ids = new Set<number>();
+    for (const t of filteredTasks) {
+      if (t.task_status !== "running") continue;
+      const exId = t.task_run?.[0]?.executor_id;
+      if (exId != null) ids.add(exId);
+    }
+    return ids.size;
+  }, [filteredTasks]);
 
-  // The "Currently running" panel: every task with status=running
-  // joined to its latest task_run for executor + start time. Sorted
-  // longest-running first because that's the row most likely to be
-  // stuck and most worth glancing at.
-  const runningRows = useMemo(() => {
-    return filteredTasks
-      .filter((t) => t.task_status === "running" && t.task_run?.[0])
-      .map((t) => {
-        const run = t.task_run![0];
-        return {
-          taskId: t.id,
-          runId: run.id,
-          attempt: run.attempt,
-          plan: planMap.get(t.plan_id) ?? `#${t.plan_id}`,
-          av: avMap.get(t.av_id) ?? `#${t.av_id}`,
-          sim: simMap.get(t.simulator_id) ?? `#${t.simulator_id}`,
-          sampler: samplerMap.get(t.sampler_id) ?? `#${t.sampler_id}`,
-          executor: executorMap.get(run.executor_id),
-          startedAt: run.started_at ?? "",
-        };
-      })
-      .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-  }, [filteredTasks, planMap, avMap, simMap, samplerMap, executorMap]);
-
-  // Distinct executors actually serving a running task right now —
-  // gives a quick "how many machines are busy" glance without
-  // needing to count rows above.
-  const busyExecutorCount = useMemo(
-    () => new Set(runningRows.map((r) => r.executor?.id).filter((id) => id != null)).size,
-    [runningRows],
-  );
-
-  // Group tasks by AV/Sim/Sampler combo and tally by status. Donut
-  // grid below renders the top SETUP_DONUT_LIMIT busiest combos so
-  // the dashboard surface stays bounded; remainder is summarised in
-  // a "+ N more" footer.
+  // Group tasks by AV/Sim/Sampler combo and tally by status.
   const SETUP_DONUT_LIMIT = 8;
   const setupGroups = useMemo(() => {
     const map = new Map<
@@ -439,12 +342,8 @@ export default function Dashboard() {
   const visibleSetupGroups = setupGroups.slice(0, SETUP_DONUT_LIMIT);
   const hiddenSetupCount = Math.max(0, setupGroups.length - SETUP_DONUT_LIMIT);
 
-  // For the "Status by plan group" card: tag → (setup combo →
-  // counts). Tags live on plans, so we resolve each task's tags
-  // via plan_id. Tasks whose plan has no tags bucket as "(untagged)".
-  // Same SETUP_DONUT_LIMIT rule per tag so a single noisy tag
-  // can't blow up the page height. Uses the full `tasks` set (not
-  // `filteredTasks`) — the per-tag card is the unscoped overview.
+  // tag → (setup combo → counts). Uses the full task set (unscoped
+  // overview) so experiments can be compared.
   type SetupBucket = {
     key: string;
     avId: number;
@@ -481,8 +380,6 @@ export default function Dashboard() {
         bucket.total++;
       }
     }
-    // Sort tags by total task count desc; (untagged) sinks to the
-    // bottom regardless so it doesn't dominate the visual hierarchy.
     return [...byTag.entries()]
       .map(([tag, setups]) => {
         const buckets = [...setups.values()].sort((a, b) => b.total - a.total);
@@ -496,20 +393,16 @@ export default function Dashboard() {
       });
   }, [tasks, planTagsMap]);
 
-  // All distinct tag names currently in use across plans, sorted by
-  // popularity so the chips at the top mirror what the tag manager
-  // shows. Derived from the in-memory plans we already loaded, so no
-  // extra round-trip. Must sit above the early-return loading guard so
-  // the hook order stays stable across renders.
+  // All distinct tag names in use across plans, sorted by popularity.
   const allTags = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const p of plans) for (const t of p.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+    const c = new Map<string, number>();
+    for (const p of plans) for (const t of p.tags ?? []) c.set(t, (c.get(t) ?? 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
   }, [plans]);
 
-  // Pre-select every tag on first load so the dashboard starts scoped
-  // to "tagged plans only" (the new default). Skipped when the URL or
-  // sessionStorage already provided a selection.
+  // Pre-select every tag on first load so the dashboard starts scoped to
+  // "tagged plans only". Skipped when the URL or sessionStorage already
+  // provided a selection.
   useEffect(() => {
     if (tagFilterInitialised) return;
     if (allTags.length === 0) return;
@@ -584,28 +477,13 @@ export default function Dashboard() {
         />
       )}
 
-      <Row gutter={[12, 12]}>
-        {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((status) => (
-          <Col xs={8} sm={8} md={4} key={status}>
-            <Card
-              hoverable
-              size="small"
-              onClick={() => navigate(`/tasks?${scopeQuery(`status=${status}`)}`)}
-              style={{ cursor: "pointer", textAlign: "center" }}
-              styles={{ body: { padding: "12px 8px" } }}
-            >
-              <Statistic
-                title={TASK_STATUS_LABEL[status]}
-                value={counts[status]}
-                prefix={statusIcon[status]}
-                valueStyle={{ color: TASK_STATUS_HEX[status], fontSize: 24 }}
-              />
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      <StatusTiles
+        counts={counts}
+        onSelect={(status) => navigate(`/tasks?${scopeQuery(`status=${status}`)}`)}
+      />
+
       <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
-        <Col xs={24} md={12}>
+        <Col xs={24} md={8}>
           <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
             <Statistic
               title={tagFilter.length > 0 ? `Total Tasks (${tagFilter.join(", ")})` : "Total Tasks"}
@@ -620,7 +498,7 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
-        <Col xs={24} md={12}>
+        <Col xs={24} md={8}>
           <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
             <Statistic
               title={
@@ -642,6 +520,35 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
+        <Col xs={24} md={8}>
+          {/* Live activity lives on Control now — this is just a pointer. */}
+          <Card
+            size="small"
+            hoverable
+            onClick={() => navigate("/control")}
+            style={{ cursor: "pointer", height: "100%" }}
+            styles={{ body: { padding: "12px 16px" } }}
+          >
+            <Space direction="vertical" size={2} style={{ width: "100%" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                <SyncOutlined
+                  spin={counts.running > 0}
+                  style={{ color: TASK_STATUS_HEX.running, marginRight: 6 }}
+                />
+                Live activity
+              </Typography.Text>
+              <Space size={8} align="baseline" wrap>
+                <Typography.Text strong style={{ fontSize: 22, color: TASK_STATUS_HEX.running }}>
+                  {counts.running}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                  running on {busyExecutorCount}/{executors.length} executors
+                </Typography.Text>
+              </Space>
+              <Typography.Link style={{ fontSize: 12 }}>Open Mission Control →</Typography.Link>
+            </Space>
+          </Card>
+        </Col>
       </Row>
 
       <Card
@@ -653,26 +560,7 @@ export default function Dashboard() {
             <Tag>{setupGroups.length} setups</Tag>
           </Space>
         }
-        extra={
-          <Space size={12} wrap>
-            {STATUS_ORDER.map((s) => (
-              <Space key={s} size={4}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background: TASK_STATUS_HEX[s],
-                  }}
-                />
-                <Typography.Text style={{ fontSize: 11 }} type="secondary">
-                  {TASK_STATUS_LABEL[s]}
-                </Typography.Text>
-              </Space>
-            ))}
-          </Space>
-        }
+        extra={<StatusLegend />}
       >
         {visibleSetupGroups.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks in any setup yet" />
@@ -738,26 +626,7 @@ export default function Dashboard() {
             </Tag>
           </Space>
         }
-        extra={
-          <Space size={12} wrap>
-            {STATUS_ORDER.map((s) => (
-              <Space key={s} size={4}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background: TASK_STATUS_HEX[s],
-                  }}
-                />
-                <Typography.Text style={{ fontSize: 11 }} type="secondary">
-                  {TASK_STATUS_LABEL[s]}
-                </Typography.Text>
-              </Space>
-            ))}
-          </Space>
-        }
+        extra={<StatusLegend />}
       >
         {tagGroups.length === 0 ? (
           <Empty
@@ -793,9 +662,6 @@ export default function Dashboard() {
                       const av = avMap.get(b.avId) ?? `#${b.avId}`;
                       const sim = simMap.get(b.simId) ?? `#${b.simId}`;
                       const sampler = samplerMap.get(b.samplerId) ?? `#${b.samplerId}`;
-                      // Donut click drills into Tasks pre-filtered to
-                      // this tag AND the chosen setup combo so the
-                      // breakdown stays meaningful at the destination.
                       const params = new URLSearchParams({
                         av_id: String(b.avId),
                         simulator_id: String(b.simId),
@@ -844,121 +710,6 @@ export default function Dashboard() {
               );
             })}
           </Space>
-        )}
-      </Card>
-
-      <Card
-        size="small"
-        style={{ marginTop: 12 }}
-        title={
-          <Space size={8}>
-            <SyncOutlined
-              spin={runningRows.length > 0}
-              style={{ color: TASK_STATUS_HEX.running }}
-            />
-            <Typography.Text strong>Currently Running</Typography.Text>
-            <Tag color="blue">{runningRows.length} tasks</Tag>
-            <Tag>
-              {busyExecutorCount} busy executors / {executors.length} total
-            </Tag>
-          </Space>
-        }
-        extra={
-          <Button size="small" type="link" onClick={() => navigate("/tasks?status=running")}>
-            Open in Tasks →
-          </Button>
-        }
-        styles={{ body: { padding: runningRows.length === 0 ? 24 : 0 } }}
-      >
-        {runningRows.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing running right now" />
-        ) : (
-          <Table
-            size="small"
-            dataSource={runningRows}
-            rowKey="runId"
-            pagination={false}
-            scroll={{ x: "max-content" }}
-            className="dashboard-running-table"
-            onRow={(r) => ({
-              style: { cursor: "pointer" },
-              onClick: () => navigate(`/tasks?status=running#task-${r.taskId}`),
-            })}
-            columns={[
-              {
-                title: "Task",
-                key: "task",
-                width: 160,
-                render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                    #{r.taskId}
-                    {r.attempt > 1 && (
-                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                        {" "}
-                        · attempt {r.attempt}
-                      </Typography.Text>
-                    )}
-                  </Typography.Text>
-                ),
-              },
-              {
-                title: "Plan",
-                key: "plan",
-                width: 180,
-                ellipsis: true,
-                render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
-                    {r.plan}
-                  </Typography.Text>
-                ),
-              },
-              {
-                title: "Setup",
-                key: "setup",
-                width: 220,
-                ellipsis: true,
-                render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12 }} ellipsis>
-                    {r.av}
-                    <Typography.Text type="secondary"> · </Typography.Text>
-                    {r.sim}
-                    <Typography.Text type="secondary"> · </Typography.Text>
-                    {r.sampler}
-                  </Typography.Text>
-                ),
-              },
-              {
-                title: "Executor",
-                key: "executor",
-                width: 200,
-                ellipsis: true,
-                render: (_, r) =>
-                  r.executor ? (
-                    <Typography.Text style={{ fontSize: 12 }} ellipsis>
-                      {r.executor.hostname}
-                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                        {" "}
-                        · job {r.executor.slurm_job_id}
-                      </Typography.Text>
-                    </Typography.Text>
-                  ) : (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      —
-                    </Typography.Text>
-                  ),
-              },
-              {
-                title: "Runtime",
-                key: "runtime",
-                width: 100,
-                render: (_, r) => (
-                  <Typography.Text style={{ fontSize: 12 }}>
-                    {r.startedAt ? formatRuntime(r.startedAt) : "-"}
-                  </Typography.Text>
-                ),
-              },
-            ]}
-          />
         )}
       </Card>
     </>
