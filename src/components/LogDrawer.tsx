@@ -1,88 +1,77 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Drawer, Space, Button, Tag, Typography, Spin, Empty, Popconfirm, message } from "antd";
-import {
-  CaretRightOutlined,
-  CopyOutlined,
-  DownloadOutlined,
-  StopOutlined,
-  SyncOutlined,
-} from "@ant-design/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Drawer, Empty, message, Select, Space, Spin, Tag, Typography } from "antd";
+import { CopyOutlined, DownloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
-import type { TaskResponse, TaskRunResponse, ExecutorResponse } from "../api/types";
-import { RUNNABLE_TASK_STATUSES } from "../api/types";
+import type { ExecutorResponse, TaskResponse, TaskRunResponse } from "../api/types";
 import { TASK_STATUS_TAG_COLOR } from "../constants/status";
 import { useLogStream } from "../hooks/useLogStream";
 
 interface Props {
+  /** The run to open the drawer on (also the open trigger). The drawer
+   *  then lets the user switch between this task's other attempts. */
   run: TaskRunResponse | null;
-  /** Parent task — used so the header shows task identity (#id, status,
-   *  plan label) right when the drawer slides in, not after the user
-   *  scrolls through the log trying to figure out where they are. */
+  /** Parent task — shown in the header so the user knows which task. */
   task?: TaskResponse;
   /** Human-readable label for the task (typically the plan name). */
   taskLabel?: string;
+  /** Executor for the initial `run` (others are resolved on load). */
   executor?: ExecutorResponse;
   onClose: () => void;
 }
 
-/** Full-height right-side drawer that shows the captured log of one
- *  task_run. Loads the DB snapshot on open, then subscribes to live
- *  SSE `log` events for chunk appends while the run is still running.
- *
- *  Triage actions live in the header: Stop (live), Run (re-queue),
- *  Archive (dismiss invalid). All three close the drawer on success so
- *  the user can flow straight to the next task without manually
- *  closing + re-clicking. */
+/** Read-only, full-height log viewer for one task_run. Loads the DB
+ *  snapshot on open, subscribes to live SSE chunk appends while the run
+ *  is running, and offers an attempt switcher to jump between this
+ *  task's runs without leaving the drawer. Task mutations (Run/Stop)
+ *  live with the other actions on the detail surface, not here. */
 export default function LogDrawer({ run, task, taskLabel, executor, onClose }: Props) {
   const paneRef = useRef<HTMLPreElement | null>(null);
-  const { content, loading, error } = useLogStream(run?.id ?? null);
+  const [selectedRun, setSelectedRun] = useState<TaskRunResponse | null>(run);
+  const [runs, setRuns] = useState<TaskRunResponse[]>([]);
+  const [executors, setExecutors] = useState<Map<number, ExecutorResponse>>(new Map());
 
-  // Always stick to the tail — each content update (initial snapshot and
-  // every live SSE chunk) scrolls to the bottom so the user sees the
-  // newest output without having to follow along manually.
+  // On open (or when opened on a different run) reset the selection and
+  // load this task's other attempts for the switcher.
+  useEffect(() => {
+    setSelectedRun(run);
+    if (!run) {
+      setRuns([]);
+      return;
+    }
+    setRuns([run]); // seed so the switcher isn't empty while loading
+    api
+      .listTaskRuns(run.task_id, 10000)
+      .then((rows) => setRuns(rows.length ? rows : [run]))
+      .catch(() => setRuns([run]));
+    api
+      .listExecutors()
+      .then((all) => setExecutors(new Map(all.map((e) => [e.id, e]))))
+      .catch(() => {});
+  }, [run]);
+
+  const { content, loading, error } = useLogStream(selectedRun?.id ?? null);
+
+  // Stick to the tail on every content update (snapshot + live chunks).
   useEffect(() => {
     const el = paneRef.current;
     if (!el || content == null) return;
     el.scrollTop = el.scrollHeight;
   }, [content]);
 
-  const isLive = run?.task_run_status === "running";
-  // Re-running a finished attempt re-queues the parent task. Two gates
-  // (Codex review #3): the viewed run must be terminal AND the task's
-  // *current* status must be one we're allowed to re-Run from. Without
-  // the second gate, opening an old completed/failed attempt on a task
-  // that's currently queued or running would let the user re-queue an
-  // already-active task and risk duplicate dispatch.
-  const runIsTerminal =
-    run != null &&
-    (run.task_run_status === "completed" ||
-      run.task_run_status === "failed" ||
-      run.task_run_status === "aborted");
-  const canRun = runIsTerminal && task != null && RUNNABLE_TASK_STATUSES.includes(task.task_status);
-  const doStop = useCallback(() => {
-    if (!run) return;
-    api
-      .stopTask(run.task_id)
-      .then(() => {
-        message.success(`Task #${run.task_id} stopped`);
-        onClose();
-      })
-      .catch((e) => message.error(String(e)));
-  }, [run, onClose]);
+  const isLive = selectedRun?.task_run_status === "running";
+  const exec = selectedRun
+    ? (executors.get(selectedRun.executor_id) ??
+      (selectedRun.id === run?.id ? executor : undefined))
+    : undefined;
 
-  const doRun = useCallback(() => {
-    if (!run) return;
-    api
-      .updateTask(run.task_id, { task_status: "queued" })
-      .then(() => {
-        message.success(`Task #${run.task_id} queued`);
-        onClose();
-      })
-      .catch((e) => message.error(String(e)));
-  }, [run, onClose]);
+  const attemptOptions = useMemo(
+    () =>
+      [...runs]
+        .sort((a, b) => b.attempt - a.attempt)
+        .map((r) => ({ value: r.id, label: `Attempt #${r.attempt} · ${r.task_run_status}` })),
+    [runs],
+  );
 
-  // Title is computed eagerly so it's visible the instant the drawer
-  // animates in — no waiting for the log fetch to populate context.
   const title = useMemo(() => {
     if (!run) return null;
     return (
@@ -100,11 +89,11 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
             {taskLabel}
           </Typography.Text>
         )}
-        <Typography.Text type="secondary">·</Typography.Text>
-        <Typography.Text>
-          Attempt #{run.attempt} ·{" "}
-          {executor ? `${executor.hostname} · job ${executor.slurm_job_id}` : "executor"}
-        </Typography.Text>
+        {exec && (
+          <Typography.Text type="secondary">
+            · {exec.hostname} · job {exec.slurm_job_id}
+          </Typography.Text>
+        )}
         {isLive && (
           <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInline: 0 }}>
             live
@@ -112,7 +101,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
         )}
       </Space>
     );
-  }, [run, task, taskLabel, executor, isLive]);
+  }, [run, task, taskLabel, exec, isLive]);
 
   return (
     <Drawer
@@ -125,20 +114,14 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
       extra={
         run ? (
           <Space>
-            {isLive && (
-              <Popconfirm title="Stop this task?" onConfirm={doStop}>
-                <Button size="small" danger icon={<StopOutlined />}>
-                  Stop
-                </Button>
-              </Popconfirm>
-            )}
-            {canRun && (
-              <Popconfirm title="Re-run this task?" onConfirm={doRun}>
-                <Button size="small" type="primary" icon={<CaretRightOutlined />}>
-                  Run
-                </Button>
-              </Popconfirm>
-            )}
+            <Select
+              size="small"
+              value={selectedRun?.id}
+              options={attemptOptions}
+              onChange={(id) => setSelectedRun(runs.find((r) => r.id === id) ?? null)}
+              style={{ minWidth: 190 }}
+              popupMatchSelectWidth={false}
+            />
             {content && !loading && (
               <>
                 <Typography.Text type="secondary" style={{ fontSize: 11 }}>
@@ -147,6 +130,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
                 <Button
                   size="small"
                   icon={<CopyOutlined />}
+                  title="Copy log"
                   onClick={() => {
                     navigator.clipboard.writeText(content);
                     message.success("Copied");
@@ -155,12 +139,13 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
                 <Button
                   size="small"
                   icon={<DownloadOutlined />}
+                  title="Download log"
                   onClick={() => {
                     const blob = new Blob([content], { type: "text/plain" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `task-run-${run.id}.log`;
+                    a.download = `task-run-${selectedRun?.id ?? run.id}.log`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -197,7 +182,7 @@ export default function LogDrawer({ run, task, taskLabel, executor, onClose }: P
         >
           {content}
         </pre>
-      ) : run ? (
+      ) : selectedRun ? (
         <div style={{ padding: 24 }}>
           <Empty
             description={

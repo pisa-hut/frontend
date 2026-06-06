@@ -1,32 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  Tag,
-  Button,
-  Card,
-  Dropdown,
-  Empty,
-  message,
-  Modal,
-  Typography,
-  Space,
-  Table,
-  Tooltip,
-} from "antd";
-import type { MenuProps } from "antd";
+import { Tag, Button, Card, Empty, message, Typography, Space, Table, Tooltip } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
-  CaretRightOutlined,
-  StopOutlined,
   SyncOutlined,
-  FileTextOutlined,
   ClearOutlined,
   ExclamationCircleOutlined,
-  LinkOutlined,
   InboxOutlined,
-  RollbackOutlined,
-  MoreOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
@@ -39,13 +20,11 @@ import { useTaskStore, useTaskStoreSse, taskStore } from "../stores/taskStore";
 import type {
   TaskResponse,
   TaskStatus,
-  TaskRunResponse,
   PlanResponse,
   AvResponse,
   SimulatorResponse,
   SamplerResponse,
   MonitorResponse,
-  ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR, TASK_STATUS_LABEL, TASK_STATUS_HEX } from "../constants/status";
@@ -57,7 +36,7 @@ import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 // icon, the Triage button, etc.) — keep them out of the eager Tasks
 // chunk via React.lazy. `fallback={null}` because their visible
 // behaviour is "open=false → invisible" anyway; nothing to wait for.
-const LogDrawer = lazy(() => import("../components/LogDrawer"));
+const TaskDetailDrawer = lazy(() => import("../components/tasks/TaskDetailDrawer"));
 const TriageInvalidModal = lazy(() => import("../components/TriageInvalidModal"));
 const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal"));
 
@@ -150,10 +129,6 @@ function serializeFiltersToUrl(
 }
 
 export default function Tasks() {
-  // One themed confirm modal shared by every row's action buttons, instead
-  // of a per-row <Popconfirm> (those Trigger-based mounts dominate the
-  // table's re-render cost). `modal` is stable across renders.
-  const [modal, modalCtx] = Modal.useModal();
   const [searchParams, setSearchParams] = useSearchParams();
   // Initial filter state parsed from the URL once (it seeds the
   // session-backed state below; the effects further down keep URL and
@@ -294,20 +269,9 @@ export default function Tasks() {
     setSearchParams(new URLSearchParams(next), { replace: true });
   }, [filteredInfo, tagFilter, includeArchived, searchParams, setSearchParams]);
 
-  // Log drawer
-  const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
-  const [logExecutorOverride, setLogExecutorOverride] = useState<ExecutorResponse | undefined>();
-  const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
-  const logExecutor = useMemo(() => {
-    if (logExecutorOverride) return logExecutorOverride;
-    if (!logRun) return undefined;
-    return executorsById.get(logRun.executor_id);
-  }, [executorsById, logExecutorOverride, logRun]);
-
-  const openLog = useCallback((run: TaskRunResponse, executor?: ExecutorResponse) => {
-    setLogRun(run);
-    setLogExecutorOverride(executor);
-  }, []);
+  // Clicking a row opens the task detail drawer (the action hub + log
+  // access). The /tasks/:id page stays for deep links.
+  const [detailTaskId, setDetailTaskId] = useState<number | null>(null);
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [triageOpen, setTriageOpen] = useState(false);
@@ -335,12 +299,6 @@ export default function Tasks() {
 
   useEffect(() => {
     fetchResources();
-  }, []);
-
-  useEffect(() => {
-    api.listExecutors().then((all) => {
-      setExecutorsById(new Map(all.map((e) => [e.id, e])));
-    });
   }, []);
 
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
@@ -504,15 +462,6 @@ export default function Tasks() {
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
 
-  const logTask = useMemo(
-    () => (logRun ? storeRows.find((t) => t.id === logRun.task_id) : undefined),
-    [logRun, storeRows],
-  );
-  const logTaskLabel = useMemo(
-    () => (logTask ? planMap.get(logTask.plan_id) : undefined),
-    [logTask, planMap],
-  );
-
   // For the selection bar's runnable/stoppable counts and "select all
   // filtered" computation, we need a status lookup that spans every row.
   const statusById = useMemo(() => {
@@ -536,59 +485,9 @@ export default function Tasks() {
   );
 
   // --- Actions ---
-
-  const handleRun = useCallback(
-    async (id: number) => {
-      try {
-        // Priority is derived from the plan's tag ranking by the DB; the
-        // frontend only flips status to queued (the trigger stamps queued_at).
-        await api.updateTask(id, { task_status: "queued" });
-        message.success(`Task #${id} queued`);
-        taskStore.patchTaskIds([id]);
-      } catch (e) {
-        message.error(String(e));
-      }
-    },
-    [],
-  );
-
-  const handleStop = useCallback(async (id: number) => {
-    try {
-      await api.stopTask(id);
-      message.success(`Task #${id} stopped`);
-      taskStore.patchTaskIds([id]);
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
-
-  const handleArchive = useCallback(async (id: number, archived: boolean) => {
-    try {
-      if (archived) {
-        await api.unarchiveTask(id);
-        message.success(`Task #${id} unarchived`);
-      } else {
-        await api.archiveTask(id);
-        message.success(`Task #${id} archived`);
-      }
-      taskStore.patchTaskIds([id]);
-    } catch (e) {
-      message.error(String(e));
-    }
-  }, []);
-
-  // The task detail route is now the canonical share target. Same
-  // origin works in dev, staging, and prod without configuration.
-  // Falls back to a manual prompt if Clipboard is blocked.
-  const copyTaskLink = useCallback((id: number) => {
-    const url = `${window.location.origin}/tasks/${id}`;
-    const done = () => message.success(`Link to task #${id} copied`);
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link:", url));
-    } else {
-      window.prompt("Copy this link:", url);
-    }
-  }, []);
+  // Single-task actions (Run/Stop/Archive/Copy-link) live in the task
+  // detail drawer/page now (TaskActions). The table keeps only bulk
+  // actions plus row-click to open the detail drawer.
 
   const handleBulkRun = async () => {
     const ids = (selectedRowKeys as number[]).filter((id) =>
@@ -782,19 +681,11 @@ export default function Tasks() {
         width: 116,
         sorter: true,
         sortOrder: orderFor("attempt_count"),
-        render: (n: number, r: TaskResponse) => {
+        render: (n: number) => {
           if (!n) return <Typography.Text type="secondary">0</Typography.Text>;
-          // Attempt history lives on the detail page now (the table is
-          // virtualized, so no inline expansion).
-          return (
-            <Link
-              to={`/tasks/${r.id}`}
-              title="View attempt history"
-              style={{ fontVariantNumeric: "tabular-nums" }}
-            >
-              {n}
-            </Link>
-          );
+          // Plain count — clicking the row opens the detail drawer where
+          // the attempt history lives.
+          return <span style={{ fontVariantNumeric: "tabular-nums" }}>{n}</span>;
         },
       },
       {
@@ -858,92 +749,11 @@ export default function Tasks() {
           );
         },
       },
-      {
-        title: "",
-        key: "actions",
-        width: 56,
-        align: "center" as const,
-        render: (_: unknown, record: TaskResponse) => {
-          const canRun = RUNNABLE_STATUSES.includes(record.task_status);
-          const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-          const latestRun = record.task_run?.[0];
-          // Collapsed into a single lazy dropdown: the overlay (and its
-          // Menu) only mounts when opened, so 20 rows don't each build
-          // four antd Buttons on every table re-render. Confirmations go
-          // through the page-level shared modal.
-          const items: MenuProps["items"] = [
-            {
-              key: "link",
-              icon: <LinkOutlined />,
-              label: "Copy shareable link",
-              onClick: () => copyTaskLink(record.id),
-            },
-            {
-              key: "log",
-              icon: <FileTextOutlined />,
-              label: latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet",
-              disabled: !latestRun,
-              onClick: () => latestRun && openLog(latestRun),
-            },
-            { type: "divider" },
-            canStop
-              ? {
-                  key: "stop",
-                  icon: <StopOutlined />,
-                  label: "Stop",
-                  danger: true,
-                  onClick: () => modal.confirm({ title: "Stop?", onOk: () => handleStop(record.id) }),
-                }
-              : {
-                  key: "run",
-                  icon: <CaretRightOutlined />,
-                  label: "Run",
-                  disabled: !canRun,
-                  onClick: () => modal.confirm({ title: "Run?", onOk: () => handleRun(record.id) }),
-                },
-            {
-              key: "archive",
-              icon: record.archived ? <RollbackOutlined /> : <InboxOutlined />,
-              label: record.archived ? "Unarchive" : "Archive (soft-hide)",
-              onClick: () =>
-                modal.confirm({
-                  title: record.archived ? "Unarchive?" : "Archive?",
-                  onOk: () => handleArchive(record.id, record.archived),
-                }),
-            },
-          ];
-          return (
-            <Dropdown menu={{ items }} trigger={["click"]} placement="bottomRight">
-              <Button
-                size="small"
-                icon={<MoreOutlined />}
-                title="Actions"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </Dropdown>
-          );
-        },
-      },
     ];
     // Scope to the two filter axes the columns actually read (the id /
     // plan_id column-search highlights), so av/sim/sampler/monitor/tag
     // chip toggles don't rebuild this array.
-  }, [
-    filteredInfo.id,
-    filteredInfo.plan_id,
-    sortedInfo,
-    avMap,
-    simMap,
-    samplerMap,
-    planMap,
-    planTagsMap,
-    openLog,
-    handleRun,
-    handleStop,
-    handleArchive,
-    copyTaskLink,
-    modal,
-  ]);
+  }, [filteredInfo.id, filteredInfo.plan_id, sortedInfo, avMap, simMap, samplerMap, planMap, planTagsMap]);
 
   const selectionBar = (
     <TasksSelectionBar
@@ -1093,7 +903,6 @@ export default function Tasks() {
       </Card>
 
       {selectionBar}
-      {modalCtx}
 
       <Table
         virtual
@@ -1104,6 +913,17 @@ export default function Tasks() {
         loading={storeState.status === "loading" && storeRows.length === 0}
         size="small"
         pagination={false}
+        onRow={(record) => ({
+          style: { cursor: "pointer" },
+          onClick: (e) => {
+            // Let the checkbox, links and other controls do their own
+            // thing; a plain row click opens the detail drawer.
+            if ((e.target as HTMLElement).closest("a, button, input, .ant-checkbox-wrapper")) {
+              return;
+            }
+            setDetailTaskId(record.id);
+          },
+        })}
         locale={{
           emptyText: (
             <Empty
@@ -1152,12 +972,10 @@ export default function Tasks() {
           onChanged={() => taskStore.resync()}
         />
 
-        <LogDrawer
-          run={logRun}
-          task={logTask}
-          taskLabel={logTaskLabel}
-          executor={logExecutor}
-          onClose={() => setLogRun(null)}
+        <TaskDetailDrawer
+          taskId={detailTaskId}
+          onClose={() => setDetailTaskId(null)}
+          onChanged={() => detailTaskId != null && taskStore.patchTaskIds([detailTaskId])}
         />
       </Suspense>
     </>
