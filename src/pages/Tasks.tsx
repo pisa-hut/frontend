@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Tag,
@@ -92,32 +92,74 @@ function parseIdSet(value: unknown): Set<number> {
   return out;
 }
 
+// Every Tasks filter serializes to a query param so the full filtered
+// view is shareable/bookmarkable and every axis behaves identically.
+// Param names match the table columns + Dashboard deep-links
+// (av_id / simulator_id / sampler_id / monitor_id, status, id, plan, tag).
+function parseFiltersFromUrl(sp: URLSearchParams): {
+  filteredInfo: Record<string, FilterValue | null>;
+  tags: string[];
+  quickFilter: QuickFilter;
+  includeArchived: boolean;
+} {
+  const fi: Record<string, FilterValue | null> = {};
+  const status = sp.get("status");
+  if (status) fi.task_status = status.split(",") as unknown as FilterValue;
+  const numAxis = (key: string) => {
+    const v = sp.get(key);
+    if (!v) return;
+    const arr = v.split(",").map(Number).filter(Number.isFinite);
+    if (arr.length) fi[key] = arr as unknown as FilterValue;
+  };
+  numAxis("av_id");
+  numAxis("simulator_id");
+  numAxis("sampler_id");
+  numAxis("monitor_id");
+  const id = sp.get("id");
+  if (id) fi.id = [id] as unknown as FilterValue;
+  const plan = sp.get("plan");
+  if (plan) fi.plan_id = [plan] as unknown as FilterValue;
+  const tagAll = sp.getAll("tag");
+  const tags = tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
+  const quickFilter: QuickFilter =
+    status && QUICK_FILTERS.some((q) => q.value === status) ? (status as QuickFilter) : "all";
+  return { filteredInfo: fi, tags, quickFilter, includeArchived: sp.get("archived") === "1" };
+}
+
+function serializeFiltersToUrl(
+  filteredInfo: Record<string, FilterValue | null>,
+  tags: string[],
+  includeArchived: boolean,
+): string {
+  const p = new URLSearchParams();
+  const multi = (key: string, v: unknown) => {
+    const a = v as (string | number)[] | null | undefined;
+    if (a && a.length) p.set(key, a.join(","));
+  };
+  multi("status", filteredInfo.task_status);
+  multi("av_id", filteredInfo.av_id);
+  multi("simulator_id", filteredInfo.simulator_id);
+  multi("sampler_id", filteredInfo.sampler_id);
+  multi("monitor_id", filteredInfo.monitor_id);
+  multi("id", filteredInfo.id);
+  const plan = (filteredInfo.plan_id as string[] | undefined)?.[0];
+  if (plan) p.set("plan", String(plan));
+  if (tags.length) p.set("tag", tags.join(","));
+  if (includeArchived) p.set("archived", "1");
+  return p.toString();
+}
+
 export default function Tasks() {
   // One themed confirm modal shared by every row's action buttons, instead
   // of a per-row <Popconfirm> (those Trigger-based mounts dominate the
   // table's re-render cost). `modal` is stable across renders.
   const [modal, modalCtx] = Modal.useModal();
   const [searchParams, setSearchParams] = useSearchParams();
-  const defaultStatusFilter = useMemo(() => {
-    const s = searchParams.get("status");
-    return s ? [s] : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const defaultQuickFilter: QuickFilter = useMemo(() => {
-    const s = searchParams.get("status");
-    if (s && QUICK_FILTERS.some((q) => q.value === s)) return s as QuickFilter;
-    return "all";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // `?id=123` or `?id=123,456` scopes the table to specific task ids.
-  // Drives the same `filteredInfo.id` chip the column search produces,
-  // so the existing server query path works untouched. Empty string in
-  // the URL is treated as "no id filter".
-  const defaultIdFilter = useMemo(() => {
-    const raw = searchParams.get("id");
-    return raw ? [raw] : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial filter state parsed from the URL once (it seeds the
+  // session-backed state below; the effects further down keep URL and
+  // state in sync, with the URL winning on external navigation).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const urlInit = useMemo(() => parseFiltersFromUrl(searchParams), []);
 
   // The full task set lives in a client-side store, loaded once (chunked)
   // and kept live via SSE row events. The table filters/sorts/scrolls
@@ -134,7 +176,7 @@ export default function Tasks() {
   // in localStorage.
   const [quickFilter, setQuickFilterRaw] = useSessionStorageState<QuickFilter>(
     "tasks.quickFilter",
-    defaultQuickFilter,
+    urlInit.quickFilter,
   );
 
   // One-shot localStorage cleanup of orphaned keys for removed
@@ -158,24 +200,14 @@ export default function Tasks() {
     }
   }, []);
 
-  const defaultTagFilter = useMemo(() => {
-    const all = searchParams.getAll("tag");
-    if (all.length > 1) return all;
-    const single = all[0];
-    return single ? single.split(",").filter(Boolean) : [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const [tagFilter, setTagFilterRaw] = useSessionStorageState<string[]>(
     "tasks.tagFilter",
-    defaultTagFilter,
+    urlInit.tags,
   );
 
   const [filteredInfo, setFilteredInfo] = useSessionStorageState<
     Record<string, FilterValue | null>
-  >("tasks.filteredInfo", {
-    task_status: defaultStatusFilter ?? null,
-    ...(defaultIdFilter ? { id: defaultIdFilter as FilterValue } : {}),
-  });
+  >("tasks.filteredInfo", urlInit.filteredInfo);
   // Sort is restricted to server-sortable columns (id, attempt_count,
   // last_run_at). The latter is the denormalised column added in
   // manager m20260516 — kept fresh by a trigger on task_run.
@@ -189,25 +221,9 @@ export default function Tasks() {
   // the way until the user opts in. SessionStorage so the choice
   // sticks across in-tab navigation but resets next session, same as
   // the other filter knobs.
-  const defaultIncludeArchived = useMemo(() => {
-    return searchParams.get("archived") === "1";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [includeArchived, setIncludeArchivedRaw] = useSessionStorageState<boolean>(
+  const [includeArchived, setIncludeArchived] = useSessionStorageState<boolean>(
     "tasks.includeArchived",
-    defaultIncludeArchived,
-  );
-  const setIncludeArchived = useCallback(
-    (next: boolean) => {
-      setIncludeArchivedRaw(next);
-      setSearchParams((prev) => {
-        const out = new URLSearchParams(prev);
-        if (next) out.set("archived", "1");
-        else out.delete("archived");
-        return out;
-      });
-    },
-    [setIncludeArchivedRaw, setSearchParams],
+    urlInit.includeArchived,
   );
   const hasActiveFilters = useMemo(
     () =>
@@ -219,59 +235,64 @@ export default function Tasks() {
     setFilteredInfo({});
     setQuickFilterRaw("all");
     setTagFilterRaw([]);
-    setSearchParams({});
-  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw, setSearchParams]);
+  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw]);
 
-  const setTagFilter = useCallback(
-    (next: string[]) => {
-      setTagFilterRaw(next);
-      setSearchParams((prev) => {
-        const out = new URLSearchParams(prev);
-        out.delete("tag");
-        if (next.length > 0) out.set("tag", next.join(","));
-        return out;
-      });
-    },
-    [setTagFilterRaw, setSearchParams],
-  );
+  const setTagFilter = useCallback((next: string[]) => setTagFilterRaw(next), [setTagFilterRaw]);
 
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
-      setFilteredInfo(() => ({
+      // Merge — changing the status chip keeps the other active filters
+      // (av/sim/sampler/tag) rather than wiping them.
+      setFilteredInfo((prev) => ({
+        ...prev,
         task_status: q === "all" ? null : ([q] as FilterValue),
       }));
-      if (q === "all") setSearchParams({});
-      else setSearchParams({ status: q });
     },
-    [setQuickFilterRaw, setFilteredInfo, setSearchParams],
+    [setQuickFilterRaw, setFilteredInfo],
   );
 
-  // URL → state sync after mount.
+  // ---- Unified URL <-> filter sync ----
+  // Every filter axis lives in the query string, so the full filtered
+  // view is shareable/bookmarkable and all axes behave identically.
+  //   syncedUrl   — last query string we reconciled (ignore our own writes)
+  //   appliedFromUrl — set when we just pushed URL→state, so the write
+  //                    effect skips the one render where state hasn't
+  //                    caught up yet (prevents it stripping the URL).
+  const syncedUrl = useRef<string | null>(null);
+  const appliedFromUrl = useRef(false);
+
+  // URL -> state (initial load, shared link, back/forward). A non-empty
+  // URL is authoritative and replaces the filter state; an empty URL on
+  // first mount is ignored so it doesn't wipe restored session filters.
   useEffect(() => {
-    const s = searchParams.get("status");
-    if (s && QUICK_FILTERS.some((q) => q.value === s) && s !== quickFilter) {
-      setQuickFilter(s as QuickFilter);
+    const cur = searchParams.toString();
+    if (cur === syncedUrl.current) return; // our own write
+    const initialEmpty = syncedUrl.current === null && cur === "";
+    syncedUrl.current = cur;
+    if (initialEmpty) return;
+    const parsed = parseFiltersFromUrl(searchParams);
+    appliedFromUrl.current = true;
+    setFilteredInfo(parsed.filteredInfo);
+    setTagFilterRaw(parsed.tags);
+    setQuickFilterRaw(parsed.quickFilter);
+    setIncludeArchived(parsed.includeArchived);
+  }, [searchParams, setFilteredInfo, setTagFilterRaw, setQuickFilterRaw, setIncludeArchived]);
+
+  // state -> URL (replace, so filter churn doesn't spam history).
+  useEffect(() => {
+    if (appliedFromUrl.current) {
+      appliedFromUrl.current = false; // this change came from the URL; don't echo it back
+      return;
     }
-    const tagAll = searchParams.getAll("tag");
-    const tagsFromUrl =
-      tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
-    if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
-      setTagFilterRaw(tagsFromUrl);
+    const next = serializeFiltersToUrl(filteredInfo, tagFilter, includeArchived);
+    if (next === searchParams.toString()) {
+      syncedUrl.current = next;
+      return;
     }
-    // `?id=` overrides any cached filteredInfo.id from localStorage so a
-    // shared link always lands on the linked task, regardless of what
-    // the recipient's table state was.
-    const idRaw = searchParams.get("id");
-    if (idRaw != null) {
-      const cellValue = idRaw.trim();
-      const cached = (filteredInfo.id as (string | number)[] | undefined) ?? [];
-      if (cellValue && (cached.length !== 1 || String(cached[0]) !== cellValue)) {
-        setFilteredInfo((prev) => ({ ...prev, id: [cellValue] as FilterValue }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+    syncedUrl.current = next;
+    setSearchParams(new URLSearchParams(next), { replace: true });
+  }, [filteredInfo, tagFilter, includeArchived, searchParams, setSearchParams]);
 
   // Log drawer
   const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
