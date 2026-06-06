@@ -169,14 +169,6 @@ export default function Tasks() {
     "tasks.tagFilter",
     defaultTagFilter,
   );
-  // On first visit to a tab, we pre-select every available tag so the
-  // table starts filtered to "tagged tasks only" (the new default). The
-  // initialised flag persists in sessionStorage so a user who explicitly
-  // clears the filter doesn't get it re-filled on the next in-tab refresh.
-  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
-    "tasks.tagFilterInitialised",
-    defaultTagFilter.length > 0,
-  );
 
   const [filteredInfo, setFilteredInfo] = useSessionStorageState<
     Record<string, FilterValue | null>
@@ -227,20 +219,12 @@ export default function Tasks() {
     setFilteredInfo({});
     setQuickFilterRaw("all");
     setTagFilterRaw([]);
-    setTagFilterInitialised(true);
     setSearchParams({});
-  }, [
-    setFilteredInfo,
-    setQuickFilterRaw,
-    setTagFilterRaw,
-    setTagFilterInitialised,
-    setSearchParams,
-  ]);
+  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw, setSearchParams]);
 
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
-      setTagFilterInitialised(true);
       setSearchParams((prev) => {
         const out = new URLSearchParams(prev);
         out.delete("tag");
@@ -248,7 +232,7 @@ export default function Tasks() {
         return out;
       });
     },
-    [setTagFilterRaw, setTagFilterInitialised, setSearchParams],
+    [setTagFilterRaw, setSearchParams],
   );
 
   const setQuickFilter = useCallback(
@@ -274,7 +258,6 @@ export default function Tasks() {
       tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
     if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
       setTagFilterRaw(tagsFromUrl);
-      setTagFilterInitialised(true);
     }
     // `?id=` overrides any cached filteredInfo.id from localStorage so a
     // shared link always lands on the linked task, regardless of what
@@ -449,42 +432,45 @@ export default function Tasks() {
     return bits.join(" · ");
   }, [tagFilter, filteredInfo]);
 
-  // Summaries scoped to the active tag filter. The status chips and
-  // the av/sim/sampler/monitor axis counts read from this so the
-  // displayed numbers match what the table is actually showing after
-  // the tag filter is applied server-side. Tag chips themselves stay
-  // on the unscoped `baseRows` so other tags remain navigable.
-  const tagScopedSummaries = useMemo(() => {
-    if (tagFilter.length === 0) return baseRows;
-    const want = new Set(tagFilter);
-    return baseRows.filter((t) => {
-      const tags = planTagsMap.get(t.plan_id) ?? [];
-      return tags.some((x) => want.has(x));
-    });
-  }, [baseRows, tagFilter, planTagsMap]);
-
-  // Per-axis chip counts. AV/Sim/Sampler/Monitor counts come from the
-  // tag-scoped slice so the chip number tracks the table. Tag counts
-  // come from the unscoped summaries so picking tag A doesn't blank
-  // out the count next to tag B.
+  // Faceted chip counts: each axis's count reflects every OTHER active
+  // filter but ignores that axis's own selection. So picking AV-1 leaves
+  // AV-2's count intact (same axis excluded), while picking a tag still
+  // narrows the AV counts (different axis). Every filter row — tags and
+  // av/sim/sampler/monitor — follows the identical rule.
   const filterCounts = useMemo(() => {
     const av = new Map<number, number>();
     const sim = new Map<number, number>();
     const sampler = new Map<number, number>();
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
-    for (const t of tagScopedSummaries) {
-      av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
-      sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
-      sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
-      if (t.monitor_id != null) monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
-    }
+    const cAv = { ...criteria, avIds: undefined };
+    const cSim = { ...criteria, simIds: undefined };
+    const cSampler = { ...criteria, samplerIds: undefined };
+    const cMonitor = { ...criteria, monitorIds: undefined };
+    const cTag = { ...criteria, tags: undefined };
     for (const t of baseRows) {
-      const tags = planTagsMap.get(t.plan_id) ?? [];
-      for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
+      if (matchesTaskFilter(t, cAv, planTagsMap, planMap))
+        av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cSim, planTagsMap, planMap))
+        sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cSampler, planTagsMap, planMap))
+        sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
+      if (t.monitor_id != null && matchesTaskFilter(t, cMonitor, planTagsMap, planMap))
+        monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cTag, planTagsMap, planMap)) {
+        const tags = planTagsMap.get(t.plan_id) ?? [];
+        for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
+      }
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [baseRows, tagScopedSummaries, planTagsMap]);
+  }, [baseRows, criteria, planTagsMap, planMap]);
+
+  // Status quick-filter counts use the same faceted rule (every active
+  // filter except the status axis itself).
+  const statusFacetRows = useMemo(() => {
+    const c = { ...criteria, status: undefined };
+    return baseRows.filter((t) => matchesTaskFilter(t, c, planTagsMap, planMap));
+  }, [baseRows, criteria, planTagsMap, planMap]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -496,17 +482,6 @@ export default function Tasks() {
   const avMap = useMemo(() => new Map(avs.map((a) => [a.id, a.name])), [avs]);
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
-
-  // Default-all-tags: once the plan/tag list has loaded for the first
-  // time, pre-select every tag so the table starts scoped to "tagged
-  // tasks only". Skipped when the URL or sessionStorage already
-  // provided a selection (`tagFilterInitialised`).
-  useEffect(() => {
-    if (tagFilterInitialised) return;
-    if (availableTagNames.length === 0) return;
-    setTagFilterRaw(availableTagNames);
-    setTagFilterInitialised(true);
-  }, [tagFilterInitialised, availableTagNames, setTagFilterRaw, setTagFilterInitialised]);
 
   const logTask = useMemo(
     () => (logRun ? storeRows.find((t) => t.id === logRun.task_id) : undefined),
@@ -1075,7 +1050,7 @@ export default function Tasks() {
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <TasksFilters
-            summaries={tagScopedSummaries}
+            summaries={statusFacetRows}
             quickFilter={quickFilter}
             onChange={setQuickFilter}
           />
