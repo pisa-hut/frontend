@@ -1,3 +1,22 @@
+/* ================================================================== *
+ * PISA console design language — global HUD chrome.
+ *
+ * The dark slate / cyan-accent palette and fonts come from the AntD
+ * ConfigProvider tokens in App.tsx; this file adds the "ground-control"
+ * texture on top, keyed off AntD's own class names so individual pages
+ * need no markup changes:
+ *   - a subtle scanline overlay over the whole app
+ *   - corner brackets + accent glow on top-level panels / modals
+ *   - console-styled tables, scrollbars, focus rings
+ * ================================================================== */
+
+:root {
+  --hud-accent: #38bdf8;
+  --hud-accent-dim: rgba(56, 160, 248, 0.45);
+  --hud-line: rgba(120, 160, 200, 0.35);
+  --hud-bg: #070b11;
+}
+
 * {
   -webkit-text-size-adjust: 100%;
   box-sizing: border-box;
@@ -6,28 +25,134 @@
 body {
   margin: 0;
   overflow-x: hidden;
+  background: var(--hud-bg);
 }
 
-/* Table fixes */
+/* Mono everywhere it reads as data: IBM Plex Mono is loaded in main.tsx. */
+.mono,
+.ant-statistic-content-value,
+.ant-statistic-content-prefix,
+.ant-table-cell .tnum {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- scanline overlay -------------------------------------------- *
+ * One fixed, low-opacity layer over everything. pointer-events:none so
+ * it never intercepts clicks; opacity kept tiny so dense tables stay
+ * legible. */
+#root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.015) 0px,
+    rgba(255, 255, 255, 0.015) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* ---- panel HUD brackets ------------------------------------------ *
+ * Corner brackets + a faint accent glow on top-level cards and modals.
+ * Nested cards are suppressed so brackets never stack inside a panel. */
+.ant-card {
+  position: relative;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.ant-card::before,
+.ant-card::after,
+.ant-modal-content::before,
+.ant-modal-content::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--hud-line);
+  pointer-events: none;
+  z-index: 1;
+}
+.ant-card::before,
+.ant-modal-content::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.ant-card::after,
+.ant-modal-content::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+/* No bracket-on-bracket: a card inside another card stays plain. */
+.ant-card .ant-card::before,
+.ant-card .ant-card::after {
+  content: none;
+}
+.ant-card.ant-card-hoverable:hover {
+  border-color: var(--hud-accent-dim);
+  box-shadow:
+    0 0 0 1px var(--hud-accent-dim),
+    0 6px 22px rgba(0, 0, 0, 0.5);
+}
+.ant-modal-content {
+  position: relative;
+}
+
+/* ---- tables ------------------------------------------------------ */
 .ant-table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+.ant-table-thead > tr > th {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--hud-accent-dim) !important;
+}
+/* IDs/counts read as instrument values. */
+.ant-table-tbody .ant-typography,
+.ant-table-tbody td {
+  font-variant-numeric: tabular-nums;
+}
 
-/* Dashboard "Currently running" table: no x-overflow expected, so
-   hide the gutter that Windows Edge / Chrome reserve for the
-   classic scrollbar. macOS Safari already overlays its scrollbar
-   so this is a no-op there — we're matching that behaviour. */
+/* Dashboard "Currently running" table: hide reserved scrollbar gutter. */
 .dashboard-running-table .ant-table-content,
 .dashboard-running-table .ant-table-body {
-  scrollbar-width: none; /* Firefox + modern */
+  scrollbar-width: none;
 }
 .dashboard-running-table .ant-table-content::-webkit-scrollbar,
 .dashboard-running-table .ant-table-body::-webkit-scrollbar {
-  display: none; /* Chromium-based (Edge / Chrome) */
+  display: none;
 }
 
-/* Mobile modals */
+/* ---- scrollbars -------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 160, 200, 0.3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(120, 160, 200, 0.28);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 160, 200, 0.45);
+}
+
+/* ---- mobile ------------------------------------------------------ */
 @media (max-width: 767px) {
   .ant-modal {
     max-width: calc(100vw - 16px) !important;
@@ -37,14 +162,10 @@ body {
   .ant-modal .ant-modal-content {
     padding: 12px !important;
   }
-
-  /* Compact table cells on mobile */
   .ant-table-small .ant-table-cell {
     padding: 4px 6px !important;
     font-size: 12px !important;
   }
-
-  /* Stack action buttons */
   .ant-table-cell .ant-space {
     gap: 2px !important;
   }
@@ -52,18 +173,12 @@ body {
     padding: 0 4px !important;
     font-size: 11px !important;
   }
-
-  /* Full-width selects in modals */
   .ant-select {
     width: 100% !important;
   }
-
-  /* Smaller page title on mobile */
   h3.ant-typography {
     font-size: 16px !important;
   }
-
-  /* Compact stat cards */
   .ant-statistic-title {
     font-size: 11px !important;
   }

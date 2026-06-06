@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Layout, Menu, Drawer, Button, Tooltip } from "antd";
+import { Layout, Menu, Drawer, Button } from "antd";
 import {
   DashboardOutlined,
+  RadarChartOutlined,
   UnorderedListOutlined,
   FileTextOutlined,
   ProjectOutlined,
@@ -11,14 +12,12 @@ import {
   MenuOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  SunOutlined,
-  MoonOutlined,
 } from "@ant-design/icons";
-import { useTheme } from "./ThemeContext";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
 const mainItems = [
   { key: "/", icon: <DashboardOutlined />, label: "Dashboard" },
+  { key: "/control", icon: <RadarChartOutlined />, label: "Control" },
   { key: "/tasks", icon: <UnorderedListOutlined />, label: "Tasks" },
   { key: "/scenarios", icon: <FileTextOutlined />, label: "Scenarios" },
   { key: "/plans", icon: <ProjectOutlined />, label: "Plans" },
@@ -30,14 +29,15 @@ const utilItems = [{ key: "/upload", icon: <CloudUploadOutlined />, label: "Uplo
 
 const allItems = [...mainItems, ...utilItems];
 
+// Console chrome shared by the desktop sider and the mobile drawer.
+const SIDER_BG = "#070b11";
+const LOGO_ACCENT = "#38bdf8";
+
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const { mode, toggle: toggleTheme } = useTheme();
-
-  const isDark = mode === "dark";
 
   const selectedKey =
     allItems
@@ -56,7 +56,7 @@ export default function AppLayout() {
       selectedKeys={[selectedKey]}
       items={[...mainItems, { type: "divider" as const }, ...utilItems]}
       onClick={({ key }) => handleNav(key)}
-      style={{ border: "none" }}
+      style={{ border: "none", background: "transparent" }}
     />
   );
 
@@ -66,59 +66,58 @@ export default function AppLayout() {
         height: 56,
         display: "flex",
         alignItems: "center",
+        gap: 8,
         justifyContent: collapsed ? "center" : "flex-start",
-        padding: collapsed ? 0 : "0 24px",
-        color: "#fff",
-        fontWeight: 800,
-        fontSize: collapsed ? 18 : 22,
-        letterSpacing: collapsed ? 0 : 2,
+        padding: collapsed ? 0 : "0 20px",
         userSelect: "none",
+        borderBottom: "1px solid rgba(120,160,200,0.12)",
       }}
     >
-      {collapsed ? "P" : "PISA"}
+      <span style={{ color: LOGO_ACCENT, fontSize: collapsed ? 16 : 18, lineHeight: 1 }}>◢◣</span>
+      {!collapsed && (
+        <span
+          style={{
+            color: "#eaf4ff",
+            fontWeight: 700,
+            fontSize: 20,
+            letterSpacing: 4,
+          }}
+        >
+          PISA
+        </span>
+      )}
     </div>
   );
 
   const siderFooter = (
     <div
       style={{
-        padding: collapsed ? "12px 0" : "12px 16px",
-        borderTop: "1px solid rgba(255,255,255,0.1)",
+        padding: collapsed ? "10px 0" : "10px 16px",
+        borderTop: "1px solid rgba(120,160,200,0.12)",
         display: "flex",
-        flexDirection: collapsed ? "column" : "row",
-        alignItems: "center",
-        gap: 8,
-        justifyContent: collapsed ? "center" : "space-between",
+        flexDirection: "column",
+        alignItems: collapsed ? "center" : "stretch",
+        gap: 6,
       }}
     >
-      <Tooltip title={isDark ? "Light mode" : "Dark mode"} placement="right">
-        <Button
-          type="text"
-          icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-          onClick={toggleTheme}
-          style={{ color: "rgba(255,255,255,0.65)" }}
-        />
-      </Tooltip>
       {!collapsed && (
-        <Tooltip title="Collapse sidebar" placement="right">
-          <Button
-            type="text"
-            icon={<MenuFoldOutlined />}
-            onClick={() => setCollapsed(true)}
-            style={{ color: "rgba(255,255,255,0.65)" }}
-          />
-        </Tooltip>
+        <span
+          style={{
+            fontFamily: '"IBM Plex Mono", monospace',
+            fontSize: 10,
+            letterSpacing: 2,
+            color: "rgba(125,143,161,0.7)",
+          }}
+        >
+          ::DECK ONLINE::
+        </span>
       )}
-      {collapsed && (
-        <Tooltip title="Expand sidebar" placement="right">
-          <Button
-            type="text"
-            icon={<MenuUnfoldOutlined />}
-            onClick={() => setCollapsed(false)}
-            style={{ color: "rgba(255,255,255,0.65)" }}
-          />
-        </Tooltip>
-      )}
+      <Button
+        type="text"
+        icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        onClick={() => setCollapsed((c) => !c)}
+        style={{ color: "rgba(200,214,229,0.65)", alignSelf: collapsed ? "center" : "flex-end" }}
+      />
     </div>
   );
 
@@ -139,6 +138,8 @@ export default function AppLayout() {
           height: "100vh",
           position: "sticky",
           top: 0,
+          background: SIDER_BG,
+          borderRight: "1px solid rgba(120,160,200,0.12)",
         }}
       >
         {logo}
@@ -155,69 +156,36 @@ export default function AppLayout() {
         styles={{
           body: {
             padding: 0,
-            background: "#001529",
+            background: SIDER_BG,
             display: "flex",
             flexDirection: "column",
             height: "100%",
           },
         }}
       >
-        <div
-          style={{
-            height: 56,
-            display: "flex",
-            alignItems: "center",
-            padding: "0 24px",
-            color: "#fff",
-            fontWeight: 800,
-            fontSize: 22,
-            letterSpacing: 2,
-          }}
-        >
-          PISA
-        </div>
+        {logo}
         <div style={{ flex: 1 }}>{menuContent}</div>
-        <div
-          style={{
-            padding: "12px 16px",
-            borderTop: "1px solid rgba(255,255,255,0.1)",
-            display: "flex",
-            justifyContent: "space-between",
-          }}
-        >
-          <Button
-            type="text"
-            icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-            onClick={toggleTheme}
-            style={{ color: "rgba(255,255,255,0.65)" }}
-          >
-            {isDark ? "Light" : "Dark"}
-          </Button>
-        </div>
       </Drawer>
 
-      <Layout>
+      <Layout style={{ background: "#070b11" }}>
         {/* Mobile-only top bar */}
         <div className="mobile-bar">
           <Button
             type="text"
             icon={<MenuOutlined />}
             onClick={() => setDrawerOpen(true)}
-            style={{ fontSize: 18 }}
+            style={{ fontSize: 18, color: "#c8d6e5" }}
           />
-          <span style={{ fontWeight: 700, fontSize: 16 }}>PISA</span>
-          <Button
-            type="text"
-            icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-            onClick={toggleTheme}
-            style={{ fontSize: 16 }}
-          />
+          <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: 3, color: "#eaf4ff" }}>
+            PISA
+          </span>
+          <span style={{ width: 32 }} />
         </div>
         <Layout.Content
           style={{
             padding: 16,
             overflow: "auto",
-            background: isDark ? "#141414" : "#f5f5f5",
+            background: "#070b11",
             minHeight: "calc(100vh - 48px)",
           }}
         >
@@ -232,8 +200,8 @@ export default function AppLayout() {
           justify-content: space-between;
           padding: 0 4px;
           height: 48px;
-          background: ${isDark ? "#1f1f1f" : "#fff"};
-          border-bottom: 1px solid ${isDark ? "#303030" : "#f0f0f0"};
+          background: #0c131c;
+          border-bottom: 1px solid rgba(120,160,200,0.12);
         }
         @media (max-width: 767px) {
           .desktop-sider { display: none !important; }
