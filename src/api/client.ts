@@ -515,8 +515,31 @@ export const api = {
     const rows = await pgList<{ log: string | null }>(`task_run?id=eq.${runId}&select=log`);
     return rows[0]?.log ?? null;
   },
-  listConcreteRunsForTask: (taskId: number) =>
-    pgList<ConcreteRunResponse>(`concrete_run?task_id=eq.${taskId}&order=created_at.desc,id.desc`),
+  // Server-paginated concrete runs for one task — a task can have
+  // hundreds/thousands, so the detail table loads a page at a time
+  // instead of pulling them all (and their heavy params JSON) up front.
+  listConcreteRunsPage: async (
+    taskId: number,
+    limit: number,
+    offset: number,
+  ): Promise<{ rows: ConcreteRunResponse[]; total: number }> => {
+    const res = await fetch(
+      `${POSTGREST_URL}/concrete_run?task_id=eq.${taskId}&order=created_at.desc,id.desc&limit=${limit}&offset=${offset}`,
+      { headers: { Accept: "application/json", Prefer: "count=exact" }, cache: "no-store" },
+    );
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const rows = (await res.json()) as ConcreteRunResponse[];
+    const range = res.headers.get("Content-Range");
+    const slash = range?.lastIndexOf("/") ?? -1;
+    const total = slash >= 0 && range ? parseInt(range.slice(slash + 1), 10) : rows.length;
+    return { rows, total: Number.isFinite(total) ? total : rows.length };
+  },
+  // Lightweight per-status counts for the detail cards (status enum only,
+  // no heavy columns) — accurate without loading every concrete row.
+  listConcreteRunStatuses: (taskId: number) =>
+    pgList<{ status: ConcreteRunResponse["status"] }>(
+      `concrete_run?task_id=eq.${taskId}&select=status`,
+    ),
 
   // Executors
   listExecutors: () => pgList<ExecutorResponse>("executor"),

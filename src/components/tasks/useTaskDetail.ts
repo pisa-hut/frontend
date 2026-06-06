@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { usePisaEvents } from "../../api/events";
 import type {
   AvResponse,
-  ConcreteRunResponse,
+  ConcreteRunStatus,
   MonitorResponse,
   PlanResponse,
   SamplerResponse,
@@ -14,7 +14,6 @@ import type {
 
 export interface TaskDetailData {
   task: TaskResponse | null;
-  concretes: ConcreteRunResponse[];
   loading: boolean;
   reload: () => void;
   names: {
@@ -33,7 +32,7 @@ export interface TaskDetailData {
  *  /tasks/:id page and the in-table detail drawer. */
 export function useTaskDetail(taskId: number): TaskDetailData {
   const [task, setTask] = useState<TaskResponse | null>(null);
-  const [concretes, setConcretes] = useState<ConcreteRunResponse[]>([]);
+  const [statuses, setStatuses] = useState<ConcreteRunStatus[]>([]);
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [avs, setAvs] = useState<AvResponse[]>([]);
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
@@ -45,12 +44,12 @@ export function useTaskDetail(taskId: number): TaskDetailData {
     if (!Number.isFinite(taskId)) return;
     setLoading(true);
     try {
-      const [taskRow, concreteRows] = await Promise.all([
+      const [taskRow, statusRows] = await Promise.all([
         api.getTask(taskId),
-        api.listConcreteRunsForTask(taskId),
+        api.listConcreteRunStatuses(taskId),
       ]);
       setTask(taskRow);
-      setConcretes(concreteRows);
+      setStatuses(statusRows.map((r) => r.status));
     } finally {
       setLoading(false);
     }
@@ -58,7 +57,7 @@ export function useTaskDetail(taskId: number): TaskDetailData {
 
   useEffect(() => {
     setTask(null);
-    setConcretes([]);
+    setStatuses([]);
     reload();
   }, [reload]);
 
@@ -114,9 +113,9 @@ export function useTaskDetail(taskId: number): TaskDetailData {
 
   const counts = useMemo(() => {
     const out = { finished: 0, failed: 0, aborted: 0, skipped: 0 };
-    for (const row of concretes) out[row.status] += 1;
+    for (const s of statuses) out[s] += 1;
     return out;
-  }, [concretes]);
+  }, [statuses]);
 
-  return { task, concretes, loading, reload, names, currentPlan, counts };
+  return { task, loading, reload, names, currentPlan, counts };
 }
