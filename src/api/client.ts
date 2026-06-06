@@ -21,6 +21,12 @@ import type {
 const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
 const MANAGER_URL = import.meta.env.VITE_MANAGER_URL ?? "/manager";
 
+// Columns the client-side task store loads per row: every task field plus
+// the latest task_run. Enough to render every table column; plan tags /
+// names are joined client-side from the separate plan fetch.
+const TASK_ROW_SELECT =
+  "*,task_run(id,task_id,executor_id,attempt,task_run_status,started_at,finished_at,error_message,finished_concrete_runs,aborted_concrete_runs,skipped_concrete_runs)";
+
 // PostgREST helpers
 
 async function pgList<T>(table: string): Promise<T[]> {
@@ -363,6 +369,62 @@ export const api = {
     const slash = range?.lastIndexOf("/") ?? -1;
     const total = slash >= 0 && range ? parseInt(range.slice(slash + 1), 10) : rows.length;
     return { rows, total: Number.isFinite(total) ? total : rows.length };
+  },
+  // Client-side task store (src/stores/taskStore.ts): the whole task set
+  // is loaded once and kept live via SSE so the table filters/sorts/
+  // scrolls entirely in-memory. Chunked so the first page paints fast.
+  fetchTaskRowsChunk: async (
+    offset: number,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<{ rows: TaskResponse[]; total: number }> => {
+    const p = new URLSearchParams();
+    p.set("select", TASK_ROW_SELECT);
+    p.set("task_run.order", "attempt.desc");
+    p.set("task_run.limit", "1");
+    p.set("order", "id.desc");
+    p.set("limit", String(limit));
+    p.set("offset", String(offset));
+    const res = await fetch(`${POSTGREST_URL}/task?${p}`, {
+      headers: { Accept: "application/json", Prefer: "count=exact" },
+      signal,
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const rows = (await res.json()) as TaskResponse[];
+    const range = res.headers.get("Content-Range");
+    const slash = range?.lastIndexOf("/") ?? -1;
+    const total = slash >= 0 && range ? parseInt(range.slice(slash + 1), 10) : rows.length;
+    return { rows, total: Number.isFinite(total) ? total : rows.length };
+  },
+  // Refetch specific tasks by id — SSE row events carry only {table, op,
+  // id}, so a changed row's new values must be pulled to patch the store.
+  fetchTaskRowsByIds: async (ids: number[]): Promise<TaskResponse[]> => {
+    if (ids.length === 0) return [];
+    const p = new URLSearchParams();
+    p.set("select", TASK_ROW_SELECT);
+    p.set("task_run.order", "attempt.desc");
+    p.set("task_run.limit", "1");
+    p.set("id", `in.(${ids.join(",")})`);
+    const res = await fetch(`${POSTGREST_URL}/task?${p}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return (await res.json()) as TaskResponse[];
+  },
+  // SSE task_run row events carry the run id, not the parent task id;
+  // resolve a batch of run ids to their task ids so the store can patch
+  // the right task rows.
+  fetchTaskIdsForRuns: async (runIds: number[]): Promise<number[]> => {
+    if (runIds.length === 0) return [];
+    const res = await fetch(
+      `${POSTGREST_URL}/task_run?select=task_id&id=in.(${runIds.join(",")})`,
+      { headers: { Accept: "application/json" }, cache: "no-store" },
+    );
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const rows = (await res.json()) as { task_id: number }[];
+    return [...new Set(rows.map((r) => r.task_id))];
   },
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
