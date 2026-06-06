@@ -272,11 +272,9 @@ export const api = {
   renamePlanTag: (from: string, to: string) =>
     managerPost<{ plans_updated: number }>("/plan/tag/rename", { from, to }),
   /** Global tag priority ranking, ordered (position 0 = highest). */
-  getTagPriority: () =>
-    managerGetJson<{ tag: string; position: number }[]>("/tag/priority"),
+  getTagPriority: () => managerGetJson<{ tag: string; position: number }[]>("/tag/priority"),
   /** Replace the whole ranking; `tags[i]` becomes position i. */
-  setTagPriority: (tags: string[]) =>
-    managerPutJson<{ count: number }>("/tag/priority", { tags }),
+  setTagPriority: (tags: string[]) => managerPutJson<{ count: number }>("/tag/priority", { tags }),
 
   // Tasks
   // Latest task_run fields are embedded so the row-level Log button can

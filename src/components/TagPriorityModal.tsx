@@ -17,10 +17,7 @@ export default function TagPriorityModal({ open, onClose }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [ranking, counts] = await Promise.all([
-        api.getTagPriority(),
-        api.listPlanTagCounts(),
-      ]);
+      const [ranking, counts] = await Promise.all([api.getTagPriority(), api.listPlanTagCounts()]);
       const order = ranking.map((r) => r.tag);
       const allTags = new Set(counts.map((c) => c.name));
       const rankedSet = new Set(order);
@@ -82,8 +79,8 @@ export default function TagPriorityModal({ open, onClose }: Props) {
       width={640}
     >
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        Tasks are scheduled by their plan's highest-ranked tag. Order tags below
-        (top = highest priority). Tasks whose plan has no ranked tag run last.
+        Tasks are scheduled by their plan's highest-ranked tag. Order tags below (top = highest
+        priority). Tasks whose plan has no ranked tag run last.
       </Typography.Paragraph>
 
       <Typography.Text strong>Ranked</Typography.Text>
@@ -140,12 +137,7 @@ export default function TagPriorityModal({ open, onClose }: Props) {
         renderItem={(tag) => (
           <List.Item
             actions={[
-              <Button
-                key="add"
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={() => promote(tag)}
-              >
+              <Button key="add" size="small" icon={<PlusOutlined />} onClick={() => promote(tag)}>
                 Rank
               </Button>,
             ]}
