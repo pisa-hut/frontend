@@ -1,6 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Tag, Button, Card, Dropdown, message, Modal, Typography, Space, Table, Tooltip } from "antd";
+import {
+  Tag,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  message,
+  Modal,
+  Typography,
+  Space,
+  Table,
+  Tooltip,
+} from "antd";
 import type { MenuProps } from "antd";
 import {
   ReloadOutlined,
@@ -54,7 +66,15 @@ const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 // Mirrors the filter-bar's CHIP_STYLE so per-row tag chips and the
 // top-bar tag filter chips share dimensions. Display-only (no toggle).
-const ROW_TAG_STYLE = { padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 } as const;
+const ROW_TAG_STYLE = {
+  padding: "2px 10px",
+  fontSize: 12,
+  marginInlineEnd: 0,
+  maxWidth: 148,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
 
 type SortKey = "id" | "attempt_count" | "last_run_at";
 const VALID_SORT_KEYS: SortKey[] = ["id", "attempt_count", "last_run_at"];
@@ -650,7 +670,7 @@ export default function Tasks() {
         title: "ID",
         dataIndex: "id",
         key: "id",
-        width: 60,
+        width: 84,
         ellipsis: true,
         sorter: true,
         sortOrder: orderFor("id"),
@@ -670,7 +690,7 @@ export default function Tasks() {
         title: "Plan",
         dataIndex: "plan_id",
         key: "plan_id",
-        width: 250,
+        width: 218,
         ellipsis: true,
         render: (id: number) => {
           const name = planMap.get(id) ?? `#${id}`;
@@ -682,7 +702,7 @@ export default function Tasks() {
       {
         title: "Tags",
         key: "plan_tags",
-        width: 180,
+        width: 160,
         render: (_: unknown, r: TaskResponse) => {
           const tags = planTagsMap.get(r.plan_id) ?? [];
           if (tags.length === 0) {
@@ -692,14 +712,16 @@ export default function Tasks() {
               </Typography.Text>
             );
           }
+          // Single line, clipped at the cell — virtual rows need a
+          // uniform height, so tags must never wrap onto a second line.
           return (
-            <Space size={[6, 6]} wrap>
+            <div style={{ display: "flex", gap: 4, overflow: "hidden" }}>
               {tags.map((tag) => (
-                <Tag key={tag} style={ROW_TAG_STYLE}>
+                <Tag key={tag} style={ROW_TAG_STYLE} title={tag}>
                   {tag}
                 </Tag>
               ))}
-            </Space>
+            </div>
           );
         },
       },
@@ -722,7 +744,7 @@ export default function Tasks() {
         title: "Status",
         dataIndex: "task_status",
         key: "task_status",
-        width: 130,
+        width: 124,
         render: (status: TaskStatus, r: TaskResponse) => (
           <Space size={4} wrap>
             <Tag
@@ -761,7 +783,7 @@ export default function Tasks() {
         title: "Attempts",
         dataIndex: "attempt_count",
         key: "attempt_count",
-        width: 80,
+        width: 116,
         sorter: true,
         sortOrder: orderFor("attempt_count"),
         render: (n: number, r: TaskResponse) => {
@@ -814,7 +836,7 @@ export default function Tasks() {
         title: "Last Run",
         key: "last_run_at",
         dataIndex: "last_run_at",
-        width: 130,
+        width: 124,
         sorter: true,
         sortOrder: orderFor("last_run_at"),
         render: (_: unknown, r: TaskResponse) => {
@@ -843,7 +865,8 @@ export default function Tasks() {
       {
         title: "",
         key: "actions",
-        width: 130,
+        width: 56,
+        align: "center" as const,
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
@@ -1075,13 +1098,27 @@ export default function Tasks() {
 
       <Table
         virtual
-        scroll={{ x: 1230, y: tableBodyHeight }}
+        scroll={{ x: 1184, y: tableBodyHeight }}
         dataSource={viewRows}
         columns={columns}
         rowKey="id"
         loading={storeState.status === "loading" && storeRows.length === 0}
         size="small"
         pagination={false}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                storeState.status === "loading"
+                  ? "Loading tasks…"
+                  : hasActiveFilters
+                    ? "No tasks match the current filters"
+                    : "No tasks yet"
+              }
+            />
+          ),
+        }}
         rowSelection={tableRowSelection}
         onChange={tableOnChange}
         footer={() => (
