@@ -17,6 +17,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
+  OrderedListOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -29,6 +30,7 @@ import { useSessionStorageState } from "../hooks/useSessionStorageState";
 
 // Lazy: only opened when the user clicks the "Manage tags" button.
 const TagManagerModal = lazy(() => import("../components/TagManagerModal"));
+const TagPriorityModal = lazy(() => import("../components/TagPriorityModal"));
 import { api } from "../api/client";
 import type { PlanResponse, MapResponse, ScenarioResponse } from "../api/types";
 
@@ -130,6 +132,7 @@ export default function Plans() {
   // plan list so newly-added tags become suggestions for sibling rows.
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [tagPriorityOpen, setTagPriorityOpen] = useState(false);
 
   // Filter state mirrors the Tasks-page conventions: sessionStorage so
   // it survives in-tab refreshes but resets across sessions; tags
@@ -326,6 +329,9 @@ export default function Plans() {
         <Button icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>
           Manage tags
         </Button>
+        <Button icon={<OrderedListOutlined />} onClick={() => setTagPriorityOpen(true)}>
+          Tag Priority
+        </Button>
         <Button icon={<ReloadOutlined />} onClick={load}>
           Refresh
         </Button>
@@ -337,6 +343,7 @@ export default function Plans() {
           onClose={() => setTagManagerOpen(false)}
           onChanged={load}
         />
+        <TagPriorityModal open={tagPriorityOpen} onClose={() => setTagPriorityOpen(false)} />
       </Suspense>
       <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 12 }}>
         <Input
