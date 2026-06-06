@@ -1,49 +1,30 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
+import { Tag, Button, Card, Empty, message, Typography, Space, Table, Tooltip } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
-  CaretRightOutlined,
-  StopOutlined,
   SyncOutlined,
-  FileTextOutlined,
   ClearOutlined,
   ExclamationCircleOutlined,
-  LinkOutlined,
   InboxOutlined,
-  RollbackOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
-import ConfirmIconButton from "../components/ConfirmIconButton";
 import PageHeader from "../components/PageHeader";
 import { matchesTaskFilter, type TaskFilterCriteria } from "./tasksFilter";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
 import { useSessionStorageState } from "../hooks/useSessionStorageState";
 import { api } from "../api/client";
-import { usePisaEvents } from "../api/events";
+import { useTaskStore, useTaskStoreSse, taskStore } from "../stores/taskStore";
 import type {
   TaskResponse,
   TaskStatus,
-  TaskRunResponse,
-  TaskSummary,
-  TasksPageQuery,
   PlanResponse,
   AvResponse,
   SimulatorResponse,
   SamplerResponse,
   MonitorResponse,
-  ExecutorResponse,
 } from "../api/types";
 import { RUNNABLE_TASK_STATUSES } from "../api/types";
 import { TASK_STATUS_TAG_COLOR, TASK_STATUS_LABEL, TASK_STATUS_HEX } from "../constants/status";
@@ -55,8 +36,7 @@ import TasksSelectionBar from "../components/tasks/TasksSelectionBar";
 // icon, the Triage button, etc.) — keep them out of the eager Tasks
 // chunk via React.lazy. `fallback={null}` because their visible
 // behaviour is "open=false → invisible" anyway; nothing to wait for.
-const LogDrawer = lazy(() => import("../components/LogDrawer"));
-const TaskRunsPanel = lazy(() => import("../components/TaskRunsPanel"));
+const TaskDetailDrawer = lazy(() => import("../components/tasks/TaskDetailDrawer"));
 const TriageInvalidModal = lazy(() => import("../components/TriageInvalidModal"));
 const CreateTaskModal = lazy(() => import("../components/tasks/CreateTaskModal"));
 
@@ -65,9 +45,17 @@ const STOPPABLE_STATUSES: TaskStatus[] = ["queued", "running"];
 
 // Mirrors the filter-bar's CHIP_STYLE so per-row tag chips and the
 // top-bar tag filter chips share dimensions. Display-only (no toggle).
-const ROW_TAG_STYLE = { padding: "2px 10px", fontSize: 12, marginInlineEnd: 0 } as const;
+const ROW_TAG_STYLE = {
+  padding: "2px 10px",
+  fontSize: 12,
+  marginInlineEnd: 0,
+  maxWidth: 148,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
 
-type SortKey = TasksPageQuery["sort"]["key"];
+type SortKey = "id" | "attempt_count" | "last_run_at";
 const VALID_SORT_KEYS: SortKey[] = ["id", "attempt_count", "last_run_at"];
 
 function isSortKey(s: string | undefined): s is SortKey {
@@ -83,44 +71,79 @@ function parseIdSet(value: unknown): Set<number> {
   return out;
 }
 
+// Every Tasks filter serializes to a query param so the full filtered
+// view is shareable/bookmarkable and every axis behaves identically.
+// Param names match the table columns + Dashboard deep-links
+// (av_id / simulator_id / sampler_id / monitor_id, status, id, plan, tag).
+function parseFiltersFromUrl(sp: URLSearchParams): {
+  filteredInfo: Record<string, FilterValue | null>;
+  tags: string[];
+  quickFilter: QuickFilter;
+  includeArchived: boolean;
+} {
+  const fi: Record<string, FilterValue | null> = {};
+  const status = sp.get("status");
+  if (status) fi.task_status = status.split(",") as unknown as FilterValue;
+  const numAxis = (key: string) => {
+    const v = sp.get(key);
+    if (!v) return;
+    const arr = v.split(",").map(Number).filter(Number.isFinite);
+    if (arr.length) fi[key] = arr as unknown as FilterValue;
+  };
+  numAxis("av_id");
+  numAxis("simulator_id");
+  numAxis("sampler_id");
+  numAxis("monitor_id");
+  const id = sp.get("id");
+  if (id) fi.id = [id] as unknown as FilterValue;
+  const plan = sp.get("plan");
+  if (plan) fi.plan_id = [plan] as unknown as FilterValue;
+  const tagAll = sp.getAll("tag");
+  const tags = tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
+  const quickFilter: QuickFilter =
+    status && QUICK_FILTERS.some((q) => q.value === status) ? (status as QuickFilter) : "all";
+  return { filteredInfo: fi, tags, quickFilter, includeArchived: sp.get("archived") === "1" };
+}
+
+function serializeFiltersToUrl(
+  filteredInfo: Record<string, FilterValue | null>,
+  tags: string[],
+  includeArchived: boolean,
+): string {
+  const p = new URLSearchParams();
+  const multi = (key: string, v: unknown) => {
+    const a = v as (string | number)[] | null | undefined;
+    if (a && a.length) p.set(key, a.join(","));
+  };
+  multi("status", filteredInfo.task_status);
+  multi("av_id", filteredInfo.av_id);
+  multi("simulator_id", filteredInfo.simulator_id);
+  multi("sampler_id", filteredInfo.sampler_id);
+  multi("monitor_id", filteredInfo.monitor_id);
+  multi("id", filteredInfo.id);
+  const plan = (filteredInfo.plan_id as string[] | undefined)?.[0];
+  if (plan) p.set("plan", String(plan));
+  if (tags.length) p.set("tag", tags.join(","));
+  if (includeArchived) p.set("archived", "1");
+  return p.toString();
+}
+
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const defaultStatusFilter = useMemo(() => {
-    const s = searchParams.get("status");
-    return s ? [s] : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const defaultQuickFilter: QuickFilter = useMemo(() => {
-    const s = searchParams.get("status");
-    if (s && QUICK_FILTERS.some((q) => q.value === s)) return s as QuickFilter;
-    return "all";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // `?id=123` or `?id=123,456` scopes the table to specific task ids.
-  // Drives the same `filteredInfo.id` chip the column search produces,
-  // so the existing server query path works untouched. Empty string in
-  // the URL is treated as "no id filter".
-  const defaultIdFilter = useMemo(() => {
-    const raw = searchParams.get("id");
-    return raw ? [raw] : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Initial filter state parsed from the URL once (it seeds the
+  // session-backed state below; the effects further down keep URL and
+  // state in sync, with the URL winning on external navigation).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const urlInit = useMemo(() => parseFiltersFromUrl(searchParams), []);
 
-  // Server-paginated rows for the Table; full-row TaskResponse with task_run.
-  const [pageRows, setPageRows] = useState<TaskResponse[]>([]);
-  const [pageTotal, setPageTotal] = useState(0);
-  // Loading overlay only shows on the very first fetch. Subsequent
-  // refetches keep the previous page visible until the new one
-  // arrives — flips of the spinner overlay on every SSE event were
-  // their own forced-reflow source.
-  const [initialLoad, setInitialLoad] = useState(true);
-  // Lightweight all-rows summary for chip counts and "select-all-filtered".
-  const [summaries, setSummaries] = useState<TaskSummary[]>([]);
+  // The full task set lives in a client-side store, loaded once (chunked)
+  // and kept live via SSE row events. The table filters/sorts/scrolls
+  // entirely in-memory, so a chip toggle or sort does zero network and
+  // re-renders only the virtualized window.
+  const { rows: storeRows, state: storeState } = useTaskStore();
+  useTaskStoreSse();
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [expandedRows, setExpandedRows] = useState<React.Key[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useLocalStorageState("tasks.pageSize", 20);
   // Filter state lives in sessionStorage so it survives in-tab
   // refreshes during an investigation but resets when the tab/browser
   // closes — yesterday's filter ghosts no longer reappear on the
@@ -128,7 +151,7 @@ export default function Tasks() {
   // in localStorage.
   const [quickFilter, setQuickFilterRaw] = useSessionStorageState<QuickFilter>(
     "tasks.quickFilter",
-    defaultQuickFilter,
+    urlInit.quickFilter,
   );
 
   // One-shot localStorage cleanup of orphaned keys for removed
@@ -152,32 +175,14 @@ export default function Tasks() {
     }
   }, []);
 
-  const defaultTagFilter = useMemo(() => {
-    const all = searchParams.getAll("tag");
-    if (all.length > 1) return all;
-    const single = all[0];
-    return single ? single.split(",").filter(Boolean) : [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const [tagFilter, setTagFilterRaw] = useSessionStorageState<string[]>(
     "tasks.tagFilter",
-    defaultTagFilter,
-  );
-  // On first visit to a tab, we pre-select every available tag so the
-  // table starts filtered to "tagged tasks only" (the new default). The
-  // initialised flag persists in sessionStorage so a user who explicitly
-  // clears the filter doesn't get it re-filled on the next in-tab refresh.
-  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
-    "tasks.tagFilterInitialised",
-    defaultTagFilter.length > 0,
+    urlInit.tags,
   );
 
   const [filteredInfo, setFilteredInfo] = useSessionStorageState<
     Record<string, FilterValue | null>
-  >("tasks.filteredInfo", {
-    task_status: defaultStatusFilter ?? null,
-    ...(defaultIdFilter ? { id: defaultIdFilter as FilterValue } : {}),
-  });
+  >("tasks.filteredInfo", urlInit.filteredInfo);
   // Sort is restricted to server-sortable columns (id, attempt_count,
   // last_run_at). The latter is the denormalised column added in
   // manager m20260516 — kept fresh by a trigger on task_run.
@@ -191,26 +196,9 @@ export default function Tasks() {
   // the way until the user opts in. SessionStorage so the choice
   // sticks across in-tab navigation but resets next session, same as
   // the other filter knobs.
-  const defaultIncludeArchived = useMemo(() => {
-    return searchParams.get("archived") === "1";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [includeArchived, setIncludeArchivedRaw] = useSessionStorageState<boolean>(
+  const [includeArchived, setIncludeArchived] = useSessionStorageState<boolean>(
     "tasks.includeArchived",
-    defaultIncludeArchived,
-  );
-  const setIncludeArchived = useCallback(
-    (next: boolean) => {
-      setIncludeArchivedRaw(next);
-      setCurrentPage(1);
-      setSearchParams((prev) => {
-        const out = new URLSearchParams(prev);
-        if (next) out.set("archived", "1");
-        else out.delete("archived");
-        return out;
-      });
-    },
-    [setIncludeArchivedRaw, setSearchParams],
+    urlInit.includeArchived,
   );
   const hasActiveFilters = useMemo(
     () =>
@@ -218,144 +206,72 @@ export default function Tasks() {
     [filteredInfo, tagFilter],
   );
 
-  // Defer chip-input state for any expensive client work that still
-  // reads from filteredInfo/tagFilter (the column dropdown highlights
-  // and sortable column header). The query that drives the server
-  // fetch reads the LIVE state so no extra paint happens between the
-  // chip flip and the new page rendering.
-  const deferredFilteredInfo = useDeferredValue(filteredInfo);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filteredInfo, tagFilter, quickFilter]);
-
   const clearFilters = useCallback(() => {
     setFilteredInfo({});
     setQuickFilterRaw("all");
     setTagFilterRaw([]);
-    setTagFilterInitialised(true);
-    setSearchParams({});
-  }, [
-    setFilteredInfo,
-    setQuickFilterRaw,
-    setTagFilterRaw,
-    setTagFilterInitialised,
-    setSearchParams,
-  ]);
+  }, [setFilteredInfo, setQuickFilterRaw, setTagFilterRaw]);
 
-  const setTagFilter = useCallback(
-    (next: string[]) => {
-      setTagFilterRaw(next);
-      setTagFilterInitialised(true);
-      setSearchParams((prev) => {
-        const out = new URLSearchParams(prev);
-        out.delete("tag");
-        if (next.length > 0) out.set("tag", next.join(","));
-        return out;
-      });
-    },
-    [setTagFilterRaw, setTagFilterInitialised, setSearchParams],
-  );
+  const setTagFilter = useCallback((next: string[]) => setTagFilterRaw(next), [setTagFilterRaw]);
 
   const setQuickFilter = useCallback(
     (q: QuickFilter) => {
       setQuickFilterRaw(q);
-      setFilteredInfo(() => ({
+      // Merge — changing the status chip keeps the other active filters
+      // (av/sim/sampler/tag) rather than wiping them.
+      setFilteredInfo((prev) => ({
+        ...prev,
         task_status: q === "all" ? null : ([q] as FilterValue),
       }));
-      if (q === "all") setSearchParams({});
-      else setSearchParams({ status: q });
     },
-    [setQuickFilterRaw, setFilteredInfo, setSearchParams],
+    [setQuickFilterRaw, setFilteredInfo],
   );
 
-  // URL → state sync after mount.
+  // ---- Unified URL <-> filter sync ----
+  // Every filter axis lives in the query string, so the full filtered
+  // view is shareable/bookmarkable and all axes behave identically.
+  //   syncedUrl   — last query string we reconciled (ignore our own writes)
+  //   appliedFromUrl — set when we just pushed URL→state, so the write
+  //                    effect skips the one render where state hasn't
+  //                    caught up yet (prevents it stripping the URL).
+  const syncedUrl = useRef<string | null>(null);
+  const appliedFromUrl = useRef(false);
+
+  // URL -> state (initial load, shared link, back/forward). A non-empty
+  // URL is authoritative and replaces the filter state; an empty URL on
+  // first mount is ignored so it doesn't wipe restored session filters.
   useEffect(() => {
-    const s = searchParams.get("status");
-    if (s && QUICK_FILTERS.some((q) => q.value === s) && s !== quickFilter) {
-      setQuickFilter(s as QuickFilter);
-    }
-    const tagAll = searchParams.getAll("tag");
-    const tagsFromUrl =
-      tagAll.length > 1 ? tagAll : tagAll[0] ? tagAll[0].split(",").filter(Boolean) : [];
-    if (tagsFromUrl.length > 0 && tagsFromUrl.join(",") !== tagFilter.join(",")) {
-      setTagFilterRaw(tagsFromUrl);
-      setTagFilterInitialised(true);
-    }
-    // `?id=` overrides any cached filteredInfo.id from localStorage so a
-    // shared link always lands on the linked task, regardless of what
-    // the recipient's table state was. Also auto-expand the linked rows
-    // so the attempts panel is immediately visible.
-    const idRaw = searchParams.get("id");
-    if (idRaw != null) {
-      const cellValue = idRaw.trim();
-      const cached = (filteredInfo.id as (string | number)[] | undefined) ?? [];
-      if (cellValue && (cached.length !== 1 || String(cached[0]) !== cellValue)) {
-        setFilteredInfo((prev) => ({ ...prev, id: [cellValue] as FilterValue }));
-      }
-      const ids = parseIdSet(cellValue);
-      if (ids.size > 0) {
-        setExpandedRows((prev) => {
-          const next = new Set<React.Key>(prev);
-          for (const n of ids) next.add(n);
-          return [...next];
-        });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+    const cur = searchParams.toString();
+    if (cur === syncedUrl.current) return; // our own write
+    const initialEmpty = syncedUrl.current === null && cur === "";
+    syncedUrl.current = cur;
+    if (initialEmpty) return;
+    const parsed = parseFiltersFromUrl(searchParams);
+    appliedFromUrl.current = true;
+    setFilteredInfo(parsed.filteredInfo);
+    setTagFilterRaw(parsed.tags);
+    setQuickFilterRaw(parsed.quickFilter);
+    setIncludeArchived(parsed.includeArchived);
+  }, [searchParams, setFilteredInfo, setTagFilterRaw, setQuickFilterRaw, setIncludeArchived]);
 
-  // Log drawer
-  const [logRun, setLogRun] = useState<TaskRunResponse | null>(null);
-  const [logExecutorOverride, setLogExecutorOverride] = useState<ExecutorResponse | undefined>();
-  const [executorsById, setExecutorsById] = useState<Map<number, ExecutorResponse>>(new Map());
-  const logExecutor = useMemo(() => {
-    if (logExecutorOverride) return logExecutorOverride;
-    if (!logRun) return undefined;
-    return executorsById.get(logRun.executor_id);
-  }, [executorsById, logExecutorOverride, logRun]);
-
-  const openLog = useCallback((run: TaskRunResponse, executor?: ExecutorResponse) => {
-    setLogRun(run);
-    setLogExecutorOverride(executor);
-  }, []);
-
-  const prevExpandedRef = useRef<Set<number>>(new Set());
-  const [expansionCounts, setExpansionCounts] = useState<Map<number, number>>(new Map());
-  const handleExpandedChange = useCallback((keys: React.Key[]) => {
-    const next = new Set(keys.map(Number));
-    const added: number[] = [];
-    for (const k of next) {
-      if (!prevExpandedRef.current.has(k)) added.push(k);
+  // state -> URL (replace, so filter churn doesn't spam history).
+  useEffect(() => {
+    if (appliedFromUrl.current) {
+      appliedFromUrl.current = false; // this change came from the URL; don't echo it back
+      return;
     }
-    prevExpandedRef.current = next;
-    if (added.length > 0) {
-      setExpansionCounts((counts) => {
-        const out = new Map(counts);
-        for (const k of added) out.set(k, (out.get(k) ?? 0) + 1);
-        return out;
-      });
+    const next = serializeFiltersToUrl(filteredInfo, tagFilter, includeArchived);
+    if (next === searchParams.toString()) {
+      syncedUrl.current = next;
+      return;
     }
-    setExpandedRows(keys);
-  }, []);
+    syncedUrl.current = next;
+    setSearchParams(new URLSearchParams(next), { replace: true });
+  }, [filteredInfo, tagFilter, includeArchived, searchParams, setSearchParams]);
 
-  const toggleExpanded = useCallback(
-    (id: number) => {
-      setExpandedRows((prev) => {
-        const has = prev.includes(id);
-        const next = has ? prev.filter((k) => k !== id) : [...prev, id];
-        if (!has) {
-          setExpansionCounts((counts) => {
-            const out = new Map(counts);
-            out.set(id, (out.get(id) ?? 0) + 1);
-            return out;
-          });
-        }
-        return next;
-      });
-    },
-    [setExpandedRows, setExpansionCounts],
-  );
+  // Clicking a row opens the task detail drawer (the action hub + log
+  // access). The /tasks/:id page stays for deep links.
+  const [detailTaskId, setDetailTaskId] = useState<number | null>(null);
 
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [triageOpen, setTriageOpen] = useState(false);
@@ -365,152 +281,6 @@ export default function Tasks() {
   const [simulators, setSimulators] = useState<SimulatorResponse[]>([]);
   const [samplers, setSamplers] = useState<SamplerResponse[]>([]);
   const [monitors, setMonitors] = useState<MonitorResponse[]>([]);
-
-  // --- Build the server-side query from chip + sort + page state. ---
-
-  const query: TasksPageQuery = useMemo(() => {
-    const status = (filteredInfo.task_status as string[] | undefined)?.filter(Boolean) as
-      | TaskStatus[]
-      | undefined;
-    const avIds = (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number);
-    const simIds = (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number);
-    const samplerIds = (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number);
-    const monitorIds = (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number);
-    let ids: number[] | undefined;
-    const idVals = filteredInfo.id as (string | number)[] | undefined;
-    if (idVals?.length) {
-      const set = new Set<number>();
-      for (const v of idVals) for (const n of parseIdSet(v)) set.add(n);
-      ids = [...set];
-    }
-    const planSearch = (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString() || undefined;
-    const sortKey: SortKey = isSortKey(sortedInfo.key) ? sortedInfo.key : "id";
-    const sortOrder = sortedInfo.order === "ascend" ? "asc" : "desc";
-    return {
-      page: currentPage,
-      pageSize,
-      sort: { key: sortKey, order: sortOrder },
-      status,
-      avIds,
-      simIds,
-      samplerIds,
-      monitorIds,
-      tags: tagFilter.length > 0 ? tagFilter : undefined,
-      ids,
-      planSearch,
-      includeArchived,
-    };
-  }, [filteredInfo, sortedInfo, currentPage, pageSize, tagFilter, includeArchived]);
-
-  // --- Data loading ---
-
-  const summariesPromiseRef = useRef<Promise<unknown> | null>(null);
-  const loadSummaries = useCallback(() => {
-    if (summariesPromiseRef.current) return summariesPromiseRef.current;
-    const p = api
-      .listTaskSummaries(includeArchived)
-      .then((rows) => setSummaries(rows))
-      .finally(() => {
-        summariesPromiseRef.current = null;
-      });
-    summariesPromiseRef.current = p;
-    return p;
-  }, [includeArchived]);
-
-  // Fetch the current page whenever the query changes. AbortController
-  // cancels in-flight fetches when the user clicks chips quickly so a
-  // stale slow response can't overwrite the latest.
-  const pageAbortRef = useRef<AbortController | null>(null);
-  const loadPage = useCallback(async () => {
-    pageAbortRef.current?.abort();
-    const ctl = new AbortController();
-    pageAbortRef.current = ctl;
-    try {
-      const { rows, total } = await api.listTasksPage({ ...query, signal: ctl.signal });
-      setPageRows(rows);
-      setPageTotal(total);
-    } catch (e) {
-      if ((e as { name?: string }).name === "AbortError") return;
-      message.error(String(e));
-    } finally {
-      if (pageAbortRef.current === ctl) {
-        setInitialLoad(false);
-      }
-    }
-  }, [query]);
-
-  useEffect(() => {
-    loadPage();
-  }, [loadPage]);
-  useEffect(() => {
-    loadSummaries();
-  }, [loadSummaries]);
-
-  // SSE-driven refetch is split across two cadences:
-  //   - page refetch every 750ms — keeps Last Run / Status / Attempts
-  //     for the 20 visible rows current enough to feel "live".
-  //   - summaries refetch every 5s — chip count badges drift slowly
-  //     so a few seconds of staleness isn't user-visible.
-  //
-  // Hold the fetchers in refs so the setTimeout always invokes the
-  // *latest* version, not the closure that existed when the timer was
-  // scheduled. Without this, a timer scheduled while currentPage=1
-  // would later fire with the stale `loadPage` (still parameterised
-  // for page 1) and overwrite the page-2 rows the user just navigated
-  // to. Refs decouple "when the timer fires" from "what state the
-  // fetcher closed over".
-  const loadPageRef = useRef(loadPage);
-  const loadSummariesRef = useRef(loadSummaries);
-  useEffect(() => {
-    loadPageRef.current = loadPage;
-  }, [loadPage]);
-  useEffect(() => {
-    loadSummariesRef.current = loadSummaries;
-  }, [loadSummaries]);
-  const pageRefetchTimer = useRef<number | null>(null);
-  const summariesRefetchTimer = useRef<number | null>(null);
-  const scheduleRefetch = useCallback(() => {
-    if (pageRefetchTimer.current === null) {
-      pageRefetchTimer.current = window.setTimeout(() => {
-        pageRefetchTimer.current = null;
-        loadPageRef.current();
-      }, 750);
-    }
-    if (summariesRefetchTimer.current === null) {
-      summariesRefetchTimer.current = window.setTimeout(() => {
-        summariesRefetchTimer.current = null;
-        loadSummariesRef.current();
-      }, 5000);
-    }
-  }, []);
-  // Narrow at the dispatcher: this listener only ever cares about row
-  // events for the two relevant tables. With many parallel task_runs
-  // emitting log chunks the broadcast volume is dominated by `log`
-  // events that this page would otherwise wake for and immediately
-  // discard.
-  usePisaEvents(
-    useCallback(
-      (ev) => {
-        if (ev.kind !== "row") return;
-        if (ev.row.table === "task" || ev.row.table === "task_run") scheduleRefetch();
-      },
-      [scheduleRefetch],
-    ),
-    useMemo(() => ({ kinds: ["row"] as const, rowTables: ["task", "task_run"] as const }), []),
-  );
-  useEffect(() => {
-    return () => {
-      if (pageRefetchTimer.current !== null) {
-        window.clearTimeout(pageRefetchTimer.current);
-        pageRefetchTimer.current = null;
-      }
-      if (summariesRefetchTimer.current !== null) {
-        window.clearTimeout(summariesRefetchTimer.current);
-        summariesRefetchTimer.current = null;
-      }
-      pageAbortRef.current?.abort();
-    };
-  }, []);
 
   const fetchResources = () =>
     Promise.all([
@@ -531,14 +301,65 @@ export default function Tasks() {
     fetchResources();
   }, []);
 
-  useEffect(() => {
-    api.listExecutors().then((all) => {
-      setExecutorsById(new Map(all.map((e) => [e.id, e])));
-    });
-  }, []);
-
   const planMap = useMemo(() => new Map(plans.map((p) => [p.id, p.name])), [plans]);
   const planTagsMap = useMemo(() => new Map(plans.map((p) => [p.id, p.tags ?? []])), [plans]);
+
+  // --- Client-side view derived from the in-memory store ---
+
+  // Active filter as a TaskFilterCriteria (shared by the table view, the
+  // chip counts, and select-all). Built from the same filteredInfo +
+  // tagFilter that the chips/column-search drive.
+  const criteria: TaskFilterCriteria = useMemo(() => {
+    const status = (filteredInfo.task_status as string[] | undefined)?.filter(Boolean) as
+      | TaskStatus[]
+      | undefined;
+    let ids: Set<number> | undefined;
+    const idVals = filteredInfo.id as (string | number)[] | undefined;
+    if (idVals?.length) {
+      ids = new Set<number>();
+      for (const v of idVals) for (const n of parseIdSet(v)) ids.add(n);
+    }
+    return {
+      status,
+      avIds: (filteredInfo.av_id as (number | string)[] | undefined)?.map(Number),
+      simIds: (filteredInfo.simulator_id as (number | string)[] | undefined)?.map(Number),
+      samplerIds: (filteredInfo.sampler_id as (number | string)[] | undefined)?.map(Number),
+      monitorIds: (filteredInfo.monitor_id as (number | string)[] | undefined)?.map(Number),
+      ids,
+      tags: tagFilter.length > 0 ? new Set(tagFilter) : undefined,
+      planSearch:
+        (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString().toLowerCase() || undefined,
+    };
+  }, [filteredInfo, tagFilter]);
+
+  // Archived rows are hidden unless "Show archived" is on. Applied once
+  // here so chip counts, select-all, and the table share one base set.
+  const baseRows = useMemo(
+    () => (includeArchived ? storeRows : storeRows.filter((r) => !r.archived)),
+    [storeRows, includeArchived],
+  );
+
+  // The visible rows: filtered + sorted entirely in memory, so a chip
+  // toggle or sort recomputes this and the virtual Table re-renders only
+  // its window — no network.
+  const viewRows = useMemo(() => {
+    const filtered = baseRows.filter((t) => matchesTaskFilter(t, criteria, planTagsMap, planMap));
+    const key: SortKey = isSortKey(sortedInfo.key) ? sortedInfo.key : "last_run_at";
+    const dir = sortedInfo.order === "ascend" ? 1 : -1;
+    const cmp = (a: TaskResponse, b: TaskResponse): number => {
+      if (key === "id") return (a.id - b.id) * dir;
+      if (key === "attempt_count") return (a.attempt_count - b.attempt_count) * dir || a.id - b.id;
+      // last_run_at: nulls always sort last regardless of direction.
+      const av = a.last_run_at;
+      const bv = b.last_run_at;
+      if (av == null && bv == null) return b.id - a.id;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const d = av < bv ? -1 : av > bv ? 1 : 0;
+      return d * dir || b.id - a.id;
+    };
+    return [...filtered].sort(cmp);
+  }, [baseRows, criteria, sortedInfo, planTagsMap, planMap]);
 
   // Invalid task ids inside the active page filter. Reuses the table's
   // own filter predicate but pins task_status to "invalid", so the
@@ -565,8 +386,8 @@ export default function Tasks() {
       planSearch:
         (filteredInfo.plan_id as string[] | undefined)?.[0]?.toString().toLowerCase() || undefined,
     };
-    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
-  }, [summaries, filteredInfo, tagFilter, planTagsMap, planMap]);
+    return baseRows.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
+  }, [baseRows, filteredInfo, tagFilter, planTagsMap, planMap]);
 
   // Short human description of the active scope, fed to the Triage
   // modal title so the user can see WHY the count differs from the
@@ -590,42 +411,45 @@ export default function Tasks() {
     return bits.join(" · ");
   }, [tagFilter, filteredInfo]);
 
-  // Summaries scoped to the active tag filter. The status chips and
-  // the av/sim/sampler/monitor axis counts read from this so the
-  // displayed numbers match what the table is actually showing after
-  // the tag filter is applied server-side. Tag chips themselves stay
-  // on the unscoped `summaries` so other tags remain navigable.
-  const tagScopedSummaries = useMemo(() => {
-    if (tagFilter.length === 0) return summaries;
-    const want = new Set(tagFilter);
-    return summaries.filter((t) => {
-      const tags = planTagsMap.get(t.plan_id) ?? [];
-      return tags.some((x) => want.has(x));
-    });
-  }, [summaries, tagFilter, planTagsMap]);
-
-  // Per-axis chip counts. AV/Sim/Sampler/Monitor counts come from the
-  // tag-scoped slice so the chip number tracks the table. Tag counts
-  // come from the unscoped summaries so picking tag A doesn't blank
-  // out the count next to tag B.
+  // Faceted chip counts: each axis's count reflects every OTHER active
+  // filter but ignores that axis's own selection. So picking AV-1 leaves
+  // AV-2's count intact (same axis excluded), while picking a tag still
+  // narrows the AV counts (different axis). Every filter row — tags and
+  // av/sim/sampler/monitor — follows the identical rule.
   const filterCounts = useMemo(() => {
     const av = new Map<number, number>();
     const sim = new Map<number, number>();
     const sampler = new Map<number, number>();
     const monitor = new Map<number, number>();
     const tag = new Map<string, number>();
-    for (const t of tagScopedSummaries) {
-      av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
-      sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
-      sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
-      if (t.monitor_id != null) monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
-    }
-    for (const t of summaries) {
-      const tags = planTagsMap.get(t.plan_id) ?? [];
-      for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
+    const cAv = { ...criteria, avIds: undefined };
+    const cSim = { ...criteria, simIds: undefined };
+    const cSampler = { ...criteria, samplerIds: undefined };
+    const cMonitor = { ...criteria, monitorIds: undefined };
+    const cTag = { ...criteria, tags: undefined };
+    for (const t of baseRows) {
+      if (matchesTaskFilter(t, cAv, planTagsMap, planMap))
+        av.set(t.av_id, (av.get(t.av_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cSim, planTagsMap, planMap))
+        sim.set(t.simulator_id, (sim.get(t.simulator_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cSampler, planTagsMap, planMap))
+        sampler.set(t.sampler_id, (sampler.get(t.sampler_id) ?? 0) + 1);
+      if (t.monitor_id != null && matchesTaskFilter(t, cMonitor, planTagsMap, planMap))
+        monitor.set(t.monitor_id, (monitor.get(t.monitor_id) ?? 0) + 1);
+      if (matchesTaskFilter(t, cTag, planTagsMap, planMap)) {
+        const tags = planTagsMap.get(t.plan_id) ?? [];
+        for (const tn of tags) tag.set(tn, (tag.get(tn) ?? 0) + 1);
+      }
     }
     return { av_id: av, simulator_id: sim, sampler_id: sampler, monitor_id: monitor, tag };
-  }, [summaries, tagScopedSummaries, planTagsMap]);
+  }, [baseRows, criteria, planTagsMap, planMap]);
+
+  // Status quick-filter counts use the same faceted rule (every active
+  // filter except the status axis itself).
+  const statusFacetRows = useMemo(() => {
+    const c = { ...criteria, status: undefined };
+    return baseRows.filter((t) => matchesTaskFilter(t, c, planTagsMap, planMap));
+  }, [baseRows, criteria, planTagsMap, planMap]);
   const tagCounts = useMemo(
     () =>
       [...filterCounts.tag.entries()].sort((a, b) =>
@@ -638,120 +462,32 @@ export default function Tasks() {
   const simMap = useMemo(() => new Map(simulators.map((s) => [s.id, s.name])), [simulators]);
   const samplerMap = useMemo(() => new Map(samplers.map((s) => [s.id, s.name])), [samplers]);
 
-  // Default-all-tags: once the plan/tag list has loaded for the first
-  // time, pre-select every tag so the table starts scoped to "tagged
-  // tasks only". Skipped when the URL or sessionStorage already
-  // provided a selection (`tagFilterInitialised`).
-  useEffect(() => {
-    if (tagFilterInitialised) return;
-    if (availableTagNames.length === 0) return;
-    setTagFilterRaw(availableTagNames);
-    setTagFilterInitialised(true);
-  }, [tagFilterInitialised, availableTagNames, setTagFilterRaw, setTagFilterInitialised]);
-
-  const logTask = useMemo(
-    () => (logRun ? pageRows.find((t) => t.id === logRun.task_id) : undefined),
-    [logRun, pageRows],
-  );
-  const logTaskLabel = useMemo(
-    () => (logTask ? planMap.get(logTask.plan_id) : undefined),
-    [logTask, planMap],
-  );
-
   // For the selection bar's runnable/stoppable counts and "select all
-  // filtered" computation, we need a status lookup that spans pages.
-  // Summaries cover every task; build a quick id→status map.
+  // filtered" computation, we need a status lookup that spans every row.
   const statusById = useMemo(() => {
     const m = new Map<number, TaskStatus>();
-    for (const s of summaries) m.set(s.id, s.task_status);
+    for (const s of baseRows) m.set(s.id, s.task_status);
     return m;
-  }, [summaries]);
+  }, [baseRows]);
 
   const archivedById = useMemo(() => {
     const m = new Map<number, boolean>();
-    for (const s of summaries) m.set(s.id, s.archived);
+    for (const s of baseRows) m.set(s.id, s.archived);
     return m;
-  }, [summaries]);
+  }, [baseRows]);
 
-  // IDs that match the current chip filter set, derived from
-  // summaries (so it's the FULL filtered set, not just current page).
-  const filteredSummaryIds = useMemo(() => {
-    const f: TaskFilterCriteria = {
-      status: query.status,
-      avIds: query.avIds,
-      simIds: query.simIds,
-      samplerIds: query.samplerIds,
-      monitorIds: query.monitorIds,
-      ids: query.ids ? new Set(query.ids) : undefined,
-      tags: query.tags ? new Set(query.tags) : undefined,
-      planSearch: query.planSearch?.toLowerCase(),
-    };
-    return summaries.filter((t) => matchesTaskFilter(t, f, planTagsMap, planMap)).map((t) => t.id);
-  }, [summaries, query, planTagsMap, planMap]);
+  // IDs matching the current chip filter set (the FULL filtered set, not
+  // just the visible window) — drives "select all filtered".
+  const filteredSummaryIds = useMemo(
+    () =>
+      baseRows.filter((t) => matchesTaskFilter(t, criteria, planTagsMap, planMap)).map((t) => t.id),
+    [baseRows, criteria, planTagsMap, planMap],
+  );
 
   // --- Actions ---
-
-  const handleRun = useCallback(
-    async (id: number) => {
-      try {
-        // Priority is derived from the plan's tag ranking by the DB; the
-        // frontend only flips status to queued (the trigger stamps queued_at).
-        await api.updateTask(id, { task_status: "queued" });
-        message.success(`Task #${id} queued`);
-        loadPage();
-        loadSummaries();
-      } catch (e) {
-        message.error(String(e));
-      }
-    },
-    [loadPage, loadSummaries],
-  );
-
-  const handleStop = useCallback(
-    async (id: number) => {
-      try {
-        await api.stopTask(id);
-        message.success(`Task #${id} stopped`);
-        loadPage();
-        loadSummaries();
-      } catch (e) {
-        message.error(String(e));
-      }
-    },
-    [loadPage, loadSummaries],
-  );
-
-  const handleArchive = useCallback(
-    async (id: number, archived: boolean) => {
-      try {
-        if (archived) {
-          await api.unarchiveTask(id);
-          message.success(`Task #${id} unarchived`);
-        } else {
-          await api.archiveTask(id);
-          message.success(`Task #${id} archived`);
-        }
-        loadPage();
-        loadSummaries();
-      } catch (e) {
-        message.error(String(e));
-      }
-    },
-    [loadPage, loadSummaries],
-  );
-
-  // The task detail route is now the canonical share target. Same
-  // origin works in dev, staging, and prod without configuration.
-  // Falls back to a manual prompt if Clipboard is blocked.
-  const copyTaskLink = useCallback((id: number) => {
-    const url = `${window.location.origin}/tasks/${id}`;
-    const done = () => message.success(`Link to task #${id} copied`);
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link:", url));
-    } else {
-      window.prompt("Copy this link:", url);
-    }
-  }, []);
+  // Single-task actions (Run/Stop/Archive/Copy-link) live in the task
+  // detail drawer/page now (TaskActions). The table keeps only bulk
+  // actions plus row-click to open the detail drawer.
 
   const handleBulkRun = async () => {
     const ids = (selectedRowKeys as number[]).filter((id) =>
@@ -764,8 +500,7 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    loadPage();
-    loadSummaries();
+    taskStore.patchTaskIds(ids);
   };
 
   const handleBulkStop = async () => {
@@ -780,20 +515,19 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    loadPage();
-    loadSummaries();
+    taskStore.patchTaskIds(ids);
   };
 
   const handleBulkDelete = async () => {
+    const ids = selectedRowKeys as number[];
     try {
-      await api.batchDeleteTasks(selectedRowKeys as number[]);
-      message.success(`Deleted ${selectedRowKeys.length} tasks`);
+      await api.batchDeleteTasks(ids);
+      message.success(`Deleted ${ids.length} tasks`);
     } catch (e) {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    loadPage();
-    loadSummaries();
+    taskStore.removeTasks(ids);
   };
 
   const handleBulkArchive = async () => {
@@ -805,8 +539,7 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    loadPage();
-    loadSummaries();
+    taskStore.patchTaskIds(ids);
   };
 
   const handleBulkUnarchive = async () => {
@@ -818,8 +551,7 @@ export default function Tasks() {
       message.error(String(e));
     }
     setSelectedRowKeys([]);
-    loadPage();
-    loadSummaries();
+    taskStore.patchTaskIds(ids);
   };
 
   // --- Columns ---
@@ -833,37 +565,39 @@ export default function Tasks() {
         title: "ID",
         dataIndex: "id",
         key: "id",
-        width: 60,
+        width: 84,
         ellipsis: true,
         sorter: true,
         sortOrder: orderFor("id"),
         render: (id: number) => (
-          <Tooltip title="Open task details">
-            <Link to={`/tasks/${id}`} style={{ fontVariantNumeric: "tabular-nums" }}>
-              #{id}
-            </Link>
-          </Tooltip>
+          <Link
+            to={`/tasks/${id}`}
+            title="Open task details"
+            style={{ fontVariantNumeric: "tabular-nums" }}
+          >
+            #{id}
+          </Link>
         ),
         ...getColumnSearchProps<TaskResponse>("id"),
-        filteredValue: deferredFilteredInfo.id ?? null,
+        filteredValue: (filteredInfo.id as FilterValue) ?? null,
       },
       {
         title: "Plan",
         dataIndex: "plan_id",
         key: "plan_id",
-        width: 250,
+        width: 218,
         ellipsis: true,
         render: (id: number) => {
           const name = planMap.get(id) ?? `#${id}`;
           return <Typography.Text ellipsis>{name}</Typography.Text>;
         },
         ...getColumnSearchProps<TaskResponse>("plan_id", (r) => planMap.get(r.plan_id) ?? ""),
-        filteredValue: deferredFilteredInfo.plan_id ?? null,
+        filteredValue: (filteredInfo.plan_id as FilterValue) ?? null,
       },
       {
         title: "Tags",
         key: "plan_tags",
-        width: 180,
+        width: 160,
         render: (_: unknown, r: TaskResponse) => {
           const tags = planTagsMap.get(r.plan_id) ?? [];
           if (tags.length === 0) {
@@ -873,14 +607,16 @@ export default function Tasks() {
               </Typography.Text>
             );
           }
+          // Single line, clipped at the cell — virtual rows need a
+          // uniform height, so tags must never wrap onto a second line.
           return (
-            <Space size={[6, 6]} wrap>
+            <div style={{ display: "flex", gap: 4, overflow: "hidden" }}>
               {tags.map((tag) => (
-                <Tag key={tag} style={ROW_TAG_STYLE}>
+                <Tag key={tag} style={ROW_TAG_STYLE} title={tag}>
                   {tag}
                 </Tag>
               ))}
-            </Space>
+            </div>
           );
         },
       },
@@ -903,7 +639,7 @@ export default function Tasks() {
         title: "Status",
         dataIndex: "task_status",
         key: "task_status",
-        width: 130,
+        width: 124,
         render: (status: TaskStatus, r: TaskResponse) => (
           <Space size={4} wrap>
             <Tag
@@ -942,22 +678,14 @@ export default function Tasks() {
         title: "Attempts",
         dataIndex: "attempt_count",
         key: "attempt_count",
-        width: 80,
+        width: 116,
         sorter: true,
         sortOrder: orderFor("attempt_count"),
-        render: (n: number, r: TaskResponse) => {
+        render: (n: number) => {
           if (!n) return <Typography.Text type="secondary">0</Typography.Text>;
-          return (
-            <Typography.Link
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpanded(r.id);
-              }}
-              style={{ fontVariantNumeric: "tabular-nums" }}
-            >
-              {n}
-            </Typography.Link>
-          );
+          // Plain count — clicking the row opens the detail drawer where
+          // the attempt history lives.
+          return <span style={{ fontVariantNumeric: "tabular-nums" }}>{n}</span>;
         },
       },
       {
@@ -978,15 +706,16 @@ export default function Tasks() {
             return <Typography.Text type="secondary">0 / 0 / 0</Typography.Text>;
           }
           return (
-            <Tooltip title={`${f} finished · ${a} aborted · ${s} skipped`} placement="topLeft">
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
-                <Typography.Text type="secondary"> / </Typography.Text>
-                <Typography.Text style={{ color: "var(--ant-color-warning)" }}>{a}</Typography.Text>
-                <Typography.Text type="secondary"> / </Typography.Text>
-                <Typography.Text type="secondary">{s}</Typography.Text>
-              </span>
-            </Tooltip>
+            <span
+              title={`${f} finished · ${a} aborted · ${s} skipped`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
+              <Typography.Text type="secondary"> / </Typography.Text>
+              <Typography.Text style={{ color: "var(--ant-color-warning)" }}>{a}</Typography.Text>
+              <Typography.Text type="secondary"> / </Typography.Text>
+              <Typography.Text type="secondary">{s}</Typography.Text>
+            </span>
           );
         },
       },
@@ -994,7 +723,7 @@ export default function Tasks() {
         title: "Last Run",
         key: "last_run_at",
         dataIndex: "last_run_at",
-        width: 130,
+        width: 124,
         sorter: true,
         sortOrder: orderFor("last_run_at"),
         render: (_: unknown, r: TaskResponse) => {
@@ -1014,82 +743,28 @@ export default function Tasks() {
             return `${Math.floor(h / 24)}d ago`;
           })();
           return (
-            <Tooltip title={`${d.toISOString()} · ${rel}`}>
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>{shortLabel}</span>
-            </Tooltip>
-          );
-        },
-      },
-      {
-        title: "",
-        key: "actions",
-        width: 130,
-        render: (_: unknown, record: TaskResponse) => {
-          const canRun = RUNNABLE_STATUSES.includes(record.task_status);
-          const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-          const latestRun = record.task_run?.[0];
-          return (
-            <Space size={2} onClick={(e) => e.stopPropagation()}>
-              <Tooltip title="Copy shareable link to this task">
-                <Button
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={() => copyTaskLink(record.id)}
-                />
-              </Tooltip>
-              <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
-                <Button
-                  size="small"
-                  icon={<FileTextOutlined />}
-                  disabled={!latestRun}
-                  onClick={() => latestRun && openLog(latestRun)}
-                />
-              </Tooltip>
-              {canStop ? (
-                <ConfirmIconButton
-                  size="small"
-                  icon={<StopOutlined />}
-                  tooltip="Stop"
-                  confirmTitle="Stop?"
-                  onConfirm={() => handleStop(record.id)}
-                />
-              ) : (
-                <ConfirmIconButton
-                  size="small"
-                  type="primary"
-                  icon={<CaretRightOutlined />}
-                  disabled={!canRun}
-                  tooltip={canRun ? "Run" : "Not runnable in this state"}
-                  confirmTitle="Run?"
-                  onConfirm={() => handleRun(record.id)}
-                />
-              )}
-              <ConfirmIconButton
-                size="small"
-                icon={record.archived ? <RollbackOutlined /> : <InboxOutlined />}
-                tooltip={record.archived ? "Unarchive" : "Archive (soft-hide)"}
-                confirmTitle={record.archived ? "Unarchive?" : "Archive?"}
-                onConfirm={() => handleArchive(record.id, record.archived)}
-              />
-            </Space>
+            <span
+              title={`${d.toISOString()} · ${rel}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              {shortLabel}
+            </span>
           );
         },
       },
     ];
+    // Scope to the two filter axes the columns actually read (the id /
+    // plan_id column-search highlights), so av/sim/sampler/monitor/tag
+    // chip toggles don't rebuild this array.
   }, [
-    deferredFilteredInfo,
+    filteredInfo.id,
+    filteredInfo.plan_id,
     sortedInfo,
     avMap,
     simMap,
     samplerMap,
     planMap,
     planTagsMap,
-    openLog,
-    handleRun,
-    handleStop,
-    handleArchive,
-    toggleExpanded,
-    copyTaskLink,
   ]);
 
   const selectionBar = (
@@ -1108,30 +783,14 @@ export default function Tasks() {
   );
 
   // --- Memoized Table props ---
-  // No tableScroll — `scroll={{x:N}}` + tableLayout=fixed forces AntD
-  // to mount a hidden shadow table for column-width measurement on
-  // every render (each measure cost ~77ms forced reflow). With
-  // pagination the visible row count is tiny and the page is wide
-  // enough for the columns to fit without horizontal scroll.
-  const tablePagination = useMemo(
-    () => ({
-      current: currentPage,
-      pageSize,
-      total: pageTotal,
-      showSizeChanger: true,
-      showTotal: (t: number) => `${t} tasks`,
-      onChange: (p: number, s: number) => {
-        setCurrentPage(p);
-        setPageSize(s);
-      },
-    }),
-    [currentPage, pageSize, pageTotal, setPageSize],
-  );
   const tableRowSelection = useMemo(
     () => ({
       selectedRowKeys,
       onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
       preserveSelectedRowKeys: true,
+      // Pin the checkbox column width — without it the selection column
+      // stretches on non-Chromium engines (Edge/Safari/Firefox-based).
+      columnWidth: 40,
     }),
     [selectedRowKeys],
   );
@@ -1143,11 +802,9 @@ export default function Tasks() {
         | { columnKey?: React.Key; order?: SortOrder }
         | { columnKey?: React.Key; order?: SortOrder }[],
     ) => {
-      // AntD fires onChange for *every* table state change — sort,
-      // filter, AND pagination. We must return `prev` (same ref) when
-      // no filter actually changed, otherwise the page-reset useEffect
-      // sees a new filteredInfo reference on every pagination click
-      // and snaps the user back to page 1.
+      // AntD fires onChange for every table state change (sort + the
+      // id/plan_id column-search filters). Return `prev` (same ref) when
+      // nothing actually changed so we don't churn filteredInfo.
       setFilteredInfo((prev) => {
         let changed = false;
         const next = { ...prev };
@@ -1175,31 +832,16 @@ export default function Tasks() {
     },
     [setFilteredInfo, setSortedInfo],
   );
-  const tableExpandable = useMemo(
-    () => ({
-      expandedRowRender: (r: TaskResponse) => (
-        <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
-          <Suspense fallback={null}>
-            <TaskRunsPanel
-              key={`${r.id}-${expansionCounts.get(r.id) ?? 0}`}
-              taskId={r.id}
-              onOpenLog={openLog}
-            />
-          </Suspense>
-        </div>
-      ),
-      expandedRowKeys: expandedRows,
-      // Whole-row click was triggering accidental expansions when users
-      // were trying to read a cell or copy text. Show the chevron column
-      // as the explicit, familiar affordance instead, and let the
-      // Attempts cell double as a discoverable trigger.
-      showExpandColumn: true,
-      expandRowByClick: false,
-      onExpandedRowsChange: (keys: readonly React.Key[]) =>
-        handleExpandedChange(keys as React.Key[]),
-    }),
-    [expandedRows, expansionCounts, openLog, handleExpandedChange],
-  );
+  // Fixed body height drives the virtualized window (antd `virtual`
+  // needs a numeric scroll.y). Track the viewport so the table fills the
+  // page below the header/filter bar.
+  const [tableBodyHeight, setTableBodyHeight] = useState(560);
+  useEffect(() => {
+    const update = () => setTableBodyHeight(Math.max(320, window.innerHeight - 320));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   return (
     <>
@@ -1211,13 +853,7 @@ export default function Tasks() {
         >
           Clear Filters
         </Button>
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={() => {
-            loadPage();
-            loadSummaries();
-          }}
-        >
+        <Button icon={<ReloadOutlined />} onClick={() => taskStore.resync()}>
           Refresh
         </Button>
         <Tooltip
@@ -1257,7 +893,7 @@ export default function Tasks() {
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <TasksFilters
-            summaries={tagScopedSummaries}
+            summaries={statusFacetRows}
             quickFilter={quickFilter}
             onChange={setQuickFilter}
           />
@@ -1281,25 +917,58 @@ export default function Tasks() {
       {selectionBar}
 
       <Table
-        dataSource={pageRows}
+        virtual
+        scroll={{ x: 1192, y: tableBodyHeight }}
+        dataSource={viewRows}
         columns={columns}
         rowKey="id"
-        loading={initialLoad}
+        loading={storeState.status === "loading" && storeRows.length === 0}
         size="small"
-        pagination={tablePagination}
+        pagination={false}
+        onRow={(record) => ({
+          style: { cursor: "pointer" },
+          onClick: (e) => {
+            // Let the checkbox, links and other controls do their own
+            // thing; a plain row click opens the detail drawer.
+            if ((e.target as HTMLElement).closest("a, button, input, .ant-checkbox-wrapper")) {
+              return;
+            }
+            setDetailTaskId(record.id);
+          },
+        })}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                storeState.status === "loading"
+                  ? "Loading tasks…"
+                  : hasActiveFilters
+                    ? "No tasks match the current filters"
+                    : "No tasks yet"
+              }
+            />
+          ),
+        }}
         rowSelection={tableRowSelection}
         onChange={tableOnChange}
-        expandable={tableExpandable}
+        footer={() => (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {viewRows.length.toLocaleString()} shown
+            {viewRows.length !== baseRows.length ? ` of ${baseRows.length.toLocaleString()}` : ""}
+            {storeState.status === "loading"
+              ? ` · loading ${storeState.loaded.toLocaleString()}/${storeState.total.toLocaleString()}…`
+              : ""}
+            {storeState.status === "error" ? " · load failed" : ""}
+          </Typography.Text>
+        )}
       />
 
       <Suspense fallback={null}>
         <CreateTaskModal
           open={bulkModalOpen}
           onClose={() => setBulkModalOpen(false)}
-          onCreated={() => {
-            loadPage();
-            loadSummaries();
-          }}
+          onCreated={() => taskStore.resync()}
           avs={avs}
           simulators={simulators}
           samplers={samplers}
@@ -1312,18 +981,13 @@ export default function Tasks() {
           onClose={() => setTriageOpen(false)}
           taskIds={filteredInvalidTaskIds}
           scopeLabel={triageScopeLabel || undefined}
-          onChanged={() => {
-            loadPage();
-            loadSummaries();
-          }}
+          onChanged={() => taskStore.resync()}
         />
 
-        <LogDrawer
-          run={logRun}
-          task={logTask}
-          taskLabel={logTaskLabel}
-          executor={logExecutor}
-          onClose={() => setLogRun(null)}
+        <TaskDetailDrawer
+          taskId={detailTaskId}
+          onClose={() => setDetailTaskId(null)}
+          onChanged={() => detailTaskId != null && taskStore.patchTaskIds([detailTaskId])}
         />
       </Suspense>
     </>

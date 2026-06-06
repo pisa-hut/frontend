@@ -208,10 +208,6 @@ export default function Dashboard() {
     "dashboard.tagFilter",
     defaultTagFilter,
   );
-  const [tagFilterInitialised, setTagFilterInitialised] = useSessionStorageState<boolean>(
-    "dashboard.tagFilterInitialised",
-    defaultTagFilter.length > 0,
-  );
   // One-shot cleanup of the old localStorage key.
   useEffect(() => {
     try {
@@ -223,7 +219,6 @@ export default function Dashboard() {
   const setTagFilter = useCallback(
     (next: string[]) => {
       setTagFilterRaw(next);
-      setTagFilterInitialised(true);
       setSearchParams((prev) => {
         const out = new URLSearchParams(prev);
         out.delete("tag");
@@ -231,7 +226,7 @@ export default function Dashboard() {
         return out;
       });
     },
-    [setTagFilterRaw, setTagFilterInitialised, setSearchParams],
+    [setTagFilterRaw, setSearchParams],
   );
   const toggleTag = useCallback(
     (tag: string) => {
@@ -399,16 +394,6 @@ export default function Dashboard() {
     for (const p of plans) for (const t of p.tags ?? []) c.set(t, (c.get(t) ?? 0) + 1);
     return [...c.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
   }, [plans]);
-
-  // Pre-select every tag on first load so the dashboard starts scoped to
-  // "tagged plans only". Skipped when the URL or sessionStorage already
-  // provided a selection.
-  useEffect(() => {
-    if (tagFilterInitialised) return;
-    if (allTags.length === 0) return;
-    setTagFilterRaw(allTags);
-    setTagFilterInitialised(true);
-  }, [tagFilterInitialised, allTags, setTagFilterRaw, setTagFilterInitialised]);
 
   if (loading)
     return (
