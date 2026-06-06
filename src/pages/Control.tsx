@@ -41,6 +41,8 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 
 const PULSE_ORDER: TaskStatus[] = ["running", "queued", "completed", "idle", "invalid", "aborted"];
 
+const TERMINAL_STATUSES: TaskStatus[] = ["completed", "invalid", "aborted"];
+
 const POSTGREST = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
 
 interface Throughput {
@@ -87,6 +89,18 @@ function fmtClock(now: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const d = new Date(now);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fmtAgo(ts: string, now: number): string {
+  const ms = now - new Date(ts).getTime();
+  if (ms < 0) return "now";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 type TickerTone = "task" | "run" | "concrete" | "log";
@@ -249,25 +263,28 @@ export default function Control() {
     return [...m.values()].sort((a, b) => a.host.localeCompare(b.host));
   }, [runningRows]);
 
-  // "Up Next" — queued tasks in claim order: priority desc, then FIFO.
-  const QUEUE_PREVIEW = 7;
-  const queuedRows = useMemo(() => {
+  // "Recently Finished" — terminal tasks, most-recently-finished first.
+  // Sort by the latest run's finished_at (falling back to last_run_at).
+  const FINISHED_PREVIEW = 7;
+  const finishedRows = useMemo(() => {
     return tasks
-      .filter((t) => t.task_status === "queued")
-      .map((t) => ({
-        taskId: t.id,
-        priority: t.queue_priority,
-        queuedAt: t.queued_at,
-        plan: planMap.get(t.plan_id) ?? `plan #${t.plan_id}`,
-        av: avMap.get(t.av_id) ?? `av #${t.av_id}`,
-        sim: simMap.get(t.simulator_id) ?? `sim #${t.simulator_id}`,
-        sampler: samplerMap.get(t.sampler_id) ?? `smp #${t.sampler_id}`,
-      }))
+      .filter((t) => TERMINAL_STATUSES.includes(t.task_status))
+      .map((t) => {
+        const run = t.task_run?.[0];
+        return {
+          taskId: t.id,
+          status: t.task_status,
+          finishedAt: run?.finished_at ?? t.last_run_at,
+          plan: planMap.get(t.plan_id) ?? `plan #${t.plan_id}`,
+          av: avMap.get(t.av_id) ?? `av #${t.av_id}`,
+          sim: simMap.get(t.simulator_id) ?? `sim #${t.simulator_id}`,
+          sampler: samplerMap.get(t.sampler_id) ?? `smp #${t.sampler_id}`,
+        };
+      })
       .sort((a, b) => {
-        if (b.priority !== a.priority) return b.priority - a.priority;
-        const at = a.queuedAt ? new Date(a.queuedAt).getTime() : Infinity;
-        const bt = b.queuedAt ? new Date(b.queuedAt).getTime() : Infinity;
-        return at - bt;
+        const at = a.finishedAt ? new Date(a.finishedAt).getTime() : 0;
+        const bt = b.finishedAt ? new Date(b.finishedAt).getTime() : 0;
+        return bt - at;
       });
   }, [tasks, planMap, avMap, simMap, samplerMap]);
 
@@ -446,41 +463,49 @@ export default function Control() {
         <aside className="deck-rail">
           <section className="deck-panel">
             <PanelHead
-              title="UP NEXT"
-              accent="#f5b544"
+              title="RECENTLY FINISHED"
+              accent="#57e389"
               right={
-                <span className="panel-count" style={{ "--c": "#f5b544" } as React.CSSProperties}>
-                  {queuedRows.length} QUEUED
+                <span className="panel-count" style={{ "--c": "#57e389" } as React.CSSProperties}>
+                  {finishedRows.length} DONE
                 </span>
               }
             />
-            {queuedRows.length === 0 ? (
+            {finishedRows.length === 0 ? (
               <div className="deck-quiet deck-quiet--sm">
-                <span className="deck-quiet__txt">QUEUE EMPTY</span>
+                <span className="deck-quiet__txt">NOTHING FINISHED YET</span>
               </div>
             ) : (
               <div className="queue">
-                {queuedRows.slice(0, QUEUE_PREVIEW).map((q) => (
+                {finishedRows.slice(0, FINISHED_PREVIEW).map((q) => (
                   <div
                     className="queue-row"
                     key={q.taskId}
-                    onClick={() => navigate("/tasks?status=queued")}
+                    onClick={() => navigate(`/tasks/${q.taskId}`)}
                   >
                     <div className="queue-row__top">
                       <span className="queue-row__id mono">TASK·{q.taskId}</span>
-                      {q.priority > 0 && <span className="queue-row__boost">BOOST</span>}
+                      <span
+                        className="queue-row__status mono"
+                        style={{ color: PHOSPHOR[q.status], borderColor: PHOSPHOR[q.status] }}
+                      >
+                        {STATUS_LABEL[q.status]}
+                      </span>
                     </div>
                     <div className="queue-row__plan" title={q.plan}>
                       {q.plan}
                     </div>
                     <div className="queue-row__chain">
                       {q.av} · {q.sim} · {q.sampler}
+                      {q.finishedAt && (
+                        <span className="queue-row__ago"> · {fmtAgo(q.finishedAt, now)}</span>
+                      )}
                     </div>
                   </div>
                 ))}
-                {queuedRows.length > QUEUE_PREVIEW && (
-                  <div className="queue-more" onClick={() => navigate("/tasks?status=queued")}>
-                    + {queuedRows.length - QUEUE_PREVIEW} more queued →
+                {finishedRows.length > FINISHED_PREVIEW && (
+                  <div className="queue-more" onClick={() => navigate("/tasks")}>
+                    + {finishedRows.length - FINISHED_PREVIEW} more →
                   </div>
                 )}
               </div>
@@ -686,15 +711,16 @@ const DECK_CSS = `
 /* ── side rail ── */
 .deck-rail { display: flex; flex-direction: column; gap: 16px; }
 
-/* ── up next queue ── */
+/* ── recently finished ── */
 .queue { display: flex; flex-direction: column; gap: 1px; }
 .queue-row { cursor: pointer; padding: 8px 4px; border-bottom: 1px solid var(--line-soft); transition: background 0.15s; }
 .queue-row:hover { background: rgba(120,160,200,0.05); }
 .queue-row__top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .queue-row__id { font-size: 12px; color: var(--txt); }
-.queue-row__boost { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px; color: #f5b544; border: 1px solid rgba(245,181,68,0.5); padding: 0 4px; }
+.queue-row__status { font-size: 9px; letter-spacing: 1px; border: 1px solid; padding: 0 4px; white-space: nowrap; }
 .queue-row__plan { font-size: 13px; color: #dbe7f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 1px; }
 .queue-row__chain { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-row__ago { color: var(--faint); }
 .queue-more { cursor: pointer; padding: 8px 4px 2px; font-size: 11px; color: var(--dim); }
 .queue-more:hover { color: #38bdf8; }
 
