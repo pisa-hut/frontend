@@ -63,15 +63,18 @@ export default function TaskActions({
       okText: task.archived ? "Unarchive" : "Archive",
       onOk: () =>
         (task.archived ? api.unarchiveTask(task.id) : api.archiveTask(task.id))
-          .then(() => done(task.archived ? `Task #${task.id} unarchived` : `Task #${task.id} archived`))
+          .then(() =>
+            done(task.archived ? `Task #${task.id} unarchived` : `Task #${task.id} archived`),
+          )
           .catch(fail),
     });
   const copyLink = () => {
     const url = `${window.location.origin}/tasks/${task.id}`;
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => message.success("Link copied"), () => window.prompt("Copy this link:", url));
+      navigator.clipboard.writeText(url).then(
+        () => message.success("Link copied"),
+        () => window.prompt("Copy this link:", url),
+      );
     } else {
       window.prompt("Copy this link:", url);
     }
@@ -88,7 +91,13 @@ export default function TaskActions({
           Stop
         </Button>
       ) : (
-        <Button size={size} type="primary" icon={<CaretRightOutlined />} disabled={!canRun} onClick={run}>
+        <Button
+          size={size}
+          type="primary"
+          icon={<CaretRightOutlined />}
+          disabled={!canRun}
+          onClick={run}
+        >
           Run
         </Button>
       )}

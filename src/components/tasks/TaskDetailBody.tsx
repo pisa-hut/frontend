@@ -62,7 +62,9 @@ export default function TaskDetailBody({
               </Button>
             </Space>
           </Descriptions.Item>
-          <Descriptions.Item label="AV">{names.avs.get(task.av_id) ?? `#${task.av_id}`}</Descriptions.Item>
+          <Descriptions.Item label="AV">
+            {names.avs.get(task.av_id) ?? `#${task.av_id}`}
+          </Descriptions.Item>
           <Descriptions.Item label="Simulator">
             {names.simulators.get(task.simulator_id) ?? `#${task.simulator_id}`}
           </Descriptions.Item>

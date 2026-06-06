@@ -743,7 +743,10 @@ export default function Tasks() {
             return `${Math.floor(h / 24)}d ago`;
           })();
           return (
-            <span title={`${d.toISOString()} · ${rel}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+            <span
+              title={`${d.toISOString()} · ${rel}`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
               {shortLabel}
             </span>
           );
@@ -753,7 +756,16 @@ export default function Tasks() {
     // Scope to the two filter axes the columns actually read (the id /
     // plan_id column-search highlights), so av/sim/sampler/monitor/tag
     // chip toggles don't rebuild this array.
-  }, [filteredInfo.id, filteredInfo.plan_id, sortedInfo, avMap, simMap, samplerMap, planMap, planTagsMap]);
+  }, [
+    filteredInfo.id,
+    filteredInfo.plan_id,
+    sortedInfo,
+    avMap,
+    simMap,
+    samplerMap,
+    planMap,
+    planTagsMap,
+  ]);
 
   const selectionBar = (
     <TasksSelectionBar

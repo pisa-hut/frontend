@@ -41,7 +41,12 @@ describe("taskStore", () => {
     const client = makeClient([row(5), row(4), row(3), row(2), row(1)]);
     const store = createTaskStore(client, 2); // forces 3 chunks (2,2,1)
     await store.ensureLoaded();
-    expect(store.getRows().map((r) => r.id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+    expect(
+      store
+        .getRows()
+        .map((r) => r.id)
+        .sort((a, b) => a - b),
+    ).toEqual([1, 2, 3, 4, 5]);
     expect(store.getState().status).toBe("ready");
     expect(store.getState().total).toBe(5);
   });
@@ -95,7 +100,12 @@ describe("taskStore", () => {
     client.data.delete(2);
     client.data.set(4, row(4));
     await store.resync();
-    expect(store.getRows().map((r) => r.id).sort((a, b) => a - b)).toEqual([1, 3, 4]);
+    expect(
+      store
+        .getRows()
+        .map((r) => r.id)
+        .sort((a, b) => a - b),
+    ).toEqual([1, 3, 4]);
   });
 
   it("getRows returns a stable reference until a mutation", async () => {

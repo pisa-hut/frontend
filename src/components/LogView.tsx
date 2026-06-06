@@ -79,7 +79,13 @@ export default function LogView({ run, task, taskLabel, executor, onClose }: Log
           borderBottom: "1px solid var(--ant-color-border-secondary)",
         }}
       >
-        <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={onClose} title="Back" />
+        <Button
+          type="text"
+          size="small"
+          icon={<ArrowLeftOutlined />}
+          onClick={onClose}
+          title="Back"
+        />
         {task && (
           <>
             <Typography.Text strong>Task #{task.id}</Typography.Text>
