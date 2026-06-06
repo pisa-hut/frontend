@@ -9,7 +9,8 @@ import {
   useState,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Tag, Button, Card, message, Typography, Space, Table, Tooltip } from "antd";
+import { Tag, Button, Card, Dropdown, message, Modal, Typography, Space, Table, Tooltip } from "antd";
+import type { MenuProps } from "antd";
 import {
   ReloadOutlined,
   ThunderboltOutlined,
@@ -22,10 +23,10 @@ import {
   LinkOutlined,
   InboxOutlined,
   RollbackOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import type { FilterValue, SortOrder } from "antd/es/table/interface";
 import { getColumnSearchProps } from "../components/ColumnSearch";
-import ConfirmIconButton from "../components/ConfirmIconButton";
 import PageHeader from "../components/PageHeader";
 import { matchesTaskFilter, type TaskFilterCriteria } from "./tasksFilter";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
@@ -92,6 +93,10 @@ function parseIdSet(value: unknown): Set<number> {
 }
 
 export default function Tasks() {
+  // One themed confirm modal shared by every row's action buttons, instead
+  // of a per-row <Popconfirm> (those Trigger-based mounts dominate the
+  // table's re-render cost). `modal` is stable across renders.
+  const [modal, modalCtx] = Modal.useModal();
   const [searchParams, setSearchParams] = useSearchParams();
   const defaultStatusFilter = useMemo(() => {
     const s = searchParams.get("status");
@@ -846,11 +851,13 @@ export default function Tasks() {
         sorter: true,
         sortOrder: orderFor("id"),
         render: (id: number) => (
-          <Tooltip title="Open task details">
-            <Link to={`/tasks/${id}`} style={{ fontVariantNumeric: "tabular-nums" }}>
-              #{id}
-            </Link>
-          </Tooltip>
+          <Link
+            to={`/tasks/${id}`}
+            title="Open task details"
+            style={{ fontVariantNumeric: "tabular-nums" }}
+          >
+            #{id}
+          </Link>
         ),
         ...getColumnSearchProps<TaskResponse>("id"),
         filteredValue: deferredFilteredInfo.id ?? null,
@@ -986,15 +993,16 @@ export default function Tasks() {
             return <Typography.Text type="secondary">0 / 0 / 0</Typography.Text>;
           }
           return (
-            <Tooltip title={`${f} finished · ${a} aborted · ${s} skipped`} placement="topLeft">
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
-                <Typography.Text type="secondary"> / </Typography.Text>
-                <Typography.Text style={{ color: "var(--ant-color-warning)" }}>{a}</Typography.Text>
-                <Typography.Text type="secondary"> / </Typography.Text>
-                <Typography.Text type="secondary">{s}</Typography.Text>
-              </span>
-            </Tooltip>
+            <span
+              title={`${f} finished · ${a} aborted · ${s} skipped`}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              <Typography.Text style={{ color: "var(--ant-color-success)" }}>{f}</Typography.Text>
+              <Typography.Text type="secondary"> / </Typography.Text>
+              <Typography.Text style={{ color: "var(--ant-color-warning)" }}>{a}</Typography.Text>
+              <Typography.Text type="secondary"> / </Typography.Text>
+              <Typography.Text type="secondary">{s}</Typography.Text>
+            </span>
           );
         },
       },
@@ -1022,9 +1030,9 @@ export default function Tasks() {
             return `${Math.floor(h / 24)}d ago`;
           })();
           return (
-            <Tooltip title={`${d.toISOString()} · ${rel}`}>
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>{shortLabel}</span>
-            </Tooltip>
+            <span title={`${d.toISOString()} · ${rel}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+              {shortLabel}
+            </span>
           );
         },
       },
@@ -1036,56 +1044,72 @@ export default function Tasks() {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
           const latestRun = record.task_run?.[0];
+          // Collapsed into a single lazy dropdown: the overlay (and its
+          // Menu) only mounts when opened, so 20 rows don't each build
+          // four antd Buttons on every table re-render. Confirmations go
+          // through the page-level shared modal.
+          const items: MenuProps["items"] = [
+            {
+              key: "link",
+              icon: <LinkOutlined />,
+              label: "Copy shareable link",
+              onClick: () => copyTaskLink(record.id),
+            },
+            {
+              key: "log",
+              icon: <FileTextOutlined />,
+              label: latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet",
+              disabled: !latestRun,
+              onClick: () => latestRun && openLog(latestRun),
+            },
+            { type: "divider" },
+            canStop
+              ? {
+                  key: "stop",
+                  icon: <StopOutlined />,
+                  label: "Stop",
+                  danger: true,
+                  onClick: () => modal.confirm({ title: "Stop?", onOk: () => handleStop(record.id) }),
+                }
+              : {
+                  key: "run",
+                  icon: <CaretRightOutlined />,
+                  label: "Run",
+                  disabled: !canRun,
+                  onClick: () => modal.confirm({ title: "Run?", onOk: () => handleRun(record.id) }),
+                },
+            {
+              key: "archive",
+              icon: record.archived ? <RollbackOutlined /> : <InboxOutlined />,
+              label: record.archived ? "Unarchive" : "Archive (soft-hide)",
+              onClick: () =>
+                modal.confirm({
+                  title: record.archived ? "Unarchive?" : "Archive?",
+                  onOk: () => handleArchive(record.id, record.archived),
+                }),
+            },
+          ];
           return (
-            <Space size={2} onClick={(e) => e.stopPropagation()}>
-              <Tooltip title="Copy shareable link to this task">
-                <Button
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={() => copyTaskLink(record.id)}
-                />
-              </Tooltip>
-              <Tooltip title={latestRun ? `Log · attempt #${latestRun.attempt}` : "No run yet"}>
-                <Button
-                  size="small"
-                  icon={<FileTextOutlined />}
-                  disabled={!latestRun}
-                  onClick={() => latestRun && openLog(latestRun)}
-                />
-              </Tooltip>
-              {canStop ? (
-                <ConfirmIconButton
-                  size="small"
-                  icon={<StopOutlined />}
-                  tooltip="Stop"
-                  confirmTitle="Stop?"
-                  onConfirm={() => handleStop(record.id)}
-                />
-              ) : (
-                <ConfirmIconButton
-                  size="small"
-                  type="primary"
-                  icon={<CaretRightOutlined />}
-                  disabled={!canRun}
-                  tooltip={canRun ? "Run" : "Not runnable in this state"}
-                  confirmTitle="Run?"
-                  onConfirm={() => handleRun(record.id)}
-                />
-              )}
-              <ConfirmIconButton
+            <Dropdown menu={{ items }} trigger={["click"]} placement="bottomRight">
+              <Button
                 size="small"
-                icon={record.archived ? <RollbackOutlined /> : <InboxOutlined />}
-                tooltip={record.archived ? "Unarchive" : "Archive (soft-hide)"}
-                confirmTitle={record.archived ? "Unarchive?" : "Archive?"}
-                onConfirm={() => handleArchive(record.id, record.archived)}
+                icon={<MoreOutlined />}
+                title="Actions"
+                onClick={(e) => e.stopPropagation()}
               />
-            </Space>
+            </Dropdown>
           );
         },
       },
     ];
+    // Scope to the two filter axes the columns actually read (the id /
+    // plan_id column-search highlights). Depending on the whole
+    // deferredFilteredInfo object rebuilt this array — and forced a full
+    // antd Table re-render — on every av/sim/sampler/monitor/tag chip
+    // toggle too, even though those never touch a column's filteredValue.
   }, [
-    deferredFilteredInfo,
+    deferredFilteredInfo.id,
+    deferredFilteredInfo.plan_id,
     sortedInfo,
     avMap,
     simMap,
@@ -1098,6 +1122,7 @@ export default function Tasks() {
     handleArchive,
     toggleExpanded,
     copyTaskLink,
+    modal,
   ]);
 
   const selectionBar = (
@@ -1287,6 +1312,7 @@ export default function Tasks() {
       </Card>
 
       {selectionBar}
+      {modalCtx}
 
       <Table
         dataSource={pageRows}
