@@ -3,14 +3,14 @@ import { render, screen } from "@testing-library/react";
 import LogDrawer from "../LogDrawer";
 import type { TaskResponse, TaskRunResponse } from "../../api/types";
 
-// Mock the api client — getTaskRunLog is the only one the drawer
-// hits on mount; the SSE feed is exercised separately.
+// Mock the api client. The viewer hits getTaskRunLog for the snapshot
+// plus listTaskRuns / listExecutors to populate the attempt switcher;
+// the SSE feed is exercised separately.
 vi.mock("../../api/client", () => ({
   api: {
     getTaskRunLog: vi.fn().mockResolvedValue("(no log captured)"),
-    stopTask: vi.fn().mockResolvedValue(undefined),
-    runTask: vi.fn().mockResolvedValue(undefined),
-    archiveTask: vi.fn().mockResolvedValue(undefined),
+    listTaskRuns: vi.fn().mockResolvedValue([]),
+    listExecutors: vi.fn().mockResolvedValue([]),
   },
 }));
 
