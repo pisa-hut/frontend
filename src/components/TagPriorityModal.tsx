@@ -78,6 +78,7 @@ export default function TagPriorityModal({ open, onClose }: Props) {
       onOk={save}
       okText="Save ranking"
       confirmLoading={saving}
+      okButtonProps={{ disabled: loading }}
       width={640}
     >
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
@@ -131,6 +132,7 @@ export default function TagPriorityModal({ open, onClose }: Props) {
       <Typography.Text strong>Unranked</Typography.Text>
       <List
         size="small"
+        loading={loading}
         bordered
         dataSource={unranked}
         locale={{ emptyText: "All in-use tags are ranked" }}
