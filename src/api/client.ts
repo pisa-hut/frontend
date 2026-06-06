@@ -165,6 +165,16 @@ async function managerPutBytes(path: string, body: Blob | ArrayBuffer | Uint8Arr
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+async function managerPutJson<T>(path: string, data: unknown): Promise<T> {
+  const res = await fetch(`${MANAGER_URL}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 async function managerDelete(path: string): Promise<void> {
   const res = await fetch(`${MANAGER_URL}${path}`, { method: "DELETE" });
   // 404 is NOT silently OK — file paths are caller-supplied and an
@@ -261,6 +271,10 @@ export const api = {
    *  a plan already had both names are collapsed server-side. */
   renamePlanTag: (from: string, to: string) =>
     managerPost<{ plans_updated: number }>("/plan/tag/rename", { from, to }),
+  /** Global tag priority ranking, ordered (position 0 = highest). */
+  getTagPriority: () => managerGetJson<{ tag: string; position: number }[]>("/tag/priority"),
+  /** Replace the whole ranking; `tags[i]` becomes position i. */
+  setTagPriority: (tags: string[]) => managerPutJson<{ count: number }>("/tag/priority", { tags }),
 
   // Tasks
   // Latest task_run fields are embedded so the row-level Log button can

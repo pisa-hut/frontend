@@ -14,7 +14,6 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
   CaretRightOutlined,
-  DoubleRightOutlined,
   StopOutlined,
   SyncOutlined,
   FileTextOutlined,
@@ -695,29 +694,10 @@ export default function Tasks() {
   const handleRun = useCallback(
     async (id: number) => {
       try {
-        // Reset queue_priority so a previously boosted task drops back
-        // to normal FIFO when re-Run. The DB trigger refreshes
-        // queued_at on the status flip.
-        await api.updateTask(id, { task_status: "queued", queue_priority: 0 });
+        // Priority is derived from the plan's tag ranking by the DB; the
+        // frontend only flips status to queued (the trigger stamps queued_at).
+        await api.updateTask(id, { task_status: "queued" });
         message.success(`Task #${id} queued`);
-        loadPage();
-        loadSummaries();
-      } catch (e) {
-        message.error(String(e));
-      }
-    },
-    [loadPage, loadSummaries],
-  );
-
-  const handleRunNext = useCallback(
-    async (id: number) => {
-      try {
-        // queue_priority=100 moves the task ahead of normal queued
-        // peers. The DB trigger refreshes queued_at on status→queued
-        // OR on priority change, so boosting an already-queued row
-        // also refreshes its FIFO position.
-        await api.updateTask(id, { task_status: "queued", queue_priority: 100 });
-        message.success(`Task #${id} boosted to front of queue`);
         loadPage();
         loadSummaries();
       } catch (e) {
@@ -1047,12 +1027,6 @@ export default function Tasks() {
         render: (_: unknown, record: TaskResponse) => {
           const canRun = RUNNABLE_STATUSES.includes(record.task_status);
           const canStop = STOPPABLE_STATUSES.includes(record.task_status);
-          // Run-next is available whenever the task is not running:
-          //   - terminal states  → transition to queued + boost
-          //   - already queued   → just bump queue_priority (the
-          //     common case: promote a waiting task to the front)
-          const canRunNext = record.task_status !== "running";
-          const boosted = record.queue_priority > 0;
           const latestRun = record.task_run?.[0];
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
@@ -1092,20 +1066,6 @@ export default function Tasks() {
               )}
               <ConfirmIconButton
                 size="small"
-                icon={<DoubleRightOutlined />}
-                disabled={!canRunNext}
-                tooltip={
-                  canRunNext
-                    ? boosted
-                      ? "Already boosted — refresh queue position"
-                      : "Run next (boost priority)"
-                    : "Task is running"
-                }
-                confirmTitle="Run next?"
-                onConfirm={() => handleRunNext(record.id)}
-              />
-              <ConfirmIconButton
-                size="small"
                 icon={record.archived ? <RollbackOutlined /> : <InboxOutlined />}
                 tooltip={record.archived ? "Unarchive" : "Archive (soft-hide)"}
                 confirmTitle={record.archived ? "Unarchive?" : "Archive?"}
@@ -1126,7 +1086,6 @@ export default function Tasks() {
     planTagsMap,
     openLog,
     handleRun,
-    handleRunNext,
     handleStop,
     handleArchive,
     toggleExpanded,
