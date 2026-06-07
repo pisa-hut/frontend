@@ -2,14 +2,7 @@ import { Space, Typography } from "antd";
 import type { TaskStatus } from "../api/types";
 import { TASK_STATUS_HEX, TASK_STATUS_LABEL } from "../constants/status";
 
-const STATUS_ORDER: TaskStatus[] = [
-  "completed",
-  "running",
-  "queued",
-  "idle",
-  "invalid",
-  "aborted",
-];
+const STATUS_ORDER: TaskStatus[] = ["completed", "running", "queued", "idle", "invalid", "aborted"];
 
 /** Colour key shown alongside the donut breakdowns. */
 export function StatusLegend() {
