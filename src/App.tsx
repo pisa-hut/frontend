@@ -1,15 +1,14 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ConfigProvider, Spin, theme } from "antd";
 import { ThemeProvider } from "./components/ThemeContext";
 import AppLayout from "./components/AppLayout";
-import Dashboard from "./pages/Dashboard";
+import Control from "./pages/Control";
 
-// Lazy-load every non-home page so the dashboard's first-paint
-// doesn't have to wait on the bundle for a page the user may never
-// visit. Each page becomes its own chunk in the build output, served
-// only when its route is navigated to.
-const Control = lazy(() => import("./pages/Control"));
+// Lazy-load every non-home page so Control's first-paint doesn't have
+// to wait on the bundle for a page the user may never visit. Each page
+// becomes its own chunk in the build output, served only when its
+// route is navigated to.
 const Tasks = lazy(() => import("./pages/Tasks"));
 const TaskDetail = lazy(() => import("./pages/TaskDetail"));
 const Scenarios = lazy(() => import("./pages/Scenarios"));
@@ -81,15 +80,9 @@ function AppInner() {
       <BrowserRouter>
         <Routes>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route
-              path="/control"
-              element={
-                <Suspense fallback={<PageLoading />}>
-                  <Control />
-                </Suspense>
-              }
-            />
+            <Route path="/" element={<Control />} />
+            {/* Control is the home page now; keep the old path bookmarkable. */}
+            <Route path="/control" element={<Navigate to="/" replace />} />
             <Route
               path="/tasks"
               element={

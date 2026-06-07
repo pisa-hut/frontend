@@ -10,15 +10,15 @@ import type {
   PlanResponse,
 } from "../api/types";
 
-/** Shared fleet data + realtime refresh, used by both the Dashboard and
- *  Control pages (which had grown identical copies of this loader).
+/** Shared fleet data + realtime refresh, used by the Control page and the
+ *  Plans page's status breakdown.
  *
- *  Loads the six core lists once, exposes the id→name maps both pages
+ *  Loads the six core lists once, exposes the id→name maps consumers
  *  derive, and debounce-refetches the whole set whenever a task /
  *  task_run row changes on the SSE feed. Pages layer their own
  *  page-specific fetches on top via separate usePisaEvents subscriptions
- *  (Dashboard's aborted-run stats, Control's throughput + event ticker) —
- *  the underlying EventSource is shared, so extra subscriptions are cheap. */
+ *  (Control's throughput + event ticker) — the underlying EventSource is
+ *  shared, so extra subscriptions are cheap. */
 export function useFleetData() {
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [executors, setExecutors] = useState<ExecutorResponse[]>([]);
