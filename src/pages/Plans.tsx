@@ -26,7 +26,9 @@ import {
 import { getColumnSearchProps } from "../components/ColumnSearch";
 import PageHeader from "../components/PageHeader";
 import ChipRow from "../components/ChipRow";
+import PlanStatusBreakdown from "../components/PlanStatusBreakdown";
 import { useSessionStorageState } from "../hooks/useSessionStorageState";
+import { useFleetData } from "../hooks/useFleetData";
 
 // Lazy: only opened when the user clicks the "Manage tags" button.
 const TagManagerModal = lazy(() => import("../components/TagManagerModal"));
@@ -144,6 +146,12 @@ export default function Plans() {
     false,
   );
   const [nameSearch, setNameSearch] = useSessionStorageState<string>("plans.nameSearch", "");
+
+  // Tasks + resource maps power the per-tag completion breakdown below the
+  // table. Plan tags come from this page's own `data` so tag edits reflect
+  // immediately.
+  const { tasks, avMap, simMap, samplerMap } = useFleetData();
+  const planTagsMap = useMemo(() => new Map(data.map((p) => [p.id, p.tags ?? []])), [data]);
 
   const load = () => {
     setLoading(true);
@@ -321,7 +329,7 @@ export default function Plans() {
     <>
       <PageHeader
         title="Plans"
-        subtitle="A plan pairs a map with a scenario. Tag plans to group them on the dashboard and filter on Tasks."
+        subtitle="A plan pairs a map with a scenario. Tag plans to group them in the status breakdown below and filter on Tasks."
       >
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           Create
@@ -371,6 +379,13 @@ export default function Plans() {
         size="small"
         scroll={{ x: "max-content" }}
         pagination={{ pageSize: 20, showTotal: (t) => `${t} plans` }}
+      />
+      <PlanStatusBreakdown
+        tasks={tasks}
+        planTagsMap={planTagsMap}
+        avMap={avMap}
+        simMap={simMap}
+        samplerMap={samplerMap}
       />
       <Modal
         title={editing ? "Edit Plan" : "Create Plan"}

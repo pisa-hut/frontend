@@ -122,7 +122,7 @@ const TONE_COLOR: Record<TickerTone, string> = {
 
 export default function Control() {
   const navigate = useNavigate();
-  // Core fleet data + realtime core refetch are shared with the Dashboard.
+  // Core fleet data + realtime core refetch (shared via useFleetData).
   const { tasks, loading, planMap, avMap, simMap, samplerMap, executorMap } = useFleetData();
   const [throughput, setThroughput] = useState<Throughput>({ perHour: 0, perDay: 0 });
   const [now, setNow] = useState(() => Date.now());

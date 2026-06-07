@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Layout, Menu, Drawer, Button } from "antd";
 import {
-  DashboardOutlined,
   RadarChartOutlined,
   UnorderedListOutlined,
   FileTextOutlined,
@@ -16,8 +15,7 @@ import {
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
 const mainItems = [
-  { key: "/", icon: <DashboardOutlined />, label: "Dashboard" },
-  { key: "/control", icon: <RadarChartOutlined />, label: "Control" },
+  { key: "/", icon: <RadarChartOutlined />, label: "Control" },
   { key: "/tasks", icon: <UnorderedListOutlined />, label: "Tasks" },
   { key: "/scenarios", icon: <FileTextOutlined />, label: "Scenarios" },
   { key: "/plans", icon: <ProjectOutlined />, label: "Plans" },
