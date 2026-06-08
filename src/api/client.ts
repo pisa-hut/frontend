@@ -401,30 +401,42 @@ export const api = {
   // id}, so a changed row's new values must be pulled to patch the store.
   fetchTaskRowsByIds: async (ids: number[]): Promise<TaskResponse[]> => {
     if (ids.length === 0) return [];
-    const p = new URLSearchParams();
-    p.set("select", TASK_ROW_SELECT);
-    p.set("task_run.order", "attempt.desc");
-    p.set("task_run.limit", "1");
-    p.set("id", `in.(${ids.join(",")})`);
-    const res = await fetch(`${POSTGREST_URL}/task?${p}`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    return (await res.json()) as TaskResponse[];
+    // Chunk the id list: a bulk action over many tasks would otherwise put
+    // every id into one `id=in.(...)` GET URL and trip the server's 414.
+    const out: TaskResponse[] = [];
+    for (const batch of chunk(ids, BATCH_CHUNK_SIZE)) {
+      const p = new URLSearchParams();
+      p.set("select", TASK_ROW_SELECT);
+      p.set("task_run.order", "attempt.desc");
+      p.set("task_run.limit", "1");
+      p.set("id", `in.(${batch.join(",")})`);
+      const res = await fetch(`${POSTGREST_URL}/task?${p}`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      out.push(...((await res.json()) as TaskResponse[]));
+    }
+    return out;
   },
   // SSE task_run row events carry the run id, not the parent task id;
   // resolve a batch of run ids to their task ids so the store can patch
   // the right task rows.
   fetchTaskIdsForRuns: async (runIds: number[]): Promise<number[]> => {
     if (runIds.length === 0) return [];
-    const res = await fetch(
-      `${POSTGREST_URL}/task_run?select=task_id&id=in.(${runIds.join(",")})`,
-      { headers: { Accept: "application/json" }, cache: "no-store" },
-    );
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    const rows = (await res.json()) as { task_id: number }[];
-    return [...new Set(rows.map((r) => r.task_id))];
+    // Chunk: a bulk action fans out one SSE task_run event per affected
+    // task, so this id list can be huge — keep each GET URL under the 414.
+    const taskIds = new Set<number>();
+    for (const batch of chunk(runIds, BATCH_CHUNK_SIZE)) {
+      const res = await fetch(
+        `${POSTGREST_URL}/task_run?select=task_id&id=in.(${batch.join(",")})`,
+        { headers: { Accept: "application/json" }, cache: "no-store" },
+      );
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      const rows = (await res.json()) as { task_id: number }[];
+      for (const r of rows) taskIds.add(r.task_id);
+    }
+    return [...taskIds];
   },
   createTask: (data: Partial<TaskResponse>) => pgCreate<TaskResponse>("task", data),
   updateTask: (id: number, data: Partial<TaskResponse>) => pgUpdate<TaskResponse>("task", id, data),
