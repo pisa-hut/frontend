@@ -235,6 +235,7 @@ export default function Control() {
           sim: simMap.get(t.simulator_id) ?? `sim #${t.simulator_id}`,
           sampler: samplerMap.get(t.sampler_id) ?? `smp #${t.sampler_id}`,
           executor: executorMap.get(run.executor_id),
+          job: executorMap.get(run.executor_id)?.slurm_job_id ?? null,
           startedAt: run.started_at ?? "",
           finished: run.finished_concrete_runs ?? 0,
           aborted: run.aborted_concrete_runs ?? 0,
@@ -245,14 +246,16 @@ export default function Control() {
 
   type RunRow = (typeof runningRows)[number];
 
-  // Group active runs by the host executing them.
+  // Group active runs by the host executing them. A single host can run
+  // many executors at once — each is its own SLURM job (one task each), so
+  // the job id lives per-run on the card, not once per host group.
   const hostGroups = useMemo(() => {
-    const m = new Map<string, { host: string; job: number | null; runs: RunRow[] }>();
+    const m = new Map<string, { host: string; runs: RunRow[] }>();
     for (const r of runningRows) {
       const host = r.executor?.hostname ?? "unassigned";
       let g = m.get(host);
       if (!g) {
-        g = { host, job: r.executor?.slurm_job_id ?? null, runs: [] };
+        g = { host, runs: [] };
         m.set(host, g);
       }
       g.runs.push(r);
@@ -394,9 +397,8 @@ export default function Control() {
                   <div className="host-head">
                     <span className="host-head__dot" />
                     <span className="host-head__name mono">{g.host}</span>
-                    {g.job != null && <span className="host-head__job mono">J{g.job}</span>}
                     <span className="host-head__count">
-                      {g.runs.length} run{g.runs.length === 1 ? "" : "s"}
+                      {g.runs.length} job{g.runs.length === 1 ? "" : "s"}
                     </span>
                   </div>
                   <div className="run-grid">
@@ -417,6 +419,7 @@ export default function Control() {
                               {r.attempt > 1 && (
                                 <em className="run-card__attempt"> a{r.attempt}</em>
                               )}
+                              {r.job != null && <em className="run-card__job"> J{r.job}</em>}
                             </span>
                             <span className="run-card__live">
                               <span className="run-card__live-dot" />
@@ -671,7 +674,6 @@ const DECK_CSS = `
 .host-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
 .host-head__dot { width: 7px; height: 7px; border-radius: 50%; background: #57e389; box-shadow: 0 0 9px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
 .host-head__name { font-size: 13px; color: #eaf4ff; letter-spacing: 0.5px; }
-.host-head__job { font-size: 11px; color: var(--dim); }
 .host-head__count { margin-left: auto; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
 
 /* ── running cards ── */
@@ -689,6 +691,7 @@ const DECK_CSS = `
 .run-card__head { display: flex; align-items: center; justify-content: space-between; }
 .run-card__id { font-size: 13px; color: #eaf4ff; letter-spacing: 1px; }
 .run-card__attempt { color: #f5b544; font-style: normal; font-size: 11px; }
+.run-card__job { color: var(--dim); font-style: normal; font-size: 11px; }
 .run-card__live { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 2px; color: #38bdf8; font-family: 'IBM Plex Mono', monospace; }
 .run-card__live-dot { width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8; animation: deck-pulse 1.2s ease-in-out infinite; }
 .run-card__plan { margin: 9px 0 3px; font-size: 14px; font-weight: 600; color: #dbe7f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
