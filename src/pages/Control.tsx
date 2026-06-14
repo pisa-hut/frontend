@@ -136,6 +136,8 @@ interface RunRow {
   finished: number;
   aborted: number;
   skipped: number;
+  /** Sampler total when known; null for open-ended samplers. */
+  expected: number | null;
 }
 
 /** A terminal task for the "recently finished" rail. */
@@ -269,6 +271,7 @@ export default function Control() {
           finished: run.finished_concrete_runs ?? 0,
           aborted: run.aborted_concrete_runs ?? 0,
           skipped: run.skipped_concrete_runs ?? 0,
+          expected: run.expected_concrete_runs ?? null,
         };
       });
   }, [tasks, planMap, avMap, simMap, samplerMap, executorMap]);
@@ -483,6 +486,34 @@ function LiveWorkers({
   );
 }
 
+/** Segment widths for a run's progress bar. When the sampler reported a
+ *  finite total, segments fill toward it (the unfilled remainder is the
+ *  empty bar track → a real 0→100% bar). When the total is unknown
+ *  (open-ended sampler), fall back to composition: segments normalized to
+ *  the concretes done so far, so the bar still grows live. */
+function barSegments(r: RunRow): {
+  finished: string;
+  aborted: string;
+  skipped: string;
+  idle: boolean;
+} {
+  const done = r.finished + r.aborted + r.skipped;
+  const denom = r.expected != null && r.expected > 0 ? r.expected : done;
+  const seg = (v: number) =>
+    denom > 0 ? `${Math.min(100, (v / denom) * 100)}%` : "0%";
+  return {
+    finished: seg(r.finished),
+    aborted: seg(r.aborted),
+    skipped: seg(r.skipped),
+    idle: done === 0,
+  };
+}
+
+function barTitle(r: RunRow): string {
+  const base = `${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`;
+  return r.expected != null && r.expected > 0 ? `${base} · of ${r.expected}` : base;
+}
+
 function RunCard({
   r,
   i,
@@ -494,8 +525,7 @@ function RunCard({
   now: number;
   navigate: (to: string) => void;
 }) {
-  const total = r.finished + r.aborted + r.skipped;
-  const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
+  const seg = barSegments(r);
   return (
     <article
       className="run-card"
@@ -528,14 +558,11 @@ function RunCard({
         <span className="run-card__host-dot" />
         {r.executor?.hostname ?? "unassigned"}
       </div>
-      <div
-        className="run-card__bar"
-        title={`${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`}
-      >
-        <span style={{ width: seg(r.finished), background: "#57e389" }} />
-        <span style={{ width: seg(r.aborted), background: "#f5b544" }} />
-        <span style={{ width: seg(r.skipped), background: "#3a4754" }} />
-        {total === 0 && <span className="run-card__bar-idle" />}
+      <div className="run-card__bar" title={barTitle(r)}>
+        <span style={{ width: seg.finished, background: "#57e389" }} />
+        <span style={{ width: seg.aborted, background: "#f5b544" }} />
+        <span style={{ width: seg.skipped, background: "#3a4754" }} />
+        {seg.idle && <span className="run-card__bar-idle" />}
       </div>
       <footer className="run-card__foot">
         <span className="run-card__counts mono">
@@ -551,8 +578,7 @@ function RunCard({
 
 /** The single active run, blown up to fill the main column in focus mode. */
 function HeroRun({ r, now, navigate }: { r: RunRow; now: number; navigate: (to: string) => void }) {
-  const total = r.finished + r.aborted + r.skipped;
-  const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
+  const seg = barSegments(r);
   return (
     <article className="hero-run" onClick={() => navigate(`/tasks/${r.taskId}`)}>
       <span className="run-card__sweep" />
@@ -581,14 +607,11 @@ function HeroRun({ r, now, navigate }: { r: RunRow; now: number; navigate: (to: 
           <span className="hero-run__host">{r.executor?.hostname ?? "unassigned"}</span>
           {r.job != null && <span className="hero-run__job">J{r.job}</span>}
         </div>
-        <div
-          className="hero-run__bar"
-          title={`${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`}
-        >
-          <span style={{ width: seg(r.finished), background: "#57e389" }} />
-          <span style={{ width: seg(r.aborted), background: "#f5b544" }} />
-          <span style={{ width: seg(r.skipped), background: "#3a4754" }} />
-          {total === 0 && <span className="run-card__bar-idle" />}
+        <div className="hero-run__bar" title={barTitle(r)}>
+          <span style={{ width: seg.finished, background: "#57e389" }} />
+          <span style={{ width: seg.aborted, background: "#f5b544" }} />
+          <span style={{ width: seg.skipped, background: "#3a4754" }} />
+          {seg.idle && <span className="run-card__bar-idle" />}
         </div>
         <div className="hero-run__legend mono">
           <span style={{ color: "#57e389" }}>{r.finished} finished</span>

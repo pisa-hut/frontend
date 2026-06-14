@@ -211,6 +211,10 @@ export interface TaskRunResponse {
   finished_concrete_runs?: number;
   aborted_concrete_runs?: number;
   skipped_concrete_runs?: number;
+  /** Total concrete runs the sampler expects, reported live mid-run.
+   *  Null when the sampler is open-ended (continuous/adaptive). Drives
+   *  the Control bar's fill-toward-total vs composition fallback. */
+  expected_concrete_runs?: number | null;
 }
 
 export interface ConcreteRunResponse {
