@@ -98,6 +98,13 @@ const imageColumns = [
     width: 60,
     render: renderResource,
   },
+  {
+    title: "VRAM (MB)",
+    dataIndex: "gpu_vram_mb",
+    key: "gpu_vram_mb",
+    width: 90,
+    render: renderResource,
+  },
 ];
 
 interface ImageFormValues {
@@ -109,6 +116,7 @@ interface ImageFormValues {
   cpu_count: number;
   memory_gb: number;
   gpu_count: number;
+  gpu_vram_mb: number;
 }
 
 interface ImagePayload {
@@ -120,6 +128,7 @@ interface ImagePayload {
   cpu_count: number;
   memory_gb: number;
   gpu_count: number;
+  gpu_vram_mb: number;
 }
 
 function ImageForm({
@@ -145,6 +154,7 @@ function ImageForm({
         cpu_count: 0,
         memory_gb: 0,
         gpu_count: 0,
+        gpu_vram_mb: 0,
       }}
     >
       <Form.Item name="name" label="Name" rules={[{ required: true }]}>
@@ -194,6 +204,9 @@ function ImageForm({
         </Form.Item>
         <Form.Item name="gpu_count" label="GPU">
           <InputNumber min={0} max={8} style={{ width: 100 }} />
+        </Form.Item>
+        <Form.Item name="gpu_vram_mb" label="VRAM (MB)" help="Shares a GPU via shards when GPU=0">
+          <InputNumber min={0} max={24000} style={{ width: 140 }} />
         </Form.Item>
       </Space>
       <Form.Item>

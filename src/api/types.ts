@@ -44,6 +44,10 @@ export interface AvResponse {
   cpu_count: number;
   memory_gb: number;
   gpu_count: number;
+  /** Per-task VRAM (MB). When gpu_count is 0 and this is > 0, the
+   *  scheduler requests `shard:ceil(vram/1024)` so light tasks share
+   *  one GPU via SLURM sharding. */
+  gpu_vram_mb: number;
 }
 
 export interface SimulatorResponse {
@@ -58,6 +62,7 @@ export interface SimulatorResponse {
   cpu_count: number;
   memory_gb: number;
   gpu_count: number;
+  gpu_vram_mb: number;
 }
 
 export interface SamplerResponse {
