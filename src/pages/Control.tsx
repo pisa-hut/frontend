@@ -412,7 +412,12 @@ export default function Control() {
             <span className="deck-quiet__scope" />
             <span className="deck-quiet__txt">ALL QUIET · NO ACTIVE WORKERS</span>
           </div>
-          <FinishedPanel rows={finishedRows} preview={FINISHED_PREVIEW} now={now} navigate={navigate} />
+          <FinishedPanel
+            rows={finishedRows}
+            preview={FINISHED_PREVIEW}
+            now={now}
+            navigate={navigate}
+          />
           <EventStreamPanel ticker={ticker} />
         </div>
       ) : (
@@ -431,7 +436,12 @@ export default function Control() {
             <LiveWorkers mode={deckMode} hostGroups={hostGroups} now={now} navigate={navigate} />
           </section>
           <aside className="deck-rail">
-            <FinishedPanel rows={finishedRows} preview={FINISHED_PREVIEW} now={now} navigate={navigate} />
+            <FinishedPanel
+              rows={finishedRows}
+              preview={FINISHED_PREVIEW}
+              now={now}
+              navigate={navigate}
+            />
             <EventStreamPanel ticker={ticker} />
           </aside>
         </div>
@@ -556,15 +566,7 @@ function RunCard({
 }
 
 /** The single active run, blown up to fill the main column in focus mode. */
-function HeroRun({
-  r,
-  now,
-  navigate,
-}: {
-  r: RunRow;
-  now: number;
-  navigate: (to: string) => void;
-}) {
+function HeroRun({ r, now, navigate }: { r: RunRow; now: number; navigate: (to: string) => void }) {
   const total = r.finished + r.aborted + r.skipped;
   const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
   return (
@@ -649,7 +651,11 @@ function FinishedPanel({
       ) : (
         <div className="queue">
           {rows.slice(0, preview).map((q) => (
-            <div className="queue-row" key={q.taskId} onClick={() => navigate(`/tasks/${q.taskId}`)}>
+            <div
+              className="queue-row"
+              key={q.taskId}
+              onClick={() => navigate(`/tasks/${q.taskId}`)}
+            >
               <div className="queue-row__top">
                 <span className="queue-row__id mono">TASK·{q.taskId}</span>
                 <span
@@ -664,7 +670,9 @@ function FinishedPanel({
               </div>
               <div className="queue-row__chain">
                 {q.av} · {q.sim} · {q.sampler}
-                {q.finishedAt && <span className="queue-row__ago"> · {fmtAgo(q.finishedAt, now)}</span>}
+                {q.finishedAt && (
+                  <span className="queue-row__ago"> · {fmtAgo(q.finishedAt, now)}</span>
+                )}
               </div>
             </div>
           ))}
