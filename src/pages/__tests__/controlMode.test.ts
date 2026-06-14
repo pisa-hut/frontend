@@ -3,26 +3,17 @@ import { pickDeckMode } from "../controlMode";
 
 describe("pickDeckMode", () => {
   it("is quiet with no running jobs", () => {
-    expect(pickDeckMode(0, 0)).toBe("quiet");
+    expect(pickDeckMode(0)).toBe("quiet");
   });
 
   it("is focus with exactly one running job", () => {
-    expect(pickDeckMode(1, 1)).toBe("focus");
+    expect(pickDeckMode(1)).toBe("focus");
   });
 
-  it("is spread for a handful on a single host", () => {
-    expect(pickDeckMode(2, 1)).toBe("spread");
-    expect(pickDeckMode(3, 1)).toBe("spread");
-    expect(pickDeckMode(4, 1)).toBe("spread");
-  });
-
-  it("is fleet past the spread cap on a single host", () => {
-    expect(pickDeckMode(5, 1)).toBe("fleet");
-    expect(pickDeckMode(12, 1)).toBe("fleet");
-  });
-
-  it("is fleet whenever work is distributed across hosts", () => {
-    expect(pickDeckMode(2, 2)).toBe("fleet");
-    expect(pickDeckMode(4, 3)).toBe("fleet");
+  it("is grid for two or more running jobs", () => {
+    expect(pickDeckMode(2)).toBe("grid");
+    expect(pickDeckMode(4)).toBe("grid");
+    expect(pickDeckMode(5)).toBe("grid");
+    expect(pickDeckMode(40)).toBe("grid");
   });
 });

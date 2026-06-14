@@ -318,7 +318,7 @@ export default function Control() {
       });
   }, [tasks, planMap, avMap, simMap, samplerMap]);
 
-  const deckMode = pickDeckMode(runningRows.length, hostGroups.length);
+  const deckMode = pickDeckMode(runningRows.length);
 
   if (loading) {
     return (
@@ -405,7 +405,7 @@ export default function Control() {
       {/* ── main grid (adaptive) ────────────────────────────── *
        * quiet: no live work, so the rail panels are promoted to fill the
        * deck two-up. Otherwise the live-workers panel + side rail, with
-       * LiveWorkers picking hero / spread / fleet from the mode.        */}
+       * LiveWorkers picking hero (one job) vs one width-filling grid.    */}
       {deckMode === "quiet" ? (
         <div className="deck-grid deck-grid--quiet">
           <div className="deck-quiet-strip">
@@ -433,7 +433,12 @@ export default function Control() {
                 </span>
               }
             />
-            <LiveWorkers mode={deckMode} hostGroups={hostGroups} now={now} navigate={navigate} />
+            <LiveWorkers
+              mode={deckMode}
+              runs={hostGroups.flatMap((g) => g.runs)}
+              now={now}
+              navigate={navigate}
+            />
           </section>
           <aside className="deck-rail">
             <FinishedPanel
@@ -450,54 +455,29 @@ export default function Control() {
   );
 }
 
-type HostGroup = { host: string; runs: RunRow[] };
-
-/** Live-workers body: hero (one job), roomy spread grid (a few, one host),
- *  or the dense host-grouped fleet grid (many / distributed). */
+/** Live-workers body: a hero card for a single job, otherwise one
+ *  width-filling grid of run cards. Runs arrive host-adjacent (sorted by
+ *  host upstream) and carry their host on the card, so no per-host grouping
+ *  is needed — that grouping left ragged gaps on wide screens. */
 function LiveWorkers({
   mode,
-  hostGroups,
+  runs,
   now,
   navigate,
 }: {
   mode: DeckMode;
-  hostGroups: HostGroup[];
+  runs: RunRow[];
   now: number;
   navigate: (to: string) => void;
 }) {
-  const flat = hostGroups.flatMap((g) => g.runs);
-
-  if (mode === "focus" && flat[0]) {
-    return <HeroRun r={flat[0]} now={now} navigate={navigate} />;
-  }
-
-  if (mode === "spread") {
-    return (
-      <div className="run-grid run-grid--spread">
-        {flat.map((r, i) => (
-          <RunCard key={r.runId} r={r} i={i} now={now} navigate={navigate} />
-        ))}
-      </div>
-    );
+  if (mode === "focus" && runs[0]) {
+    return <HeroRun r={runs[0]} now={now} navigate={navigate} />;
   }
 
   return (
-    <div className="host-stack">
-      {hostGroups.map((g) => (
-        <div className="host-group" key={g.host}>
-          <div className="host-head">
-            <span className="host-head__dot" />
-            <span className="host-head__name mono">{g.host}</span>
-            <span className="host-head__count">
-              {g.runs.length} job{g.runs.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className="run-grid">
-            {g.runs.map((r, i) => (
-              <RunCard key={r.runId} r={r} i={i} now={now} navigate={navigate} />
-            ))}
-          </div>
-        </div>
+    <div className="run-grid">
+      {runs.map((r, i) => (
+        <RunCard key={r.runId} r={r} i={i} now={now} navigate={navigate} />
       ))}
     </div>
   );
@@ -543,6 +523,10 @@ function RunCard({
         <span>{r.sim}</span>
         <i>›</i>
         <span>{r.sampler}</span>
+      </div>
+      <div className="run-card__host mono">
+        <span className="run-card__host-dot" />
+        {r.executor?.hostname ?? "unassigned"}
       </div>
       <div
         className="run-card__bar"
@@ -836,15 +820,10 @@ const DECK_CSS = `
 .panel-head__rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
 .panel-count { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); padding: 2px 7px; }
 
-/* ── host groups ── */
-.host-stack { display: flex; flex-direction: column; gap: 18px; }
-.host-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
-.host-head__dot { width: 7px; height: 7px; border-radius: 50%; background: #57e389; box-shadow: 0 0 9px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
-.host-head__name { font-size: 13px; color: #eaf4ff; letter-spacing: 0.5px; }
-.host-head__count { margin-left: auto; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
-
 /* ── running cards ── */
-.run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 12px; }
+/* auto-fit (not auto-fill) collapses empty tracks so the cards stretch to
+   fill the row instead of leaving ragged gaps on wide screens. */
+.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .run-card {
   position: relative; overflow: hidden; cursor: pointer;
   background: linear-gradient(165deg, rgba(56,189,248,0.06), rgba(8,14,20,0.4));
@@ -864,17 +843,14 @@ const DECK_CSS = `
 .run-card__plan { margin: 9px 0 3px; font-size: 14px; font-weight: 600; color: #dbe7f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-card__chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--dim); letter-spacing: 0.5px; }
 .run-card__chain i { color: var(--faint); font-style: normal; }
+.run-card__host { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--dim); letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-card__host-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #57e389; box-shadow: 0 0 7px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
 .run-card__bar { position: relative; display: flex; height: 5px; margin: 11px 0 10px; background: rgba(255,255,255,0.04); overflow: hidden; }
 .run-card__bar span { display: block; height: 100%; transition: width 0.5s ease; }
 .run-card__bar-idle { position: absolute; inset: 0; width: 100% !important; background: repeating-linear-gradient(90deg, rgba(120,160,200,0.16) 0 6px, transparent 6px 12px); }
 .run-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .run-card__counts { font-size: 11px; color: var(--dim); }
 .run-card__time { font-size: 15px; color: #57e389; letter-spacing: 1px; text-shadow: 0 0 12px rgba(87,227,137,0.4); }
-
-/* ── adaptive: spread (a few jobs, one host) ── */
-/* auto-fit (not auto-fill) lets a couple of cards grow to fill the row
-   instead of clustering left; the max cap keeps them from going absurd. */
-.run-grid--spread { grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); justify-content: start; }
 
 /* ── adaptive: quiet (no live work) ── */
 /* promote the rail's two panels into a balanced two-up that fills the deck */
