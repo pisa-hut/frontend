@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFleetData } from "../hooks/useFleetData";
 import { usePisaEvents } from "../api/events";
-import type { TaskStatus } from "../api/types";
+import type { ExecutorResponse, TaskStatus } from "../api/types";
+import { pickDeckMode, type DeckMode } from "./controlMode";
 
 /* ------------------------------------------------------------------ *
  * Mission Control — the flagship "ground-control deck".
@@ -119,6 +120,34 @@ const TONE_COLOR: Record<TickerTone, string> = {
   concrete: "#f5b544",
   log: "#6b7d8f",
 };
+
+/** A single active run, flattened for card rendering. */
+interface RunRow {
+  taskId: number;
+  runId: number;
+  attempt: number;
+  plan: string;
+  av: string;
+  sim: string;
+  sampler: string;
+  executor: ExecutorResponse | undefined;
+  job: number | null;
+  startedAt: string;
+  finished: number;
+  aborted: number;
+  skipped: number;
+}
+
+/** A terminal task for the "recently finished" rail. */
+interface FinishedRow {
+  taskId: number;
+  status: TaskStatus;
+  finishedAt: string | null;
+  plan: string;
+  av: string;
+  sim: string;
+  sampler: string;
+}
 
 export default function Control() {
   const navigate = useNavigate();
@@ -244,8 +273,6 @@ export default function Control() {
       });
   }, [tasks, planMap, avMap, simMap, samplerMap, executorMap]);
 
-  type RunRow = (typeof runningRows)[number];
-
   // Group active runs by the host executing them. A single host can run
   // many executors at once — each is its own SLURM job (one task each), so
   // the job id lives per-run on the card, not once per host group.
@@ -291,6 +318,8 @@ export default function Control() {
       });
   }, [tasks, planMap, avMap, simMap, samplerMap]);
 
+  const deckMode = pickDeckMode(runningRows.length);
+
   if (loading) {
     return (
       <div className="pisa-deck pisa-deck--boot">
@@ -306,7 +335,7 @@ export default function Control() {
   const tzOffset = -new Date().getTimezoneOffset() / 60;
 
   return (
-    <div className="pisa-deck">
+    <div className={`pisa-deck pisa-deck--${deckMode}`}>
       <style>{DECK_CSS}</style>
 
       {/* ── header ──────────────────────────────────────────── */}
@@ -373,176 +402,298 @@ export default function Control() {
         </div>
       </section>
 
-      {/* ── main grid: live workers | side rail ─────────────── */}
-      <div className="deck-grid">
-        <section className="deck-panel deck-panel--main">
-          <PanelHead
-            title="LIVE WORKERS"
-            accent="#38bdf8"
-            right={
-              <span className="panel-count" style={{ "--c": "#38bdf8" } as React.CSSProperties}>
-                {hostGroups.length} HOSTS · {runningRows.length} RUNNING
-              </span>
-            }
+      {/* ── main grid (adaptive) ────────────────────────────── *
+       * quiet: no live work, so the rail panels are promoted to fill the
+       * deck two-up. Otherwise the live-workers panel + side rail, with
+       * LiveWorkers picking hero (one job) vs one width-filling grid.    */}
+      {deckMode === "quiet" ? (
+        <div className="deck-grid deck-grid--quiet">
+          <div className="deck-quiet-strip">
+            <span className="deck-quiet__scope" />
+            <span className="deck-quiet__txt">ALL QUIET · NO ACTIVE WORKERS</span>
+          </div>
+          <FinishedPanel
+            rows={finishedRows}
+            preview={FINISHED_PREVIEW}
+            now={now}
+            navigate={navigate}
           />
-          {hostGroups.length === 0 ? (
-            <div className="deck-quiet">
-              <span className="deck-quiet__scope" />
-              <span className="deck-quiet__txt">ALL QUIET · NO ACTIVE WORKERS</span>
-            </div>
-          ) : (
-            <div className="host-stack">
-              {hostGroups.map((g) => (
-                <div className="host-group" key={g.host}>
-                  <div className="host-head">
-                    <span className="host-head__dot" />
-                    <span className="host-head__name mono">{g.host}</span>
-                    <span className="host-head__count">
-                      {g.runs.length} job{g.runs.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <div className="run-grid">
-                    {g.runs.map((r, i) => {
-                      const total = r.finished + r.aborted + r.skipped;
-                      const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
-                      return (
-                        <article
-                          key={r.runId}
-                          className="run-card"
-                          style={{ animationDelay: `${i * 60}ms` }}
-                          onClick={() => navigate(`/tasks/${r.taskId}`)}
-                        >
-                          <span className="run-card__sweep" />
-                          <header className="run-card__head">
-                            <span className="run-card__id mono">
-                              TASK·{r.taskId}
-                              {r.attempt > 1 && (
-                                <em className="run-card__attempt"> a{r.attempt}</em>
-                              )}
-                              {r.job != null && <em className="run-card__job"> J{r.job}</em>}
-                            </span>
-                            <span className="run-card__live">
-                              <span className="run-card__live-dot" />
-                              LIVE
-                            </span>
-                          </header>
-                          <div className="run-card__plan" title={r.plan}>
-                            {r.plan}
-                          </div>
-                          <div className="run-card__chain">
-                            <span>{r.av}</span>
-                            <i>›</i>
-                            <span>{r.sim}</span>
-                            <i>›</i>
-                            <span>{r.sampler}</span>
-                          </div>
-                          <div
-                            className="run-card__bar"
-                            title={`${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`}
-                          >
-                            <span style={{ width: seg(r.finished), background: "#57e389" }} />
-                            <span style={{ width: seg(r.aborted), background: "#f5b544" }} />
-                            <span style={{ width: seg(r.skipped), background: "#3a4754" }} />
-                            {total === 0 && <span className="run-card__bar-idle" />}
-                          </div>
-                          <footer className="run-card__foot">
-                            <span className="run-card__counts mono">
-                              {r.finished}f · {r.aborted}a · {r.skipped}s
-                            </span>
-                            <span className="run-card__time mono">
-                              {r.startedAt ? fmtRuntime(r.startedAt, now) : "--:--:--"}
-                            </span>
-                          </footer>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <aside className="deck-rail">
-          <section className="deck-panel">
+          <EventStreamPanel ticker={ticker} />
+        </div>
+      ) : (
+        <div className="deck-grid">
+          <section className="deck-panel deck-panel--main">
             <PanelHead
-              title="RECENTLY FINISHED"
-              accent="#57e389"
+              title="LIVE WORKERS"
+              accent="#38bdf8"
               right={
-                <span className="panel-count" style={{ "--c": "#57e389" } as React.CSSProperties}>
-                  {finishedRows.length} DONE
+                <span className="panel-count" style={{ "--c": "#38bdf8" } as React.CSSProperties}>
+                  {hostGroups.length > 1 ? `${hostGroups.length} HOSTS · ` : ""}
+                  {runningRows.length} RUNNING
                 </span>
               }
             />
-            {finishedRows.length === 0 ? (
-              <div className="deck-quiet deck-quiet--sm">
-                <span className="deck-quiet__txt">NOTHING FINISHED YET</span>
+            <LiveWorkers
+              mode={deckMode}
+              runs={hostGroups.flatMap((g) => g.runs)}
+              now={now}
+              navigate={navigate}
+            />
+          </section>
+          <aside className="deck-rail">
+            <FinishedPanel
+              rows={finishedRows}
+              preview={FINISHED_PREVIEW}
+              now={now}
+              navigate={navigate}
+            />
+            <EventStreamPanel ticker={ticker} />
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Live-workers body: a hero card for a single job, otherwise one
+ *  width-filling grid of run cards. Runs arrive host-adjacent (sorted by
+ *  host upstream) and carry their host on the card, so no per-host grouping
+ *  is needed — that grouping left ragged gaps on wide screens. */
+function LiveWorkers({
+  mode,
+  runs,
+  now,
+  navigate,
+}: {
+  mode: DeckMode;
+  runs: RunRow[];
+  now: number;
+  navigate: (to: string) => void;
+}) {
+  if (mode === "focus" && runs[0]) {
+    return <HeroRun r={runs[0]} now={now} navigate={navigate} />;
+  }
+
+  return (
+    <div className="run-grid">
+      {runs.map((r, i) => (
+        <RunCard key={r.runId} r={r} i={i} now={now} navigate={navigate} />
+      ))}
+    </div>
+  );
+}
+
+function RunCard({
+  r,
+  i,
+  now,
+  navigate,
+}: {
+  r: RunRow;
+  i: number;
+  now: number;
+  navigate: (to: string) => void;
+}) {
+  const total = r.finished + r.aborted + r.skipped;
+  const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
+  return (
+    <article
+      className="run-card"
+      style={{ animationDelay: `${i * 60}ms` }}
+      onClick={() => navigate(`/tasks/${r.taskId}`)}
+    >
+      <span className="run-card__sweep" />
+      <header className="run-card__head">
+        <span className="run-card__id mono">
+          TASK·{r.taskId}
+          {r.attempt > 1 && <em className="run-card__attempt"> a{r.attempt}</em>}
+          {r.job != null && <em className="run-card__job"> J{r.job}</em>}
+        </span>
+        <span className="run-card__live">
+          <span className="run-card__live-dot" />
+          LIVE
+        </span>
+      </header>
+      <div className="run-card__plan" title={r.plan}>
+        {r.plan}
+      </div>
+      <div className="run-card__chain">
+        <span>{r.av}</span>
+        <i>›</i>
+        <span>{r.sim}</span>
+        <i>›</i>
+        <span>{r.sampler}</span>
+      </div>
+      <div className="run-card__host mono">
+        <span className="run-card__host-dot" />
+        {r.executor?.hostname ?? "unassigned"}
+      </div>
+      <div
+        className="run-card__bar"
+        title={`${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`}
+      >
+        <span style={{ width: seg(r.finished), background: "#57e389" }} />
+        <span style={{ width: seg(r.aborted), background: "#f5b544" }} />
+        <span style={{ width: seg(r.skipped), background: "#3a4754" }} />
+        {total === 0 && <span className="run-card__bar-idle" />}
+      </div>
+      <footer className="run-card__foot">
+        <span className="run-card__counts mono">
+          {r.finished}f · {r.aborted}a · {r.skipped}s
+        </span>
+        <span className="run-card__time mono">
+          {r.startedAt ? fmtRuntime(r.startedAt, now) : "--:--:--"}
+        </span>
+      </footer>
+    </article>
+  );
+}
+
+/** The single active run, blown up to fill the main column in focus mode. */
+function HeroRun({ r, now, navigate }: { r: RunRow; now: number; navigate: (to: string) => void }) {
+  const total = r.finished + r.aborted + r.skipped;
+  const seg = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
+  return (
+    <article className="hero-run" onClick={() => navigate(`/tasks/${r.taskId}`)}>
+      <span className="run-card__sweep" />
+      <div className="hero-run__main">
+        <header className="hero-run__head">
+          <span className="hero-run__id mono">
+            TASK·{r.taskId}
+            {r.attempt > 1 && <em className="run-card__attempt"> a{r.attempt}</em>}
+          </span>
+          <span className="run-card__live">
+            <span className="run-card__live-dot" />
+            LIVE
+          </span>
+        </header>
+        <div className="hero-run__plan" title={r.plan}>
+          {r.plan}
+        </div>
+        <div className="hero-run__chain">
+          <span>{r.av}</span>
+          <i>›</i>
+          <span>{r.sim}</span>
+          <i>›</i>
+          <span>{r.sampler}</span>
+        </div>
+        <div className="hero-run__meta mono">
+          <span className="hero-run__host">{r.executor?.hostname ?? "unassigned"}</span>
+          {r.job != null && <span className="hero-run__job">J{r.job}</span>}
+        </div>
+        <div
+          className="hero-run__bar"
+          title={`${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`}
+        >
+          <span style={{ width: seg(r.finished), background: "#57e389" }} />
+          <span style={{ width: seg(r.aborted), background: "#f5b544" }} />
+          <span style={{ width: seg(r.skipped), background: "#3a4754" }} />
+          {total === 0 && <span className="run-card__bar-idle" />}
+        </div>
+        <div className="hero-run__legend mono">
+          <span style={{ color: "#57e389" }}>{r.finished} finished</span>
+          <span style={{ color: "#f5b544" }}>{r.aborted} aborted</span>
+          <span style={{ color: "#6f8194" }}>{r.skipped} skipped</span>
+        </div>
+      </div>
+      <div className="hero-run__clock">
+        <span className="hero-run__clock-label mono">RUNTIME</span>
+        <span className="hero-run__clock-val mono">
+          {r.startedAt ? fmtRuntime(r.startedAt, now) : "--:--:--"}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function FinishedPanel({
+  rows,
+  preview,
+  now,
+  navigate,
+}: {
+  rows: FinishedRow[];
+  preview: number;
+  now: number;
+  navigate: (to: string) => void;
+}) {
+  return (
+    <section className="deck-panel">
+      <PanelHead
+        title="RECENTLY FINISHED"
+        accent="#57e389"
+        right={
+          <span className="panel-count" style={{ "--c": "#57e389" } as React.CSSProperties}>
+            {rows.length} DONE
+          </span>
+        }
+      />
+      {rows.length === 0 ? (
+        <div className="deck-quiet deck-quiet--sm">
+          <span className="deck-quiet__txt">NOTHING FINISHED YET</span>
+        </div>
+      ) : (
+        <div className="queue">
+          {rows.slice(0, preview).map((q) => (
+            <div
+              className="queue-row"
+              key={q.taskId}
+              onClick={() => navigate(`/tasks/${q.taskId}`)}
+            >
+              <div className="queue-row__top">
+                <span className="queue-row__id mono">TASK·{q.taskId}</span>
+                <span
+                  className="queue-row__status mono"
+                  style={{ color: PHOSPHOR[q.status], borderColor: PHOSPHOR[q.status] }}
+                >
+                  {STATUS_LABEL[q.status]}
+                </span>
               </div>
-            ) : (
-              <div className="queue">
-                {finishedRows.slice(0, FINISHED_PREVIEW).map((q) => (
-                  <div
-                    className="queue-row"
-                    key={q.taskId}
-                    onClick={() => navigate(`/tasks/${q.taskId}`)}
-                  >
-                    <div className="queue-row__top">
-                      <span className="queue-row__id mono">TASK·{q.taskId}</span>
-                      <span
-                        className="queue-row__status mono"
-                        style={{ color: PHOSPHOR[q.status], borderColor: PHOSPHOR[q.status] }}
-                      >
-                        {STATUS_LABEL[q.status]}
-                      </span>
-                    </div>
-                    <div className="queue-row__plan" title={q.plan}>
-                      {q.plan}
-                    </div>
-                    <div className="queue-row__chain">
-                      {q.av} · {q.sim} · {q.sampler}
-                      {q.finishedAt && (
-                        <span className="queue-row__ago"> · {fmtAgo(q.finishedAt, now)}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {finishedRows.length > FINISHED_PREVIEW && (
-                  <div className="queue-more" onClick={() => navigate("/tasks")}>
-                    + {finishedRows.length - FINISHED_PREVIEW} more →
-                  </div>
+              <div className="queue-row__plan" title={q.plan}>
+                {q.plan}
+              </div>
+              <div className="queue-row__chain">
+                {q.av} · {q.sim} · {q.sampler}
+                {q.finishedAt && (
+                  <span className="queue-row__ago"> · {fmtAgo(q.finishedAt, now)}</span>
                 )}
               </div>
-            )}
-          </section>
-
-          <section className="deck-panel deck-panel--ticker">
-            <PanelHead
-              title="EVENT STREAM"
-              accent="#f5b544"
-              right={<span className="ticker-pip" />}
-            />
-            <div className="ticker">
-              {ticker.length === 0 ? (
-                <div className="ticker__wait mono">awaiting fleet activity…</div>
-              ) : (
-                ticker.map((t) => (
-                  <div key={t.key} className="ticker__row">
-                    <span className="ticker__time mono">{fmtClock(t.at)}</span>
-                    <span
-                      className="ticker__tag mono"
-                      style={{ color: TONE_COLOR[t.tone], borderColor: TONE_COLOR[t.tone] }}
-                    >
-                      {t.tag}
-                    </span>
-                    <span className="ticker__text">{t.text}</span>
-                  </div>
-                ))
-              )}
             </div>
-          </section>
-        </aside>
+          ))}
+          {rows.length > preview && (
+            <div className="queue-more" onClick={() => navigate("/tasks")}>
+              + {rows.length - preview} more →
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EventStreamPanel({ ticker }: { ticker: TickerEntry[] }) {
+  return (
+    <section className="deck-panel deck-panel--ticker">
+      <PanelHead title="EVENT STREAM" accent="#f5b544" right={<span className="ticker-pip" />} />
+      <div className="ticker">
+        {ticker.length === 0 ? (
+          <div className="ticker__wait mono">awaiting fleet activity…</div>
+        ) : (
+          ticker.map((t) => (
+            <div key={t.key} className="ticker__row">
+              <span className="ticker__time mono">{fmtClock(t.at)}</span>
+              <span
+                className="ticker__tag mono"
+                style={{ color: TONE_COLOR[t.tone], borderColor: TONE_COLOR[t.tone] }}
+              >
+                {t.tag}
+              </span>
+              <span className="ticker__text">{t.text}</span>
+            </div>
+          ))
+        )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -669,15 +820,10 @@ const DECK_CSS = `
 .panel-head__rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
 .panel-count { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); padding: 2px 7px; }
 
-/* ── host groups ── */
-.host-stack { display: flex; flex-direction: column; gap: 18px; }
-.host-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
-.host-head__dot { width: 7px; height: 7px; border-radius: 50%; background: #57e389; box-shadow: 0 0 9px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
-.host-head__name { font-size: 13px; color: #eaf4ff; letter-spacing: 0.5px; }
-.host-head__count { margin-left: auto; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
-
 /* ── running cards ── */
-.run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 12px; }
+/* auto-fit (not auto-fill) collapses empty tracks so the cards stretch to
+   fill the row instead of leaving ragged gaps on wide screens. */
+.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .run-card {
   position: relative; overflow: hidden; cursor: pointer;
   background: linear-gradient(165deg, rgba(56,189,248,0.06), rgba(8,14,20,0.4));
@@ -697,12 +843,52 @@ const DECK_CSS = `
 .run-card__plan { margin: 9px 0 3px; font-size: 14px; font-weight: 600; color: #dbe7f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-card__chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--dim); letter-spacing: 0.5px; }
 .run-card__chain i { color: var(--faint); font-style: normal; }
+.run-card__host { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--dim); letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-card__host-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #57e389; box-shadow: 0 0 7px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
 .run-card__bar { position: relative; display: flex; height: 5px; margin: 11px 0 10px; background: rgba(255,255,255,0.04); overflow: hidden; }
 .run-card__bar span { display: block; height: 100%; transition: width 0.5s ease; }
 .run-card__bar-idle { position: absolute; inset: 0; width: 100% !important; background: repeating-linear-gradient(90deg, rgba(120,160,200,0.16) 0 6px, transparent 6px 12px); }
 .run-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .run-card__counts { font-size: 11px; color: var(--dim); }
 .run-card__time { font-size: 15px; color: #57e389; letter-spacing: 1px; text-shadow: 0 0 12px rgba(87,227,137,0.4); }
+
+/* ── adaptive: quiet (no live work) ── */
+/* promote the rail's two panels into a balanced two-up that fills the deck */
+.deck-grid--quiet { grid-template-columns: 1fr 1fr; }
+@media (max-width: 1100px) { .deck-grid--quiet { grid-template-columns: 1fr; } }
+.deck-quiet-strip { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 11px 15px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); }
+.deck-quiet-strip .deck-quiet__scope { width: 30px; height: 30px; }
+.deck-quiet-strip .deck-quiet__txt { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 3px; color: var(--dim); }
+
+/* ── adaptive: focus (one job → hero card) ── */
+.hero-run {
+  position: relative; overflow: hidden; cursor: pointer;
+  display: flex; gap: 22px; align-items: stretch;
+  background: linear-gradient(165deg, rgba(56,189,248,0.08), rgba(8,14,20,0.4));
+  border: 1px solid rgba(56,189,248,0.28); padding: 20px 22px;
+  opacity: 0; transform: translateY(10px); animation: deck-rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.hero-run:hover { border-color: #38bdf8; box-shadow: 0 0 0 1px rgba(56,189,248,0.5), 0 10px 30px rgba(0,0,0,0.5); transform: translateY(-3px); }
+.hero-run__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hero-run__head { display: flex; align-items: center; justify-content: space-between; }
+.hero-run__id { font-size: 18px; color: #eaf4ff; letter-spacing: 1px; }
+.hero-run__plan { margin: 12px 0 4px; font-size: 22px; font-weight: 700; color: #eaf4ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-run__chain { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--dim); letter-spacing: 0.5px; }
+.hero-run__chain i { color: var(--faint); font-style: normal; }
+.hero-run__meta { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--dim); letter-spacing: 0.5px; }
+.hero-run__job { color: var(--faint); }
+.hero-run__bar { position: relative; display: flex; height: 8px; margin: 16px 0 9px; background: rgba(255,255,255,0.04); overflow: hidden; }
+.hero-run__bar span { display: block; height: 100%; transition: width 0.5s ease; }
+.hero-run__legend { display: flex; gap: 16px; margin-top: auto; font-size: 11px; }
+.hero-run__clock { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; min-width: 180px; padding-left: 22px; border-left: 1px solid var(--line); }
+.hero-run__clock-label { font-size: 10px; letter-spacing: 3px; color: var(--dim); }
+.hero-run__clock-val { font-size: 40px; color: #57e389; letter-spacing: 2px; line-height: 1; text-shadow: 0 0 18px rgba(87,227,137,0.45); }
+@media (max-width: 767px) {
+  .hero-run { flex-direction: column; gap: 16px; }
+  .hero-run__clock { align-items: flex-start; min-width: 0; padding-left: 0; padding-top: 14px; border-left: none; border-top: 1px solid var(--line); }
+  .hero-run__clock-val { font-size: 32px; }
+}
 
 /* ── quiet / empty ── */
 .deck-quiet { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 54px 0; }
