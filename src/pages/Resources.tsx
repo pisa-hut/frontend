@@ -14,6 +14,7 @@ import {
   Row,
   Col,
   Divider,
+  Tooltip,
 } from "antd";
 import {
   PlusOutlined,
@@ -55,9 +56,28 @@ const imageColumns = [
     title: "Image",
     dataIndex: "image_path",
     key: "image_path",
-    width: 200,
-    ellipsis: true,
-    render: (v: Record<string, unknown>) => JSON.stringify(v),
+    width: 240,
+    render: (v: Record<string, unknown>) => {
+      const full = JSON.stringify(v, null, 2);
+      const label = (v?.docker as string) || (v?.apptainer as string) || JSON.stringify(v);
+      return (
+        <Tooltip title={<pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{full}</pre>}>
+          <span
+            style={{
+              display: "block",
+              maxWidth: 224,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+              fontSize: 12,
+            }}
+          >
+            {label}
+          </span>
+        </Tooltip>
+      );
+    },
   },
   {
     title: "NV",
