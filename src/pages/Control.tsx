@@ -499,8 +499,7 @@ function barSegments(r: RunRow): {
 } {
   const done = r.finished + r.aborted + r.skipped;
   const denom = r.expected != null && r.expected > 0 ? r.expected : done;
-  const seg = (v: number) =>
-    denom > 0 ? `${Math.min(100, (v / denom) * 100)}%` : "0%";
+  const seg = (v: number) => (denom > 0 ? `${Math.min(100, (v / denom) * 100)}%` : "0%");
   return {
     finished: seg(r.finished),
     aborted: seg(r.aborted),
