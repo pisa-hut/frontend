@@ -205,11 +205,7 @@ function ImageForm({
         <Form.Item name="gpu_count" label="GPU">
           <InputNumber min={0} max={8} style={{ width: 100 }} />
         </Form.Item>
-        <Form.Item
-          name="gpu_vram_mb"
-          label="VRAM (MB)"
-          help="Shares a GPU via shards when GPU=0"
-        >
+        <Form.Item name="gpu_vram_mb" label="VRAM (MB)" help="Shares a GPU via shards when GPU=0">
           <InputNumber min={0} max={24000} style={{ width: 140 }} />
         </Form.Item>
       </Space>
