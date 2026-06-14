@@ -11,6 +11,9 @@ import {
   Table,
   Dropdown,
   Typography,
+  Row,
+  Col,
+  Divider,
 } from "antd";
 import {
   PlusOutlined,
@@ -186,29 +189,58 @@ function ImageForm({
           }}
         />
       </Form.Item>
-      <Form.Item name="nv_runtime" label="NV Runtime" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="carla_runtime" label="CARLA Runtime" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Form.Item name="ros_runtime" label="ROS Runtime" valuePropName="checked">
-        <Switch />
-      </Form.Item>
-      <Space size={12} style={{ display: "flex" }} align="end">
-        <Form.Item name="cpu_count" label="CPU" help="Per-task SLURM CPU hint (summed AV + Sim)">
-          <InputNumber min={0} max={256} style={{ width: 120 }} />
-        </Form.Item>
-        <Form.Item name="memory_gb" label="Memory (GB)">
-          <InputNumber min={0} max={2048} style={{ width: 140 }} />
-        </Form.Item>
-        <Form.Item name="gpu_count" label="GPU">
-          <InputNumber min={0} max={8} style={{ width: 100 }} />
-        </Form.Item>
-        <Form.Item name="gpu_vram_mb" label="VRAM (MB)" help="Shares a GPU via shards when GPU=0">
-          <InputNumber min={0} max={24000} style={{ width: 140 }} />
-        </Form.Item>
-      </Space>
+      <Divider titlePlacement="start" plain style={{ margin: "4px 0 12px" }}>
+        Runtimes
+      </Divider>
+      <Row gutter={16}>
+        <Col span={8}>
+          <Form.Item name="nv_runtime" label="NVIDIA" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item name="carla_runtime" label="CARLA" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item name="ros_runtime" label="ROS" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Divider titlePlacement="start" plain style={{ margin: "4px 0 12px" }}>
+        Resources&nbsp;
+        <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+          · SLURM hints, per task = AV + Sim (0 = unset)
+        </Typography.Text>
+      </Divider>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="cpu_count" label="CPU">
+            <InputNumber min={0} max={256} style={{ width: "100%" }} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="memory_gb" label="Memory (GB)">
+            <InputNumber min={0} max={2048} style={{ width: "100%" }} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="gpu_count" label="GPU">
+            <InputNumber min={0} max={8} style={{ width: "100%" }} />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            name="gpu_vram_mb"
+            label="VRAM (MB)"
+            tooltip="Shares one GPU via SLURM shards when GPU = 0"
+          >
+            <InputNumber min={0} max={24000} step={512} style={{ width: "100%" }} />
+          </Form.Item>
+        </Col>
+      </Row>
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={saving} block>
           {editing ? "Save" : "Create"}
