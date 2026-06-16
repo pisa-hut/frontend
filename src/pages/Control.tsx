@@ -531,7 +531,6 @@ function RunCard({
       style={{ animationDelay: `${i * 60}ms` }}
       onClick={() => navigate(`/tasks/${r.taskId}`)}
     >
-      <span className="run-card__sweep" />
       <header className="run-card__head">
         <span className="run-card__id mono">
           TASK·{r.taskId}
@@ -580,7 +579,6 @@ function HeroRun({ r, now, navigate }: { r: RunRow; now: number; navigate: (to: 
   const seg = barSegments(r);
   return (
     <article className="hero-run" onClick={() => navigate(`/tasks/${r.taskId}`)}>
-      <span className="run-card__sweep" />
       <div className="hero-run__main">
         <header className="hero-run__head">
           <span className="hero-run__id mono">
@@ -854,8 +852,8 @@ const DECK_CSS = `
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 .run-card:hover { border-color: #38bdf8; box-shadow: 0 0 0 1px rgba(56,189,248,0.5), 0 8px 26px rgba(0,0,0,0.5); transform: translateY(-3px); }
-.run-card__sweep { position: absolute; top: 0; left: -40%; width: 40%; height: 100%; background: linear-gradient(90deg, transparent, rgba(56,189,248,0.10), transparent); animation: deck-sweep 3.4s linear infinite; pointer-events: none; }
-@keyframes deck-sweep { 0% { left: -45%; } 100% { left: 105%; } }
+@keyframes deck-flow { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes deck-march { to { background-position: 12px 0; } }
 .run-card__head { display: flex; align-items: center; justify-content: space-between; }
 .run-card__id { font-size: 13px; color: #eaf4ff; letter-spacing: 1px; }
 .run-card__attempt { color: #f5b544; font-style: normal; font-size: 11px; }
@@ -868,8 +866,10 @@ const DECK_CSS = `
 .run-card__host { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--dim); letter-spacing: 0.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-card__host-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #57e389; box-shadow: 0 0 7px #57e389; animation: deck-pulse 1.6s ease-in-out infinite; }
 .run-card__bar { position: relative; display: flex; height: 5px; margin: 11px 0 10px; background: rgba(255,255,255,0.04); overflow: hidden; }
-.run-card__bar span { display: block; height: 100%; transition: width 0.5s ease; }
-.run-card__bar-idle { position: absolute; inset: 0; width: 100% !important; background: repeating-linear-gradient(90deg, rgba(120,160,200,0.16) 0 6px, transparent 6px 12px); }
+.run-card__bar span { position: relative; display: block; height: 100%; overflow: hidden; transition: width 0.5s ease; }
+.run-card__bar span::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%); background-size: 200% 100%; animation: deck-flow 1.4s linear infinite; pointer-events: none; }
+.run-card__bar-idle { position: absolute; inset: 0; width: 100% !important; background: repeating-linear-gradient(90deg, rgba(120,160,200,0.16) 0 6px, transparent 6px 12px); animation: deck-march 0.7s linear infinite; }
+.run-card__bar-idle::after { display: none; }
 .run-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .run-card__counts { font-size: 11px; color: var(--dim); }
 .run-card__time { font-size: 15px; color: #57e389; letter-spacing: 1px; text-shadow: 0 0 12px rgba(87,227,137,0.4); }
@@ -901,7 +901,9 @@ const DECK_CSS = `
 .hero-run__meta { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--dim); letter-spacing: 0.5px; }
 .hero-run__job { color: var(--faint); }
 .hero-run__bar { position: relative; display: flex; height: 8px; margin: 16px 0 9px; background: rgba(255,255,255,0.04); overflow: hidden; }
-.hero-run__bar span { display: block; height: 100%; transition: width 0.5s ease; }
+.hero-run__bar span { position: relative; display: block; height: 100%; overflow: hidden; transition: width 0.5s ease; }
+.hero-run__bar span::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%); background-size: 200% 100%; animation: deck-flow 1.4s linear infinite; pointer-events: none; }
+.hero-run__bar .run-card__bar-idle::after { display: none; }
 .hero-run__legend { display: flex; gap: 16px; margin-top: auto; font-size: 11px; }
 .hero-run__clock { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; min-width: 180px; padding-left: 22px; border-left: 1px solid var(--line); }
 .hero-run__clock-label { font-size: 10px; letter-spacing: 3px; color: var(--dim); }
