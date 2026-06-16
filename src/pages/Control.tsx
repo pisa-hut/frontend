@@ -567,8 +567,14 @@ function ThroughputGraph({
 
   return (
     <section className="deck-graph">
-      <span className="pulse-tile__corner pulse-tile__corner--tl" style={{ "--c": "#57e389" } as React.CSSProperties} />
-      <span className="pulse-tile__corner pulse-tile__corner--br" style={{ "--c": "#57e389" } as React.CSSProperties} />
+      <span
+        className="pulse-tile__corner pulse-tile__corner--tl"
+        style={{ "--c": "#57e389" } as React.CSSProperties}
+      />
+      <span
+        className="pulse-tile__corner pulse-tile__corner--br"
+        style={{ "--c": "#57e389" } as React.CSSProperties}
+      />
       <header className="deck-graph__head">
         <div>
           <div className="deck-graph__title">THROUGHPUT</div>
@@ -612,7 +618,14 @@ function ThroughputGraph({
               <circle className="deck-graph__now" cx={last[0]} cy={last[1]} r="2.8" />
             </>
           ) : (
-            <line className="deck-graph__flat" x1="0" x2={W} y1={H - PB} y2={H - PB} pathLength={1} />
+            <line
+              className="deck-graph__flat"
+              x1="0"
+              x2={W}
+              y1={H - PB}
+              y2={H - PB}
+              pathLength={1}
+            />
           )}
         </svg>
         {!hasData && <div className="deck-graph__idle mono">AWAITING SIGNAL</div>}
