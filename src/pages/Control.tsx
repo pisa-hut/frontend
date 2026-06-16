@@ -46,34 +46,46 @@ const TERMINAL_STATUSES: TaskStatus[] = ["completed", "invalid", "aborted"];
 
 const POSTGREST = import.meta.env.VITE_POSTGREST_URL ?? "/postgrest";
 
-interface Throughput {
+const HISTORY_BINS = 24;
+
+interface ThroughputHistory {
+  bins: number[];
+  anchor: number;
   perHour: number;
   perDay: number;
 }
 
-/** Real throughput: count of concrete runs that FINISHED inside a rolling
- *  window, via PostgREST's exact-count header. perHour = last 60 min,
- *  perDay = last 24 h — counts already divided by their period. */
-async function fetchThroughput(): Promise<Throughput> {
-  const hourCutoff = new Date(Date.now() - 3600 * 1000).toISOString();
-  const dayCutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-
-  const count = async (url: string): Promise<number> => {
-    const res = await fetch(url, {
-      method: "HEAD",
-      headers: { Accept: "application/json", Prefer: "count=exact" },
-    });
-    if (!res.ok) throw new Error(`throughput fetch failed: ${res.status}`);
-    const m = res.headers.get("Content-Range")?.match(/\/(\d+)$/);
-    return m ? Number.parseInt(m[1], 10) : 0;
-  };
-
-  const base = `${POSTGREST}/concrete_run?status=eq.finished`;
-  const [perHour, perDay] = await Promise.all([
-    count(`${base}&created_at=gte.${encodeURIComponent(hourCutoff)}`),
-    count(`${base}&created_at=gte.${encodeURIComponent(dayCutoff)}`),
-  ]);
-  return { perHour, perDay };
+/** Finished concretes over the last 24 h, bucketed into 24 hourly bins
+ *  (bin 0 = oldest, bin 23 = current partial hour). Pulls just the
+ *  `created_at` of each finished concrete and buckets client-side — no
+ *  server-side time aggregation needed. From the same rows it also derives
+ *  the exact rolling `perHour` (last 60 min) and `perDay` (last 24 h) rates,
+ *  and `anchor` (window start) so the x-axis can render wall-clock hours. */
+async function fetchThroughputHistory(): Promise<ThroughputHistory> {
+  const now = Date.now();
+  const start = now - HISTORY_BINS * 3600 * 1000;
+  const hourStart = now - 3600 * 1000;
+  const cutoff = new Date(start).toISOString();
+  // Order newest-first and cap the row set: at absurd volumes the cap only
+  // trims the oldest hours, keeping the recent bins and /hr figure exact.
+  const url =
+    `${POSTGREST}/concrete_run?status=eq.finished` +
+    `&created_at=gte.${encodeURIComponent(cutoff)}` +
+    `&select=created_at&order=created_at.desc&limit=200000`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`throughput history fetch failed: ${res.status}`);
+  const rows: { created_at: string }[] = await res.json();
+  const bins = new Array<number>(HISTORY_BINS).fill(0);
+  let perHour = 0;
+  let perDay = 0;
+  for (const r of rows) {
+    const t = new Date(r.created_at).getTime();
+    if (t < start || t > now) continue;
+    bins[Math.min(HISTORY_BINS - 1, Math.floor((t - start) / 3600000))] += 1;
+    perDay += 1;
+    if (t >= hourStart) perHour += 1;
+  }
+  return { bins, anchor: start, perHour, perDay };
 }
 
 function fmtRuntime(startedAt: string, now: number): string {
@@ -155,7 +167,12 @@ export default function Control() {
   const navigate = useNavigate();
   // Core fleet data + realtime core refetch (shared via useFleetData).
   const { tasks, loading, planMap, avMap, simMap, samplerMap, executorMap } = useFleetData();
-  const [throughput, setThroughput] = useState<Throughput>({ perHour: 0, perDay: 0 });
+  const [history, setHistory] = useState<ThroughputHistory>(() => ({
+    bins: new Array<number>(HISTORY_BINS).fill(0),
+    anchor: Date.now() - HISTORY_BINS * 3600 * 1000,
+    perHour: 0,
+    perDay: 0,
+  }));
   const [now, setNow] = useState(() => Date.now());
 
   // 1 s heartbeat so the clock and runtime counters visibly tick.
@@ -168,8 +185,8 @@ export default function Control() {
   // so finishes age out even with no new events — refresh on mount, on a
   // 60 s cadence, and on SSE concrete_run inserts (below).
   const refreshThroughput = useCallback(() => {
-    fetchThroughput()
-      .then(setThroughput)
+    fetchThroughputHistory()
+      .then(setHistory)
       .catch(() => {
         /* transient; next tick retries */
       });
@@ -179,6 +196,19 @@ export default function Control() {
     const id = window.setInterval(refreshThroughput, 60_000);
     return () => window.clearInterval(id);
   }, [refreshThroughput]);
+
+  // A finish burst can fire many concrete_run inserts in quick succession;
+  // the history refetch pulls the whole 24h window, so coalesce them into a
+  // single trailing refresh rather than one heavy GET per insert.
+  const throughputDebounce = useRef<number | undefined>(undefined);
+  const scheduleThroughputRefresh = useCallback(() => {
+    if (throughputDebounce.current != null) return;
+    throughputDebounce.current = window.setTimeout(() => {
+      throughputDebounce.current = undefined;
+      refreshThroughput();
+    }, 5000);
+  }, [refreshThroughput]);
+  useEffect(() => () => window.clearTimeout(throughputDebounce.current), []);
 
   // Live event ticker.
   const [ticker, setTicker] = useState<TickerEntry[]>([]);
@@ -220,7 +250,7 @@ export default function Control() {
             pushTicker("run", taskId ? `TASK·${taskId}` : `RUN·${ev.row.id}`, `run ${ev.row.op}`);
           } else if (ev.row.table === "concrete_run" && ev.row.op === "insert") {
             pushTicker("concrete", "CONCRETE", "concrete recorded");
-            refreshThroughput();
+            scheduleThroughputRefresh();
           }
         } else if (ev.kind === "log") {
           const line = ev.chunk.replace(/\s+/g, " ").trim();
@@ -234,7 +264,7 @@ export default function Control() {
           }
         }
       },
-      [pushTicker, refreshThroughput],
+      [pushTicker, scheduleThroughputRefresh],
     ),
   );
 
@@ -365,7 +395,7 @@ export default function Control() {
         </div>
       </header>
 
-      {/* ── pulse strip + throughput rates ──────────────────── */}
+      {/* ── pulse strip ─────────────────────────────────────── */}
       <section className="deck-pulse">
         {PULSE_ORDER.map((s, i) => (
           <button
@@ -381,29 +411,15 @@ export default function Control() {
             {s === "running" && counts.running > 0 && <span className="pulse-tile__live" />}
           </button>
         ))}
-        <div
-          className="pulse-tile pulse-tile--wide"
-          style={
-            {
-              "--c": "#57e389",
-              animationDelay: `${PULSE_ORDER.length * 55}ms`,
-            } as React.CSSProperties
-          }
-        >
-          <span className="pulse-tile__corner pulse-tile__corner--tl" />
-          <span className="pulse-tile__corner pulse-tile__corner--br" />
-          <span className="pulse-tile__label">CONCRETE THROUGHPUT</span>
-          <div className="thru">
-            <span className="thru__seg" style={{ color: "#57e389" }}>
-              <b className="mono">{throughput.perHour}</b> /hr
-            </span>
-            <span className="thru__seg" style={{ color: "#38bdf8" }}>
-              <b className="mono">{throughput.perDay}</b> /day
-            </span>
-            <span className="thru__note">finished · last 60m / 24h</span>
-          </div>
-        </div>
       </section>
+
+      {/* ── throughput history ──────────────────────────────── */}
+      <ThroughputGraph
+        bins={history.bins}
+        anchor={history.anchor}
+        perHour={history.perHour}
+        perDay={history.perDay}
+      />
 
       {/* ── main grid (adaptive) ────────────────────────────── *
        * quiet: no live work, so the rail panels are promoted to fill the
@@ -511,6 +527,134 @@ function barSegments(r: RunRow): {
 function barTitle(r: RunRow): string {
   const base = `${r.finished} finished · ${r.aborted} aborted · ${r.skipped} skipped`;
   return r.expected != null && r.expected > 0 ? `${base} · of ${r.expected}` : base;
+}
+
+/** Catmull-Rom → cubic-bezier path through the points for a smooth trace. */
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length < 2) return pts.length ? `M ${pts[0][0]} ${pts[0][1]}` : "";
+  const r = (n: number) => Math.round(n * 100) / 100;
+  let d = `M ${r(pts[0][0])} ${r(pts[0][1])}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${r(c1x)} ${r(c1y)} ${r(c2x)} ${r(c2y)} ${r(p2[0])} ${r(p2[1])}`;
+  }
+  return d;
+}
+
+/** Oscilloscope-style 24 h throughput trace. Pure SVG, matches the deck's
+ *  phosphor aesthetic; redraws (re-keyed) whenever the bins change. */
+function ThroughputGraph({
+  bins,
+  anchor,
+  perHour,
+  perDay,
+}: {
+  bins: number[];
+  anchor: number;
+  perHour: number;
+  perDay: number;
+}) {
+  const W = 240;
+  const H = 92;
+  const PT = 8;
+  const PB = 6;
+  const n = bins.length;
+  const hasData = perDay > 0;
+  const maxBin = bins.reduce((a, b) => Math.max(a, b), 0);
+  const scale = Math.max(1, maxBin);
+  const step = W / (n - 1);
+  const y = (v: number) => H - PB - (v / scale) * (H - PT - PB);
+  const pts = bins.map((v, i) => [i * step, y(v)] as [number, number]);
+  const line = smoothPath(pts);
+  const area = hasData ? `${line} L ${W} ${H} L 0 ${H} Z` : "";
+  const last = pts[n - 1];
+
+  const hourLabel = (binIndex: number) => {
+    const d = new Date(anchor + binIndex * 3600000);
+    return `${String(d.getHours()).padStart(2, "0")}h`;
+  };
+
+  return (
+    <section className="deck-graph">
+      <span
+        className="pulse-tile__corner pulse-tile__corner--tl"
+        style={{ "--c": "#57e389" } as React.CSSProperties}
+      />
+      <span
+        className="pulse-tile__corner pulse-tile__corner--br"
+        style={{ "--c": "#57e389" } as React.CSSProperties}
+      />
+      <header className="deck-graph__head">
+        <div>
+          <div className="deck-graph__title">THROUGHPUT</div>
+          <div className="deck-graph__sub">finished concretes · trailing 24h</div>
+        </div>
+        <div className="deck-graph__stats mono">
+          <div className="deck-graph__stat" style={{ color: "#57e389" }}>
+            <b>{perHour}</b>
+            <span>/hr</span>
+          </div>
+          <div className="deck-graph__stat" style={{ color: "#38bdf8" }}>
+            <b>{perDay}</b>
+            <span>/day</span>
+          </div>
+        </div>
+      </header>
+      <div className="deck-graph__plot">
+        <svg
+          className="deck-graph__svg"
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`Throughput over the last 24 hours: ${perHour} per hour, ${perDay} per day`}
+        >
+          <defs>
+            <linearGradient id="deckThruFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#57e389" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#57e389" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={f} className="deck-graph__grid" x1="0" x2={W} y1={H * f} y2={H * f} />
+          ))}
+          {[6, 12, 18].map((i) => (
+            <line key={i} className="deck-graph__grid" x1={i * step} x2={i * step} y1="0" y2={H} />
+          ))}
+          {hasData ? (
+            <>
+              <path className="deck-graph__area" d={area} fill="url(#deckThruFill)" />
+              <path className="deck-graph__line" d={line} pathLength={1} />
+              <circle className="deck-graph__now" cx={last[0]} cy={last[1]} r="2.8" />
+            </>
+          ) : (
+            <line
+              className="deck-graph__flat"
+              x1="0"
+              x2={W}
+              y1={H - PB}
+              y2={H - PB}
+              pathLength={1}
+            />
+          )}
+        </svg>
+        {!hasData && <div className="deck-graph__idle mono">AWAITING SIGNAL</div>}
+      </div>
+      <div className="deck-graph__xlabels mono">
+        <span>{hourLabel(0)}</span>
+        <span>{hourLabel(6)}</span>
+        <span>{hourLabel(12)}</span>
+        <span>{hourLabel(18)}</span>
+        <span className="deck-graph__now-lbl">NOW</span>
+      </div>
+    </section>
+  );
 }
 
 function RunCard({
@@ -798,9 +942,12 @@ const DECK_CSS = `
 .deck-clock__z { font-size: 9px; letter-spacing: 2px; color: var(--faint); font-family: 'IBM Plex Mono', monospace; }
 
 /* ── pulse strip ── */
-.deck-pulse { position: relative; z-index: 2; display: grid; gap: 10px; margin-bottom: 16px; grid-template-columns: repeat(6, 1fr) 1.8fr; }
-@media (max-width: 1100px) { .deck-pulse { grid-template-columns: repeat(3, 1fr); } .pulse-tile--wide { grid-column: span 3; } }
-@media (max-width: 560px) { .deck-pulse { grid-template-columns: repeat(2, 1fr); } .pulse-tile--wide { grid-column: span 2; } }
+.deck-pulse { position: relative; z-index: 2; display: grid; gap: 10px; margin-bottom: 16px; grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1100px) {
+  .deck-pulse { grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); }
+  .pulse-tile { min-height: 70px; }
+}
+@media (max-width: 520px) { .deck-pulse { gap: 8px; } }
 
 .pulse-tile {
   position: relative; appearance: none; cursor: pointer; text-align: left;
@@ -817,13 +964,41 @@ const DECK_CSS = `
 .pulse-tile__label { font-size: 10px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
 .pulse-tile__val { font-size: 30px; font-weight: 600; color: var(--c); line-height: 1; text-shadow: 0 0 18px color-mix(in srgb, var(--c) 45%, transparent); }
 .pulse-tile__live { position: absolute; top: 12px; right: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); animation: deck-pulse 1.2s ease-in-out infinite; }
-.pulse-tile--wide { cursor: default; }
-.pulse-tile--wide:hover { transform: translateY(0); box-shadow: none; border-color: var(--line); }
-.thru { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; }
-.thru__seg { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
-.thru__seg b { font-size: 26px; font-weight: 600; margin-right: 4px; text-shadow: 0 0 16px currentColor; }
-.thru__note { font-size: 10px; letter-spacing: 1px; color: var(--faint); text-transform: uppercase; }
 @keyframes deck-rise { to { opacity: 1; transform: translateY(0); } }
+
+/* ── throughput history graph ── */
+.deck-graph {
+  position: relative; z-index: 2; margin-bottom: 16px; overflow: hidden;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line); padding: 13px 16px 11px;
+  opacity: 0; transform: translateY(8px);
+  animation: deck-rise 0.5s cubic-bezier(0.2,0.8,0.2,1) 0.12s forwards;
+}
+.deck-graph .pulse-tile__corner { position: absolute; width: 11px; height: 11px; }
+.deck-graph__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.deck-graph__title { font-size: 12px; font-weight: 700; letter-spacing: 4px; color: #eaf4ff; }
+.deck-graph__sub { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
+.deck-graph__stats { display: flex; gap: 22px; }
+.deck-graph__stat { display: flex; flex-direction: column; align-items: flex-end; }
+.deck-graph__stat b { font-size: 22px; font-weight: 600; line-height: 1; text-shadow: 0 0 14px currentColor; }
+.deck-graph__stat span { font-size: 9px; letter-spacing: 1.5px; color: var(--faint); text-transform: uppercase; margin-top: 4px; }
+.deck-graph__plot { position: relative; }
+.deck-graph__svg { display: block; width: 100%; height: 132px; }
+@media (max-width: 767px) { .deck-graph__svg { height: 108px; } }
+.deck-graph__grid { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.deck-graph__area { animation: deck-graph-fill 0.9s ease-out 0.2s both; }
+.deck-graph__line {
+  fill: none; stroke: #57e389; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 3px rgba(87,227,137,0.65));
+  stroke-dasharray: 1; stroke-dashoffset: 1; animation: deck-trace 1.2s cubic-bezier(0.4,0,0.1,1) 0.1s forwards;
+}
+.deck-graph__now { fill: #57e389; filter: drop-shadow(0 0 6px #57e389); animation: deck-pulse 1.5s ease-in-out 1s infinite; }
+.deck-graph__flat { stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.deck-graph__idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 4px; color: var(--faint); animation: deck-flick 1.8s ease-in-out infinite; }
+.deck-graph__xlabels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 9px; letter-spacing: 1px; color: var(--faint); }
+.deck-graph__now-lbl { color: #57e389; }
+@keyframes deck-trace { to { stroke-dashoffset: 0; } }
+@keyframes deck-graph-fill { from { opacity: 0; } to { opacity: 1; } }
 
 /* ── main grid ── */
 .deck-grid { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
