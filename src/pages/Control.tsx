@@ -66,9 +66,12 @@ async function fetchThroughputHistory(): Promise<ThroughputHistory> {
   const start = now - HISTORY_BINS * 3600 * 1000;
   const hourStart = now - 3600 * 1000;
   const cutoff = new Date(start).toISOString();
+  // Order newest-first and cap the row set: at absurd volumes the cap only
+  // trims the oldest hours, keeping the recent bins and /hr figure exact.
   const url =
     `${POSTGREST}/concrete_run?status=eq.finished` +
-    `&created_at=gte.${encodeURIComponent(cutoff)}&select=created_at&limit=200000`;
+    `&created_at=gte.${encodeURIComponent(cutoff)}` +
+    `&select=created_at&order=created_at.desc&limit=200000`;
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`throughput history fetch failed: ${res.status}`);
   const rows: { created_at: string }[] = await res.json();
@@ -194,6 +197,19 @@ export default function Control() {
     return () => window.clearInterval(id);
   }, [refreshThroughput]);
 
+  // A finish burst can fire many concrete_run inserts in quick succession;
+  // the history refetch pulls the whole 24h window, so coalesce them into a
+  // single trailing refresh rather than one heavy GET per insert.
+  const throughputDebounce = useRef<number | undefined>(undefined);
+  const scheduleThroughputRefresh = useCallback(() => {
+    if (throughputDebounce.current != null) return;
+    throughputDebounce.current = window.setTimeout(() => {
+      throughputDebounce.current = undefined;
+      refreshThroughput();
+    }, 5000);
+  }, [refreshThroughput]);
+  useEffect(() => () => window.clearTimeout(throughputDebounce.current), []);
+
   // Live event ticker.
   const [ticker, setTicker] = useState<TickerEntry[]>([]);
   const tickerKey = useRef(0);
@@ -234,7 +250,7 @@ export default function Control() {
             pushTicker("run", taskId ? `TASK·${taskId}` : `RUN·${ev.row.id}`, `run ${ev.row.op}`);
           } else if (ev.row.table === "concrete_run" && ev.row.op === "insert") {
             pushTicker("concrete", "CONCRETE", "concrete recorded");
-            refreshThroughput();
+            scheduleThroughputRefresh();
           }
         } else if (ev.kind === "log") {
           const line = ev.chunk.replace(/\s+/g, " ").trim();
@@ -248,7 +264,7 @@ export default function Control() {
           }
         }
       },
-      [pushTicker, refreshThroughput],
+      [pushTicker, scheduleThroughputRefresh],
     ),
   );
 
