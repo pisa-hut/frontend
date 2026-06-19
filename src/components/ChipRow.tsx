@@ -93,4 +93,3 @@ function ChipRowImpl<V extends string | number>({
 
 const ChipRow = memo(ChipRowImpl) as typeof ChipRowImpl;
 export default ChipRow;
-export { CHIP_STYLE };
