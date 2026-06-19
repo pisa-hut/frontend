@@ -23,19 +23,6 @@ function asMessage(err: unknown): string {
 }
 
 export const notify = {
-  success(content: React.ReactNode) {
-    message.success(content);
-  },
-  warning(content: React.ReactNode) {
-    message.warning(content);
-  },
-  error(content: React.ReactNode) {
-    message.error(content);
-  },
-  info(content: React.ReactNode) {
-    message.info(content);
-  },
-
   /** "Resource created" — used by every Resources-tab create handler. */
   created(label = "Created") {
     message.success(label);
