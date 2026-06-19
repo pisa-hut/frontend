@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ConfigProvider, Spin, theme } from "antd";
-import { ThemeProvider } from "./components/ThemeContext";
 import AppLayout from "./components/AppLayout";
 import Control from "./pages/Control";
 
@@ -147,9 +146,5 @@ function AppInner() {
 }
 
 export default function App() {
-  return (
-    <ThemeProvider>
-      <AppInner />
-    </ThemeProvider>
-  );
+  return <AppInner />;
 }
